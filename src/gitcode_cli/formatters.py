@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+
+import click
+
+
+def dump_json(data, fields: list[str] | None = None) -> str:
+    if fields:
+        if isinstance(data, list):
+            data = [_filter_fields(item, fields) for item in data]
+        else:
+            data = _filter_fields(data, fields)
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _filter_fields(item: dict, fields: list[str]) -> dict:
+    result = {}
+    for field in fields:
+        if "." in field:
+            parts = field.split(".")
+            value = item
+            for part in parts:
+                if isinstance(value, dict):
+                    value = value.get(part)
+                else:
+                    value = None
+                    break
+            result[field] = value
+        else:
+            result[field] = item.get(field)
+    return result
+
+
+def apply_jq(data, query: str):
+    try:
+        import jq  # noqa: PLC0415
+
+        return jq.compile(query).input(data).all()
+    except ImportError:
+        pass
+    jq_bin = shutil.which("jq")
+    if jq_bin:
+        proc = subprocess.run(
+            [jq_bin, query],
+            input=json.dumps(data),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(proc.stdout)
+    raise click.ClickException("jq is required for --jq. Install with: pip install pyjq or install jq CLI.")
+
+
+def render_template(data, template: str) -> str:
+    def replacer(match):
+        key = match.group(1)
+        if "." in key:
+            parts = key.split(".")
+            value = data
+            for part in parts:
+                if isinstance(value, dict):
+                    value = value.get(part)
+                else:
+                    value = None
+                    break
+        else:
+            value = data.get(key) if isinstance(data, dict) else None
+        return str(value) if value is not None else ""
+
+    return re.sub(r"\{\{\.(\w+(?:\.\w+)*)\}\}", replacer, template)
+
+
+def output_result(data, json_fields: str | None, jq_query: str | None, template: str | None, default_formatter):
+    if jq_query:
+        data = apply_jq(data, jq_query)
+        click.echo(dump_json(data))
+        return
+    if json_fields:
+        fields = [f.strip() for f in json_fields.split(",")]
+        click.echo(dump_json(data, fields=fields))
+        return
+    if template:
+        if isinstance(data, list):
+            for item in data:
+                click.echo(render_template(item, template))
+        else:
+            click.echo(render_template(data, template))
+        return
+    default_formatter(data)

@@ -1,0 +1,2 @@
+[console_scripts]
+gc = gitcode_cli.cli:main

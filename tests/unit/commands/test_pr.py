@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+from click.testing import CliRunner
+
+from gitcode_cli.cli import main
+
+
+@pytest.fixture
+def runner():
+    return CliRunner()
+
+
+@pytest.fixture
+def mock_client(monkeypatch):
+    client = MagicMock()
+    client.get = MagicMock(return_value=[])
+    client.post = MagicMock(
+        return_value={"number": 42, "html_url": "https://example.com/42", "title": "Test", "head": {"ref": "feature"}}
+    )
+    client.patch = MagicMock(return_value={"number": 42, "html_url": "https://example.com/42", "title": "Test"})
+    client.put = MagicMock(return_value={"message": "Merged"})
+    client.delete = MagicMock(return_value=None)
+    client.request = MagicMock(return_value="diff text")
+
+    from gitcode_cli import context
+
+    monkeypatch.setattr(context.AppContext, "client", lambda self: client)
+    return client
+
+
+@pytest.fixture
+def mock_repo(monkeypatch):
+    from gitcode_cli import repo
+
+    monkeypatch.setattr(repo, "resolve_repo", lambda x=None: ("owner", "repo"))
+    monkeypatch.setattr("gitcode_cli.commands.pr.resolve_repo", lambda x=None: ("owner", "repo"))
+
+
+class TestPrList:
+    def test_pr_list_default(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "state": "open", "title": "First PR"},
+        ]
+        result = runner.invoke(main, ["pr", "list"])
+        assert result.exit_code == 0
+        assert "#1\topen\tFirst PR" in result.output
+
+    def test_pr_list_with_options(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "state": "open", "title": "First PR"},
+        ]
+        result = runner.invoke(
+            main,
+            ["pr", "list", "-s", "open", "-A", "user", "-B", "master", "-l", "bug", "-S", "search", "-L", "1"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.get.call_args == call(
+            "/repos/owner/repo/pulls",
+            params={"state": "open", "author": "user", "base": "master", "labels": "bug", "search": "search"},
+        )
+
+    def test_pr_list_json(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "title": "First PR"},
+        ]
+        result = runner.invoke(main, ["pr", "list", "--json", "number,title"])
+        assert result.exit_code == 0
+        assert '"number": 1' in result.output
+        assert '"title": "First PR"' in result.output
+
+    def test_pr_list_alias_ls(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "state": "open", "title": "First PR"},
+        ]
+        result = runner.invoke(main, ["pr", "ls"])
+        assert result.exit_code == 0
+        assert "#1\topen\tFirst PR" in result.output
+
+
+class TestPrView:
+    def test_pr_view(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "title": "Test PR", "body": "PR body"}
+        result = runner.invoke(main, ["pr", "view", "42"])
+        assert result.exit_code == 0
+        assert "#42 Test PR" in result.output
+
+    def test_pr_view_web(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.open_in_browser") as mock_browser:
+            mock_client.get.return_value = {
+                "number": 42,
+                "title": "Test PR",
+                "body": "",
+                "html_url": "https://example.com/42",
+            }
+            result = runner.invoke(main, ["pr", "view", "42", "-w"])
+            assert result.exit_code == 0
+            mock_browser.assert_called_once_with("https://example.com/42")
+
+    def test_pr_view_branch(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            [{"number": 42, "head": {"ref": "feature-branch"}, "title": "Branch PR"}],
+            {"number": 42, "title": "Branch PR", "body": "Body text"},
+        ]
+        result = runner.invoke(main, ["pr", "view", "feature-branch"])
+        assert result.exit_code == 0
+        assert "#42 Branch PR" in result.output
+
+
+class TestPrCreate:
+    def test_pr_create(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "https://example.com/42" in result.output
+        assert mock_client.post.call_args.kwargs["json"]["title"] == "Test"
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "Body"
+        assert mock_client.post.call_args.kwargs["json"]["base"] == "master"
+        assert mock_client.post.call_args.kwargs["json"]["head"] == "feature"
+
+    def test_pr_create_auto_detect(self, runner, mock_client, mock_repo):
+        with (
+            patch("gitcode_cli.commands.pr.get_current_git_branch", return_value="feature"),
+            patch("gitcode_cli.commands.pr.get_default_git_branch", return_value="master"),
+        ):
+            result = runner.invoke(main, ["pr", "create", "--title", "Auto PR"])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["head"] == "feature"
+        assert mock_client.post.call_args.kwargs["json"]["base"] == "master"
+
+    def test_pr_create_prompt_title(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--base", "master", "--head", "feature"],
+            input="My Title\n",
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["title"] == "My Title"
+
+    def test_pr_create_body_file(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.txt"
+        body_file.write_text("file body content")
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "-F", str(body_file), "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "file body content"
+
+    def test_pr_create_alias_new(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            ["pr", "new", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "https://example.com/42" in result.output
+
+
+class TestPrClose:
+    def test_pr_close(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+        result = runner.invoke(main, ["pr", "close", "42"])
+        assert result.exit_code == 0
+        assert "Closed pull request #42" in result.output
+
+    def test_pr_close_with_comment(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+        mock_client.post.return_value = {"id": 1}
+        result = runner.invoke(main, ["pr", "close", "42", "-c", "closing comment"])
+        assert result.exit_code == 0
+        assert "Closed pull request #42" in result.output
+        post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
+        assert len(post_calls) == 1
+        assert post_calls[0].kwargs["json"]["body"] == "closing comment"
+
+    def test_pr_close_delete_branch(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+            result = runner.invoke(main, ["pr", "close", "42", "-d"])
+            assert result.exit_code == 0
+            assert "Deleted branch feature" in result.output
+            assert "Closed pull request #42" in result.output
+            mock_run.assert_called_once_with(
+                ["git", "push", "origin", "--delete", "feature"],
+                check=True,
+            )
+
+
+class TestPrMerge:
+    def test_pr_merge(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42"])
+        assert result.exit_code == 0
+        assert "Merged" in result.output
+        assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "merge"
+
+    def test_pr_merge_squash(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-s"])
+        assert result.exit_code == 0
+        assert "Merged" in result.output
+        assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "squash"
+
+    def test_pr_merge_rebase(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-r"])
+        assert result.exit_code == 0
+        assert "Merged" in result.output
+        assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "rebase"
+
+
+class TestPrComment:
+    def test_pr_comment(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(main, ["pr", "comment", "42", "--body", "hi"])
+        assert result.exit_code == 0
+        assert "123" in result.output
+
+
+class TestPrReview:
+    def test_pr_review_approve(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"number": 42}
+        result = runner.invoke(main, ["pr", "review", "42", "--approve"])
+        assert result.exit_code == 0
+        assert "Reviewed pull request #42" in result.output
+
+    def test_pr_review_no_approve(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "review", "42"])
+        assert result.exit_code != 0
+        assert "Only --approve is currently supported" in result.output
+
+
+class TestPrReopen:
+    def test_pr_reopen(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42}
+        result = runner.invoke(main, ["pr", "reopen", "42"])
+        assert result.exit_code == 0
+        assert "Reopened pull request #42" in result.output
+
+
+class TestPrEdit:
+    def test_pr_edit(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42}
+        result = runner.invoke(main, ["pr", "edit", "42", "-t", "New", "-B", "develop"])
+        assert result.exit_code == 0
+        assert "Edited pull request #42" in result.output
+        assert mock_client.patch.call_args.kwargs["json"]["title"] == "New"
+        assert mock_client.patch.call_args.kwargs["json"]["base"] == "develop"
+
+
+class TestPrStatus:
+    def test_pr_status(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "state": "open", "title": "First PR"},
+        ]
+        result = runner.invoke(main, ["pr", "status"])
+        assert result.exit_code == 0
+        assert "Relevant pull requests in this repository:" in result.output
+        assert "#1\topen\tFirst PR" in result.output
+
+
+class TestPrDiff:
+    def test_pr_diff(self, runner, mock_client, mock_repo):
+        mock_client.request.return_value = "diff text"
+        result = runner.invoke(main, ["pr", "diff", "42"])
+        assert result.exit_code == 0
+        assert "diff text" in result.output
+
+
+class TestPrCheckout:
+    def test_pr_checkout(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code == 0
+            assert "Checked out branch feature-branch" in result.output
+            assert mock_run.call_count == 2
+            mock_run.assert_any_call(
+                ["git", "fetch", "origin", "feature-branch"],
+                check=True,
+            )
+            mock_run.assert_any_call(
+                ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
+                check=True,
+            )
+
+
+class TestPrReady:
+    def test_pr_ready(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42}
+        result = runner.invoke(main, ["pr", "ready", "42"])
+        assert result.exit_code == 0
+        assert "Marked pull request #42 as ready for review" in result.output
+
+
+class TestPrCreateEdgeCases:
+    def test_create_no_head_detect_fails(self, runner, mock_client, mock_repo, monkeypatch):
+        from gitcode_cli import commands
+
+        monkeypatch.setattr(commands.pr, "get_current_git_branch", lambda: None)
+        result = runner.invoke(main, ["pr", "create", "-t", "T", "-B", "master"])
+        assert result.exit_code != 0
+        assert "Unable to detect current branch" in result.output
+
+    def test_create_web(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["pr", "create", "-t", "T", "-B", "master", "-H", "feature", "-w"])
+            assert result.exit_code == 0
+            mock_browser.assert_called_once()
+
+
+class TestPrCloseEdgeCases:
+    def test_close_delete_branch_no_ref(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42, "head": {}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            result = runner.invoke(main, ["pr", "close", "42", "-d"])
+            assert result.exit_code == 0
+            assert "Warning: could not determine branch to delete" in result.output
+            mock_run.assert_not_called()
+
+    def test_close_delete_branch_git_fails(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_run.side_effect = Exception("git failed")
+            result = runner.invoke(main, ["pr", "close", "42", "-d"])
+            assert result.exit_code == 0
+            assert "Warning: could not delete branch" in result.output
+
+
+class TestPrReviewEdgeCases:
+    def test_review_no_approve(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "review", "42"])
+        assert result.exit_code != 0
+        assert "Only --approve is currently supported" in result.output
+
+
+class TestPrCheckoutEdgeCases:
+    def test_checkout_no_head_ref(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "head": {}}
+        result = runner.invoke(main, ["pr", "checkout", "42"])
+        assert result.exit_code != 0
+        assert "Unable to determine PR branch" in result.output
+
+    def test_checkout_git_fails(self, runner, mock_client, mock_repo):
+        import subprocess
+
+        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(),
+                subprocess.CalledProcessError(1, ["git", "checkout"]),
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code != 0
+            assert "Git checkout failed" in result.output

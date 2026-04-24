@@ -8,6 +8,11 @@ from ..services import IssueService
 from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg
 
 
+def _echo_issue_summary(items: list[dict]) -> None:
+    for item in items:
+        click.echo(f"#{item['number']}\t{item['state']}\t{item['title']}")
+
+
 @click.group("issue")
 def issue_group() -> None:
     pass
@@ -49,9 +54,7 @@ def issue_list(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: [
-            click.echo(f"#{item['number']}\t{item['state']}\t{item['title']}") for item in data
-        ],
+        default_formatter=_echo_issue_summary,
     )
 
 
@@ -120,16 +123,16 @@ def issue_create(
     jq_query: str | None,
     template: str | None,
 ) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
+        return
     title = prompt_if_missing(title, "Title")
     if body_file:
         body = read_body_file(body_file)
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
     item = service.create(owner, repo, title=title, body=body, assignee=assignee, labels=labels, milestone=milestone)
-    if web:
-        open_in_browser(item["html_url"])
-        return
     output_result(
         item,
         json_fields,
@@ -210,8 +213,8 @@ def issue_edit(
     body: str | None,
     add_assignee: str | None,
     add_label: str | None,
-    remove_assignee: str | None,  # noqa: ARG001
-    remove_label: str | None,  # noqa: ARG001
+    remove_assignee: str | None,
+    remove_label: str | None,
 ) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
@@ -228,9 +231,13 @@ def issue_edit(
             "body": body,
             "assignee": add_assignee,
             "labels": add_label,
+            "unassignee": remove_assignee,
+            "unset_labels": remove_label,
         }.items()
         if v is not None
     }
+    if not data:
+        raise click.UsageError("must specify at least one field to edit")
     item = service.update(owner, repo, number, **data)
     click.echo(f"Edited issue #{item['number']}")
 
@@ -260,9 +267,9 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    # NOTE: GitCode API filter support is uncertain; list open issues as fallback
     items = service.list(owner, repo, state="open")
-    click.echo("Relevant issues in this repository:")
+    click.echo("GitCode-limited approximation of gh issue status")
+    click.echo(f"Repository open issues for {owner}/{repo}:")
     for item in items:
         click.echo(f"  #{item['number']}\t{item['state']}\t{item['title']}")
 

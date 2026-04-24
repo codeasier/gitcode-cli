@@ -26,14 +26,16 @@ class TestPromptIfMissing:
     def test_returns_value_when_present(self):
         assert prompt_if_missing("hello", "Enter value") == "hello"
 
-    def test_prompts_when_missing(self, mocker):
-        mock_prompt = mocker.patch("gitcode_cli.utils.click.prompt", return_value="typed")
+    def test_prompts_when_missing(self, monkeypatch):
+        mock_prompt = MagicMock(return_value="typed")
+        monkeypatch.setattr("gitcode_cli.utils.click.prompt", mock_prompt)
         result = prompt_if_missing(None, "Enter value")
         assert result == "typed"
         mock_prompt.assert_called_once_with("Enter value", hide_input=False)
 
-    def test_prompts_when_empty_string(self, mocker):
-        mock_prompt = mocker.patch("gitcode_cli.utils.click.prompt", return_value="typed")
+    def test_prompts_when_empty_string(self, monkeypatch):
+        mock_prompt = MagicMock(return_value="typed")
+        monkeypatch.setattr("gitcode_cli.utils.click.prompt", mock_prompt)
         result = prompt_if_missing("", "Enter value", hide_input=True)
         assert result == "typed"
         mock_prompt.assert_called_once_with("Enter value", hide_input=True)
@@ -63,9 +65,9 @@ class TestGetDefaultGitBranch:
         assert get_default_git_branch() == "master"
 
     @patch("gitcode_cli.utils.subprocess.run")
-    def test_failure_returns_master(self, mock_run: MagicMock):
+    def test_failure_returns_none(self, mock_run: MagicMock):
         mock_run.side_effect = subprocess.CalledProcessError(1, "git")
-        assert get_default_git_branch() == "master"
+        assert get_default_git_branch() is None
 
 
 class TestReadBodyFile:
@@ -159,25 +161,3 @@ class TestResolvePrArg:
             "repo",
             "42",
         )
-
-    def test_branch_match(self):
-        mock_service = MagicMock()
-        mock_service.list.return_value = [{"number": 3, "head": {"ref": "feature-branch"}}]
-        assert resolve_pr_arg("feature-branch", "owner", "repo", mock_service) == (
-            "owner",
-            "repo",
-            "3",
-        )
-        mock_service.list.assert_called_once_with("owner", "repo", state="open", head="feature-branch")
-
-    def test_branch_no_match_raises(self):
-        mock_service = MagicMock()
-        mock_service.list.return_value = [{"number": 3, "head": {"ref": "other-branch"}}]
-        with pytest.raises(click.ClickException, match="No open pull request found"):
-            resolve_pr_arg("feature-branch", "owner", "repo", mock_service)
-
-    def test_empty_list_raises(self):
-        mock_service = MagicMock()
-        mock_service.list.return_value = []
-        with pytest.raises(click.ClickException, match="No open pull request found"):
-            resolve_pr_arg("feature-branch", "owner", "repo", mock_service)

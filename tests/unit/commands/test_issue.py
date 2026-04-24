@@ -146,6 +146,13 @@ class TestIssueCreate:
             assert result.exit_code == 0
             mock_browser.assert_called_once()
 
+    def test_web_opens_create_page_without_post(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "create", "-t", "T", "--web"])
+        assert result.exit_code == 0
+        mock_client.post.assert_not_called()
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/new")
+
     def test_alias_new(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "new", "-t", "T"])
         assert result.exit_code == 0
@@ -217,6 +224,12 @@ class TestIssueEdit:
         assert json_data["assignee"] == "user"
         assert json_data["labels"] == "bug"
 
+    def test_rejects_empty_edit(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42"])
+        assert result.exit_code != 0
+        assert "must specify at least one field to edit" in result.output
+        mock_client.patch.assert_not_called()
+
     def test_url(self, runner, mock_client):
         result = runner.invoke(main, ["issue", "edit", "https://gitcode.com/owner/repo/issues/42", "-t", "New"])
         assert result.exit_code == 0
@@ -239,5 +252,18 @@ class TestIssueStatus:
         mock_client.get.return_value = [{"number": "1", "state": "open", "title": "T"}]
         result = runner.invoke(main, ["issue", "status"])
         assert result.exit_code == 0
-        assert "Relevant issues" in result.output
+        assert "GitCode-limited approximation" in result.output
+        assert "Repository open issues" in result.output
         mock_client.get.assert_called_once()
+
+    def test_lists_repository_open_issues_with_limited_wording(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": "1", "state": "open", "title": "Mine", "author": {"login": "alice"}, "assignee": {"login": "alice"}},
+            {"number": "2", "state": "open", "title": "Other", "author": {"login": "bob"}},
+        ]
+        result = runner.invoke(main, ["issue", "status"])
+        assert result.exit_code == 0
+        assert "GitCode-limited approximation" in result.output
+        assert "Repository open issues" in result.output
+        assert "#1" in result.output
+        assert "#2" in result.output

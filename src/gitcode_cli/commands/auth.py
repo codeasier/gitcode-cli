@@ -11,9 +11,13 @@ def auth_group() -> None:
 
 
 @auth_group.command("login")
-@click.option("--with-token", is_flag=True, help="Read token from stdin is not implemented; prompt instead.")
+@click.option("--with-token", is_flag=True, help="Read token from stdin.")
 def auth_login(with_token: bool) -> None:
-    _ = with_token
-    token = click.prompt("GitCode token", hide_input=True)
+    if with_token:
+        token = click.get_text_stream("stdin").read().strip()
+        if not token:
+            raise click.ClickException("No token provided on stdin.")
+    else:
+        token = click.prompt("GitCode token", hide_input=True)
     save_config({"token": token})
     click.echo("Authentication saved.")

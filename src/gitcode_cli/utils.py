@@ -34,7 +34,7 @@ def get_current_git_branch() -> str | None:
 
 
 def get_default_git_branch() -> str | None:
-    """Try to get remote default branch (e.g., origin/HEAD), fallback to 'master'."""
+    """Try to get remote default branch (e.g., origin/HEAD), return None on failure."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
@@ -47,7 +47,7 @@ def get_default_git_branch() -> str | None:
             return branch[len("origin/") :]
         return branch
     except subprocess.CalledProcessError:
-        return "master"
+        return None
 
 
 def read_body_file(path: str) -> str:

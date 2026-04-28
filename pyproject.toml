@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygitcode"
-version = "0.1.1"
+dynamic = ["version"]
 description = "A CLI tool for GitCode (api.gitcode.com), modeled after GitHub CLI."
 readme = "README.md"
 license = "MIT"
@@ -57,6 +57,9 @@ gitcode = "gitcode_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "gitcode_cli.__version__"}
 
 # --- pytest ---
 [tool.pytest.ini_options]

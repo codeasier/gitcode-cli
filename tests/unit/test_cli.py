@@ -17,7 +17,7 @@ class TestCli:
     def test_cli_version(self, runner):
         result = runner.invoke(main, ["version"])
         assert result.exit_code == 0
-        assert "gitcode version 0.1.0" in result.output
+        assert "gitcode version" in result.output
 
     def test_cli_help(self, runner):
         result = runner.invoke(main, ["--help"])

@@ -16,6 +16,7 @@ from gitcode_cli.utils import (
     read_body_file,
     resolve_issue_arg,
     resolve_pr_arg,
+    safe_number,
 )
 
 
@@ -158,3 +159,41 @@ class TestResolvePrArg:
             "repo",
             "42",
         )
+
+
+class TestSafeNumber:
+    def test_returns_number_when_present(self):
+        assert safe_number({"number": 42, "iid": 1}, 99) == 42
+
+    def test_returns_iid_when_number_missing(self):
+        assert safe_number({"iid": 1}, 99) == 1
+
+    def test_returns_fallback_when_both_missing(self):
+        assert safe_number({"state": "closed"}, 42) == 42
+
+    def test_returns_fallback_when_empty_dict(self):
+        assert safe_number({}, 42) == 42
+
+    def test_prefers_number_over_iid(self):
+        assert safe_number({"number": 10, "iid": 20}, 99) == 10
+
+    def test_string_fallback(self):
+        assert safe_number({}, "?") == "?"
+
+    def test_number_zero_is_not_falsy(self):
+        assert safe_number({"number": 0, "iid": 5}, 99) == 0
+
+    def test_iid_zero_is_not_falsy(self):
+        assert safe_number({"iid": 0}, 99) == 0
+
+    def test_number_none_falls_through_to_iid(self):
+        assert safe_number({"number": None, "iid": 7}, 99) == 7
+
+    def test_both_none_returns_fallback(self):
+        assert safe_number({"number": None, "iid": None}, 99) == 99
+
+    def test_non_dict_item_returns_fallback(self):
+        assert safe_number(None, 42) == 42
+
+    def test_string_item_returns_fallback(self):
+        assert safe_number("not a dict", 42) == 42

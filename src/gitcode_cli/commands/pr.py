@@ -15,7 +15,14 @@ from ..cli_compat import (
 from ..formatters import format_pr_detail, format_pr_list, output_result
 from ..repo import resolve_repo
 from ..services import PullRequestService
-from ..utils import get_current_git_branch, open_in_browser, prompt_if_missing, read_body_file, resolve_pr_arg
+from ..utils import (
+    get_current_git_branch,
+    open_in_browser,
+    prompt_if_missing,
+    read_body_file,
+    resolve_pr_arg,
+    safe_number,
+)
 
 
 @click.group("pr")
@@ -281,7 +288,7 @@ def pr_close(
                 click.echo("Warning: could not determine branch to delete.", err=True)
         except Exception as exc:
             click.echo(f"Warning: could not delete remote branch: {exc}", err=True)
-    click.echo(f"Closed pull request #{item['number']}")
+    click.echo(f"Closed pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("merge")
@@ -416,7 +423,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     item = service.update(owner, repo, number, state="open")
-    click.echo(f"Reopened pull request #{item['number']}")
+    click.echo(f"Reopened pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("edit")
@@ -481,7 +488,7 @@ def pr_edit(
     if not data:
         raise click.UsageError("must specify at least one field to edit")
     item = service.update(owner, repo, number, **data)
-    click.echo(f"Edited pull request #{item['number']}")
+    click.echo(f"Edited pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("diff")
@@ -535,9 +542,9 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     item = service.update(owner, repo, int(number), draft=undo)
     if undo:
-        click.echo(f"Converted pull request #{item['number']} to draft")
+        click.echo(f"Converted pull request #{safe_number(item, number)} to draft")
     else:
-        click.echo(f"Marked pull request #{item['number']} as ready for review")
+        click.echo(f"Marked pull request #{safe_number(item, number)} as ready for review")
 
 
 @pr_group.command("status")
@@ -553,7 +560,7 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     )
     if items:
         for item in items:
-            click.echo(f"  #{item['number']}\t{item['state']}\t{item['title']}")
+            click.echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
     else:
         click.echo("  No open pull requests")
 

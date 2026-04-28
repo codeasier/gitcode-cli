@@ -4,7 +4,7 @@ import re
 import subprocess
 import webbrowser
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -58,6 +58,15 @@ def read_body_file(path: str) -> str:
 def open_in_browser(url: str) -> None:
     """Open URL in default browser."""
     webbrowser.open(url)
+
+
+def safe_number(item: Any, fallback: int | str) -> int | str:
+    if isinstance(item, dict):
+        if "number" in item and item["number"] is not None:
+            return item["number"]
+        if "iid" in item and item["iid"] is not None:
+            return item["iid"]
+    return fallback
 
 
 # --- Issue / PR identifier resolvers ---

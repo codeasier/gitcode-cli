@@ -13,7 +13,7 @@ from .errors import GCError
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version=__version__, prog_name="gc")
-@click.option("--repo", "repo_name", "-R", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("--repo", "repo_name", "-R", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("--token", hidden=True, help="Override authentication token.")
 @click.pass_context
 def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:

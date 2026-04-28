@@ -24,7 +24,7 @@ def pr_group() -> None:
 
 
 @pr_group.command("list")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("-s", "--state")
 @click.option("-A", "--author")
 @click.option("-B", "--base")
@@ -93,7 +93,7 @@ def pr_list(
 
 
 @pr_group.command("view")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
@@ -129,7 +129,7 @@ def pr_view(
 
 
 @pr_group.command("create")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
@@ -228,7 +228,7 @@ def pr_create(
 
 
 @pr_group.command("close")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-c", "--comment")
 @click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after closing.")
@@ -259,7 +259,7 @@ def pr_close(
 
 
 @pr_group.command("merge")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-m", "--merge", "merge_mode", flag_value="merge")
 @click.option("-s", "--squash", "merge_mode", flag_value="squash")
@@ -277,7 +277,7 @@ def pr_merge(ctx: click.Context, repo_name: str | None, identifier: str | None, 
 
 
 @pr_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
 @click.option("--path")
@@ -303,7 +303,7 @@ def pr_comment(
 
 
 @pr_group.command("review")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
 @click.option("--body")
@@ -350,7 +350,7 @@ def pr_review(
 
 
 @pr_group.command("reopen")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.pass_context
 def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
@@ -365,7 +365,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
 
 
 @pr_group.command("edit")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-t", "--title")
 @click.option("-b", "--body")
@@ -419,7 +419,7 @@ def pr_edit(
 
 
 @pr_group.command("diff")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.pass_context
 def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
@@ -433,7 +433,7 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -
 
 
 @pr_group.command("checkout")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
 @click.pass_context
@@ -457,7 +457,7 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
 
 
 @pr_group.command("ready")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("--undo", is_flag=True, help="Convert a pull request to draft.")
 @click.pass_context
@@ -475,7 +475,7 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
 
 
 @pr_group.command("status")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.pass_context
 def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]

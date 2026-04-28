@@ -246,7 +246,9 @@ def pr_create(
         jq_query,
         template,
         default_formatter=lambda data: click.echo(
-            data.get("html_url") or data.get("url") or f"Created PR #{data.get('number', '?')}"
+            data.get("html_url")
+            or data.get("url")
+            or (f"Created PR #{data['number']}" if "number" in data else "Created pull request")
         ),
     )
 

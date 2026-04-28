@@ -661,3 +661,12 @@ class TestPrCreateMissingHtmlUrl:
         )
         assert result.exit_code == 0
         assert "https://example.com/42" in result.output
+
+    def test_pr_create_missing_all_url_fields_falls_back_to_generic_message(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"title": "Test"}
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "Created pull request" in result.output

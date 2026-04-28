@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" },
+    { name = "codeasier", email = "825770651@qq.com" },
 ]
 keywords = ["gitcode", "cli", "git", "api", "vcs", "developer-tools"]
 classifiers = [

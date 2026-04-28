@@ -179,3 +179,21 @@ class TestSafeNumber:
 
     def test_string_fallback(self):
         assert safe_number({}, "?") == "?"
+
+    def test_number_zero_is_not_falsy(self):
+        assert safe_number({"number": 0, "iid": 5}, 99) == 0
+
+    def test_iid_zero_is_not_falsy(self):
+        assert safe_number({"iid": 0}, 99) == 0
+
+    def test_number_none_falls_through_to_iid(self):
+        assert safe_number({"number": None, "iid": 7}, 99) == 7
+
+    def test_both_none_returns_fallback(self):
+        assert safe_number({"number": None, "iid": None}, 99) == 99
+
+    def test_non_dict_item_returns_fallback(self):
+        assert safe_number(None, 42) == 42
+
+    def test_string_item_returns_fallback(self):
+        assert safe_number("not a dict", 42) == 42

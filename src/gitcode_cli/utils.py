@@ -61,7 +61,12 @@ def open_in_browser(url: str) -> None:
 
 
 def safe_number(item: Any, fallback: int | str) -> int | str:
-    return (item or {}).get("number") or (item or {}).get("iid") or fallback
+    if isinstance(item, dict):
+        if "number" in item and item["number"] is not None:
+            return item["number"]
+        if "iid" in item and item["iid"] is not None:
+            return item["iid"]
+    return fallback
 
 
 # --- Issue / PR identifier resolvers ---

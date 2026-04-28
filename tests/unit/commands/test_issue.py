@@ -269,6 +269,18 @@ class TestIssueClose:
         assert result.exit_code == 0
         mock_client.patch.assert_called_once()
 
+    def test_close_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42"])
+        assert result.exit_code == 0
+        assert "Closed issue #42" in result.output
+
+    def test_close_without_number_or_iid_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42"])
+        assert result.exit_code == 0
+        assert "Closed issue #42" in result.output
+
 
 class TestIssueComment:
     def test_default(self, runner, mock_client, mock_repo):
@@ -317,6 +329,12 @@ class TestIssueReopen:
         result = runner.invoke(main, ["issue", "reopen", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
 
+    def test_reopen_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": "42", "state": "open"}
+        result = runner.invoke(main, ["issue", "reopen", "42"])
+        assert result.exit_code == 0
+        assert "Reopened issue #42" in result.output
+
 
 class TestIssueEdit:
     def test_default(self, runner, mock_client, mock_repo):
@@ -343,6 +361,12 @@ class TestIssueEdit:
     def test_url(self, runner, mock_client):
         result = runner.invoke(main, ["issue", "edit", "https://gitcode.com/owner/repo/issues/42", "-t", "New"])
         assert result.exit_code == 0
+
+    def test_edit_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": "42", "title": "New"}
+        result = runner.invoke(main, ["issue", "edit", "42", "-t", "New"])
+        assert result.exit_code == 0
+        assert "Edited issue #42" in result.output
 
 
 class TestIssueDelete:

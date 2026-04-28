@@ -16,8 +16,10 @@ from .utils import safe_echo
 
 
 def _configure_stdout_encoding() -> None:
+    if sys.platform != "win32":
+        return
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
+        if hasattr(stream, "reconfigure") and stream.isatty():
             with contextlib.suppress(Exception):
                 stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 

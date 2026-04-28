@@ -93,22 +93,54 @@ class TestCli:
 
 
 class TestConfigureStdoutEncoding:
-    def test_reconfigure_called_on_streams_with_reconfigure(self, monkeypatch):
+    def test_reconfigure_called_on_win32_tty(self, monkeypatch):
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.reconfigure = MagicMock()
+        mock_stderr.reconfigure = MagicMock()
+        mock_stdout.isatty = MagicMock(return_value=True)
+        mock_stderr.isatty = MagicMock(return_value=True)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        monkeypatch.setattr("gitcode_cli.cli.sys.platform", "win32")
+        _configure_stdout_encoding()
+        mock_stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        mock_stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+    def test_not_called_on_non_win32(self, monkeypatch):
         mock_stdout = MagicMock()
         mock_stderr = MagicMock()
         mock_stdout.reconfigure = MagicMock()
         mock_stderr.reconfigure = MagicMock()
         monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
         monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        monkeypatch.setattr("gitcode_cli.cli.sys.platform", "darwin")
         _configure_stdout_encoding()
-        mock_stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
-        mock_stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        mock_stdout.reconfigure.assert_not_called()
+        mock_stderr.reconfigure.assert_not_called()
 
-    def test_reconfigure_not_called_on_streams_without_reconfigure(self, monkeypatch):
-        mock_stdout = MagicMock(spec=[])
-        mock_stderr = MagicMock(spec=[])
+    def test_not_called_on_non_tty(self, monkeypatch):
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.reconfigure = MagicMock()
+        mock_stderr.reconfigure = MagicMock()
+        mock_stdout.isatty = MagicMock(return_value=False)
+        mock_stderr.isatty = MagicMock(return_value=False)
         monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
         monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        monkeypatch.setattr("gitcode_cli.cli.sys.platform", "win32")
+        _configure_stdout_encoding()
+        mock_stdout.reconfigure.assert_not_called()
+        mock_stderr.reconfigure.assert_not_called()
+
+    def test_reconfigure_not_called_on_streams_without_reconfigure(self, monkeypatch):
+        mock_stdout = MagicMock(spec=["isatty"])
+        mock_stderr = MagicMock(spec=["isatty"])
+        mock_stdout.isatty = MagicMock(return_value=True)
+        mock_stderr.isatty = MagicMock(return_value=True)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        monkeypatch.setattr("gitcode_cli.cli.sys.platform", "win32")
         _configure_stdout_encoding()
 
     def test_reconfigure_exception_does_not_crash(self, monkeypatch):
@@ -116,6 +148,9 @@ class TestConfigureStdoutEncoding:
         mock_stderr = MagicMock()
         mock_stdout.reconfigure = MagicMock(side_effect=RuntimeError("not supported"))
         mock_stderr.reconfigure = MagicMock(side_effect=RuntimeError("not supported"))
+        mock_stdout.isatty = MagicMock(return_value=True)
+        mock_stderr.isatty = MagicMock(return_value=True)
         monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
         monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        monkeypatch.setattr("gitcode_cli.cli.sys.platform", "win32")
         _configure_stdout_encoding()

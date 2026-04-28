@@ -201,3 +201,23 @@ class TestSafeEcho:
         safe_echo("📚 Hello")
         assert len(calls) == 1
         assert "Hello" in calls[0]
+
+    def test_fallback_on_unicode_encode_error_stderr(self, monkeypatch):
+        import gitcode_cli.utils as utils_mod
+
+        calls = []
+        original_echo = utils_mod.click.echo
+        call_count = [0]
+
+        def mock_echo_that_raises_once(message, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1 and "📚" in str(message):
+                raise UnicodeEncodeError("gbk", "📚", 0, 1, "illegal multibyte sequence")
+            calls.append(str(message))
+            original_echo(message, **kwargs)
+
+        monkeypatch.setattr(utils_mod.click, "echo", mock_echo_that_raises_once)
+        monkeypatch.setattr(utils_mod.sys, "stderr.encoding", "gbk", raising=False)
+        safe_echo("📚 Warning", err=True)
+        assert len(calls) == 1
+        assert "Warning" in calls[0]

@@ -123,6 +123,7 @@ def safe_echo(message: str | None = None, err: bool = False) -> None:
     try:
         click.echo(message, err=err)
     except UnicodeEncodeError:
-        encoding = sys.stdout.encoding or "utf-8"
+        stream = sys.stderr if err else sys.stdout
+        encoding = stream.encoding or "utf-8"
         encoded = (message or "").encode(encoding, errors="replace").decode(encoding, errors="replace")
         click.echo(encoded, err=err)

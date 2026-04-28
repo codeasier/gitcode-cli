@@ -7,6 +7,8 @@ import subprocess
 
 import click
 
+from .utils import safe_echo
+
 
 def dump_json(data, fields: list[str] | None = None) -> str:
     if fields:
@@ -147,17 +149,17 @@ def render_template(data, template: str) -> str:
 def output_result(data, json_fields: str | None, jq_query: str | None, template: str | None, default_formatter):
     if jq_query:
         data = apply_jq(data, jq_query)
-        click.echo(dump_json(data))
+        safe_echo(dump_json(data))
         return
     if json_fields:
         fields = [f.strip() for f in json_fields.split(",")]
-        click.echo(dump_json(data, fields=fields))
+        safe_echo(dump_json(data, fields=fields))
         return
     if template:
         if isinstance(data, list):
             for item in data:
-                click.echo(render_template(item, template))
+                safe_echo(render_template(item, template))
         else:
-            click.echo(render_template(data, template))
+            safe_echo(render_template(data, template))
         return
     default_formatter(data)

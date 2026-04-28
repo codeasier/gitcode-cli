@@ -16,6 +16,7 @@ from gitcode_cli.utils import (
     read_body_file,
     resolve_issue_arg,
     resolve_pr_arg,
+    safe_echo,
 )
 
 
@@ -158,3 +159,45 @@ class TestResolvePrArg:
             "repo",
             "42",
         )
+
+
+class TestSafeEcho:
+    def test_normal_ascii(self, capsys):
+        safe_echo("Hello World")
+        captured = capsys.readouterr()
+        assert captured.out == "Hello World\n"
+
+    def test_unicode_text(self, capsys):
+        safe_echo("中文测试")
+        captured = capsys.readouterr()
+        assert captured.out == "中文测试\n"
+
+    def test_emoji_text(self, capsys):
+        safe_echo("📚 Hello")
+        captured = capsys.readouterr()
+        assert "Hello" in captured.out
+
+    def test_none_message(self, capsys):
+        safe_echo(None)
+        captured = capsys.readouterr()
+        assert captured.out == "\n"
+
+    def test_fallback_on_unicode_encode_error(self, monkeypatch):
+        import gitcode_cli.utils as utils_mod
+
+        calls = []
+        original_echo = utils_mod.click.echo
+        call_count = [0]
+
+        def mock_echo_that_raises_once(message, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1 and "📚" in str(message):
+                raise UnicodeEncodeError("gbk", "📚", 0, 1, "illegal multibyte sequence")
+            calls.append(str(message))
+            original_echo(message, **kwargs)
+
+        monkeypatch.setattr(utils_mod.click, "echo", mock_echo_that_raises_once)
+        monkeypatch.setattr(utils_mod.sys, "stdout.encoding", "gbk", raising=False)
+        safe_echo("📚 Hello")
+        assert len(calls) == 1
+        assert "Hello" in calls[0]

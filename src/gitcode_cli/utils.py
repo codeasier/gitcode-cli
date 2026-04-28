@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -116,3 +117,12 @@ def resolve_pr_arg(identifier: str, owner: str, repo: str, service: PullRequestS
             return owner, repo, str(item["number"])
 
     raise click.ClickException(f"No open pull request found for branch '{identifier}'.")
+
+
+def safe_echo(message: str | None = None, err: bool = False) -> None:
+    try:
+        click.echo(message, err=err)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        encoded = (message or "").encode(encoding, errors="replace").decode(encoding, errors="replace")
+        click.echo(encoded, err=err)

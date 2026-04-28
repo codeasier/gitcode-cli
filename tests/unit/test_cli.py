@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
-from gitcode_cli.cli import main
+from gitcode_cli.cli import _configure_stdout_encoding, main
 
 
 @pytest.fixture
@@ -90,3 +90,32 @@ class TestCli:
             # Re-execute the module-level code by reloading
             importlib.reload(cli_mod)
             assert cli_mod.main is not None
+
+
+class TestConfigureStdoutEncoding:
+    def test_reconfigure_called_on_streams_with_reconfigure(self, monkeypatch):
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.reconfigure = MagicMock()
+        mock_stderr.reconfigure = MagicMock()
+        monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        _configure_stdout_encoding()
+        mock_stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        mock_stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+    def test_reconfigure_not_called_on_streams_without_reconfigure(self, monkeypatch):
+        mock_stdout = MagicMock(spec=[])
+        mock_stderr = MagicMock(spec=[])
+        monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        _configure_stdout_encoding()
+
+    def test_reconfigure_exception_does_not_crash(self, monkeypatch):
+        mock_stdout = MagicMock()
+        mock_stderr = MagicMock()
+        mock_stdout.reconfigure = MagicMock(side_effect=RuntimeError("not supported"))
+        mock_stderr.reconfigure = MagicMock(side_effect=RuntimeError("not supported"))
+        monkeypatch.setattr("gitcode_cli.cli.sys.stdout", mock_stdout)
+        monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
+        _configure_stdout_encoding()

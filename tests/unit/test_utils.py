@@ -6,9 +6,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import click
-import pytest
-
 from gitcode_cli.utils import (
     get_current_git_branch,
     get_default_git_branch,

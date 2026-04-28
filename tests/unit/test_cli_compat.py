@@ -70,19 +70,15 @@ class TestNormalizeMultiValues:
 
 class TestResolvePrIdentifierOrCurrentBranch:
     def test_returns_explicit_identifier(self):
-        service = MagicMock()
-
         assert resolve_pr_identifier_or_current_branch("42") == "42"
 
     def test_uses_current_branch_when_identifier_is_omitted(self, monkeypatch):
         monkeypatch.setattr("gitcode_cli.cli_compat.get_current_git_branch", lambda: "feature/test")
-        service = MagicMock()
 
         assert resolve_pr_identifier_or_current_branch(None) == "feature/test"
 
     def test_raises_when_current_branch_cannot_be_detected(self, monkeypatch):
         monkeypatch.setattr("gitcode_cli.cli_compat.get_current_git_branch", lambda: None)
-        service = MagicMock()
 
         with pytest.raises(click.ClickException, match="Unable to detect current branch"):
             resolve_pr_identifier_or_current_branch(None)

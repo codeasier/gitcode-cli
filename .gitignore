@@ -1,7 +1,40 @@
-.worktrees/
+# Python
 __pycache__/
 *.py[cod]
-.coverage
-htmlcov/
+*.pyo
+*.egg-info/
+*.egg
 dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Linting / Type checking
+.ruff_cache/
+.mypy_cache/
+.basedpyright/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+.worktrees/
+.features/
 .claude/

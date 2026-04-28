@@ -140,7 +140,6 @@ class TestPrList:
         assert result.exit_code == 0
         assert "#1\topen\tFirst PR" in result.output
 
-
     def test_pr_list_help_shows_default_limit(self, runner):
         result = runner.invoke(main, ["pr", "list", "--help"])
         assert result.exit_code == 0
@@ -170,7 +169,9 @@ class TestPrList:
             [{"number": 42, "head": {"ref": "feature-branch"}, "title": "Branch PR"}],
             {"number": 42, "title": "Branch PR", "body": "Body text"},
         ]
-        with patch("gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="feature-branch") as mock_resolver:
+        with patch(
+            "gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="feature-branch"
+        ) as mock_resolver:
             result = runner.invoke(main, ["pr", "view"])
         assert result.exit_code == 0
         assert "#42 Branch PR" in result.output
@@ -249,7 +250,9 @@ class TestPrCreate:
 
     def test_pr_create_editor_uses_body_helper_with_editor(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.get_body_from_options", return_value="resolved body") as mock_body:
-            result = runner.invoke(main, ["pr", "create", "--title", "Test", "--head", "feature", "--base", "main", "--editor"])
+            result = runner.invoke(
+                main, ["pr", "create", "--title", "Test", "--head", "feature", "--base", "main", "--editor"]
+            )
         assert result.exit_code == 0
         assert mock_body.call_args == call(body=None, body_file=None, editor=True)
         assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
@@ -382,6 +385,8 @@ class TestPrClose:
         assert result.exit_code == 0
         assert "Delete the remote branch after closing." in result.output
         assert "Delete the local and remote branch after closing." not in result.output
+
+
 class TestPrMerge:
     def test_pr_merge(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42"])
@@ -390,7 +395,9 @@ class TestPrMerge:
         assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "merge"
 
     def test_pr_merge_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42") as mock_resolver:
+        with patch(
+            "gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42"
+        ) as mock_resolver:
             result = runner.invoke(main, ["pr", "merge"])
         assert result.exit_code == 0
         assert "Merged" in result.output
@@ -418,7 +425,9 @@ class TestPrComment:
 
     def test_pr_comment_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
-        with patch("gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42") as mock_resolver:
+        with patch(
+            "gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42"
+        ) as mock_resolver:
             result = runner.invoke(main, ["pr", "comment", "--body", "hi"])
         assert result.exit_code == 0
         assert "123" in result.output
@@ -426,7 +435,9 @@ class TestPrComment:
 
 
 class TestPrReview:
-    def test_pr_review_approve_uses_requested_pr_number_when_review_response_lacks_number(self, runner, mock_client, mock_repo):
+    def test_pr_review_approve_uses_requested_pr_number_when_review_response_lacks_number(
+        self, runner, mock_client, mock_repo
+    ):
         mock_client.post.return_value = {"id": 987, "body": "approved"}
         result = runner.invoke(main, ["pr", "review", "42", "--approve"])
         assert result.exit_code == 0
@@ -434,7 +445,9 @@ class TestPrReview:
 
     def test_pr_review_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 987, "body": "approved"}
-        with patch("gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42") as mock_resolver:
+        with patch(
+            "gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42"
+        ) as mock_resolver:
             result = runner.invoke(main, ["pr", "review", "--approve"])
         assert result.exit_code == 0
         assert "Reviewed pull request #42" in result.output
@@ -444,7 +457,10 @@ class TestPrReview:
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
         assert result.exit_code == 0
-        assert "GitCode review API does not support comment reviews; posted a pull request comment instead." in result.output
+        assert (
+            "GitCode review API does not support comment reviews; posted a pull request comment instead."
+            in result.output
+        )
         assert "Posted pull request comment 123" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1
@@ -454,7 +470,10 @@ class TestPrReview:
         mock_client.post.return_value = {"id": 456}
         result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
         assert result.exit_code == 0
-        assert "GitCode review API does not support request-changes reviews; posted a pull request comment instead." in result.output
+        assert (
+            "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
+            in result.output
+        )
         assert "Posted pull request comment 456" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1

@@ -483,8 +483,7 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     service = PullRequestService(app.client())
     items = service.list(owner, repo, state="open")
     click.echo(
-        f"Open pull requests in {owner}/{repo}  "
-        "(GitCode API approximation -- user-specific filtering is not available)"
+        f"Open pull requests in {owner}/{repo}  (GitCode API approximation -- user-specific filtering is not available)"
     )
     if items:
         for item in items:

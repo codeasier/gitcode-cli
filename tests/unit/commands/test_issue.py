@@ -125,7 +125,6 @@ class TestIssueList:
         assert result.exit_code == 0
         assert "#1" in result.output
 
-
     def test_list_help_shows_default_limit(self, runner):
         result = runner.invoke(main, ["issue", "list", "--help"])
         assert result.exit_code == 0
@@ -188,7 +187,6 @@ class TestIssueView:
             (("/repos/owner/repo/issues/42",),),
             (("/repos/owner/repo/issues/42/comments",),),
         ]
-
 
     def test_comments_default_keeps_metadata_and_comments(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
@@ -370,7 +368,13 @@ class TestIssueStatus:
 
     def test_lists_repository_open_issues_with_limited_wording(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
-            {"number": "1", "state": "open", "title": "Mine", "author": {"login": "alice"}, "assignee": {"login": "alice"}},
+            {
+                "number": "1",
+                "state": "open",
+                "title": "Mine",
+                "author": {"login": "alice"},
+                "assignee": {"login": "alice"},
+            },
             {"number": "2", "state": "open", "title": "Other", "author": {"login": "bob"}},
         ]
         result = runner.invoke(main, ["issue", "status"])

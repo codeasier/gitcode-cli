@@ -38,6 +38,15 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+  tests-passed:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Confirm test matrix passed
+        run: echo "All test matrix jobs passed"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

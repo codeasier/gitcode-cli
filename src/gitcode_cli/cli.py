@@ -12,7 +12,7 @@ from .errors import GCError
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version=__version__, prog_name="gc")
+@click.version_option(version=__version__, prog_name="gitcode")
 @click.option("--repo", "repo_name", "-R", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("--token", hidden=True, help="Override authentication token.")
 @click.pass_context
@@ -32,7 +32,7 @@ def process_result(*_args: object, **_kwargs: object) -> None:
 
 @main.command("version")
 def version_command() -> None:
-    click.echo(f"gc version {__version__}")
+    click.echo(f"gitcode version {__version__}")
 
 
 main.add_command(auth_group)

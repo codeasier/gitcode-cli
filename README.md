@@ -13,7 +13,27 @@
 pip install pygitcode
 ```
 
-This exposes the `gc` command in your shell.
+This exposes the `gc` (or `gitcode`) command in your shell.
+
+## Windows PowerShell Users
+
+On Windows PowerShell, `gc` is a built-in alias for the `Get-Content` cmdlet, which shadows the GitCode CLI. Use `gitcode` instead:
+
+```powershell
+gitcode auth login
+gitcode issue list
+gitcode pr list
+```
+
+Alternatively, you can remove or override the alias in your PowerShell profile:
+
+```powershell
+# Remove for the current session
+Remove-Item Alias:gc -Force
+
+# Or persist the override in your profile
+Set-Alias -Name gc -Value 'C:\Users\<user>\AppData\Roaming\Python\Python313\Scripts\gc.exe'
+```
 
 ## Quick Start
 

@@ -69,11 +69,19 @@ class TestGitCodeClientMethods:
             result = client.delete("repos/owner/repo/issues/1")
             assert result is None
 
-    def test_empty_response_returns_none(self, client: GitCodeClient):
+    def test_text_response_returns_text(self, client: GitCodeClient):
         with respx.mock:
-            respx.get("https://api.gitcode.com/api/v5/empty").mock(return_value=Response(204))
-            result = client.get("empty")
-            assert result is None
+            route = respx.get("https://api.gitcode.com/api/v5/repos/owner/repo/pulls/42/diff").mock(
+                return_value=Response(200, text="diff --git a/file b/file\n")
+            )
+            result = client.request(
+                "GET",
+                "repos/owner/repo/pulls/42/diff",
+                accept="text/plain",
+                response_format="text",
+            )
+            assert result == "diff --git a/file b/file\n"
+            assert route.calls.last.request.headers["accept"] == "text/plain"
 
     def test_api_error_with_json_body(self, client: GitCodeClient):
         with respx.mock:

@@ -96,17 +96,22 @@ class TestPullRequestService:
         mock_client.request.return_value = None
         result = service.diff("owner", "repo", 42)
 
-        mock_client.request.assert_called_once_with("GET", "/repos/owner/repo/pulls/42/diff")
+        mock_client.request.assert_called_once_with(
+            "GET",
+            "/repos/owner/repo/pulls/42/diff",
+            accept="text/plain",
+            response_format="text",
+        )
         assert result == ""
 
-    def test_diff_returns_string_for_string_response(self, service, mock_client):
+    def test_diff_requests_text_response(self, service, mock_client):
         mock_client.request.return_value = "diff --git a/file b/file"
         result = service.diff("owner", "repo", 42)
 
+        mock_client.request.assert_called_once_with(
+            "GET",
+            "/repos/owner/repo/pulls/42/diff",
+            accept="text/plain",
+            response_format="text",
+        )
         assert result == "diff --git a/file b/file"
-
-    def test_diff_returns_string_for_dict_response(self, service, mock_client):
-        mock_client.request.return_value = {"key": "value"}
-        result = service.diff("owner", "repo", 42)
-
-        assert result == "{'key': 'value'}"

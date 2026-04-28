@@ -43,23 +43,63 @@ def mock_repo(monkeypatch):
 
 
 class TestIssueList:
-    def test_default(self, runner, mock_client, mock_repo):
+    def test_default_renders_author_in_list_output(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
-            {"number": "1", "state": "open", "title": "First"},
+            {"number": "1", "state": "open", "title": "First", "author": {"login": "alice"}},
             {"number": "2", "state": "closed", "title": "Second"},
         ]
         result = runner.invoke(main, ["issue", "list"])
         assert result.exit_code == 0
-        assert "#1" in result.output
+        assert "#1\topen\tFirst\talice" in result.output
+        assert "#2\tclosed\tSecond\t" in result.output
         mock_client.get.assert_called_once()
 
     def test_with_options(self, runner, mock_client, mock_repo):
         result = runner.invoke(
             main,
-            ["issue", "list", "-s", "open", "-l", "bug", "-A", "user", "-a", "assignee", "-S", "search", "-L", "1"],
+            [
+                "issue",
+                "list",
+                "-s",
+                "open",
+                "-l",
+                "bug",
+                "-l",
+                "help wanted",
+                "-A",
+                "user",
+                "-a",
+                "assignee",
+                "-S",
+                "search",
+                "--milestone",
+                "v1",
+                "--mention",
+                "octocat",
+                "-L",
+                "1",
+            ],
         )
         assert result.exit_code == 0
-        mock_client.get.assert_called_once()
+        mock_client.get.assert_called_once_with(
+            "/repos/owner/repo/issues",
+            params={
+                "state": "open",
+                "labels": "bug,help wanted",
+                "creator": "user",
+                "assignee": "assignee",
+                "search": "search",
+                "milestone": "v1",
+                "mention": "octocat",
+            },
+        )
+
+    def test_web_opens_issues_page_without_fetching(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "list", "--web"])
+        assert result.exit_code == 0
+        mock_client.get.assert_not_called()
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues")
 
     def test_json_fields(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "title": "T", "state": "open"}]
@@ -86,25 +126,37 @@ class TestIssueList:
         assert "#1" in result.output
 
 
+    def test_list_help_shows_default_limit(self, runner):
+        result = runner.invoke(main, ["issue", "list", "--help"])
+        assert result.exit_code == 0
+        assert "Maximum number of items to fetch." in result.output
+        assert "[default:" in result.output
+
+
 class TestIssueView:
-    def test_default(self, runner, mock_client, mock_repo):
+    def test_default_renders_metadata_lines(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {
             "number": "42",
             "title": "Test",
+            "state": "open",
+            "author": {"login": "alice"},
             "body": "Body",
             "html_url": "https://ex.com/42",
         }
         result = runner.invoke(main, ["issue", "view", "42"])
         assert result.exit_code == 0
-        assert "#42 Test" in result.output
+        assert "Title:\tTest" in result.output
+        assert "State:\topen" in result.output
+        assert "Author:\talice" in result.output
+        assert "Body:\nBody" in result.output
         mock_client.get.assert_called_with("/repos/owner/repo/issues/42")
 
-    def test_web(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "title": "Test", "html_url": "https://ex.com/42"}
+    def test_web_uses_derived_issue_url_without_fetching(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "view", "42", "-w"])
-            assert result.exit_code == 0
-            mock_browser.assert_called_once_with("https://ex.com/42")
+        assert result.exit_code == 0
+        mock_client.get.assert_not_called()
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
 
     def test_url(self, runner, mock_client):
         mock_client.get.return_value = {"number": "42", "title": "Test", "body": "Body"}
@@ -118,8 +170,48 @@ class TestIssueView:
         assert result.exit_code == 0
         assert '"number"' in result.output
 
+    def test_comments_json_includes_comments(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"number": "42", "title": "Test", "body": "Body", "html_url": "https://ex.com/42"},
+            [
+                {"id": 1, "body": "First comment"},
+                {"id": 2, "body": "Second comment"},
+            ],
+        ]
+        result = runner.invoke(main, ["issue", "view", "42", "--comments", "--json", "number,comments"])
+        assert result.exit_code == 0
+        assert '"number": "42"' in result.output
+        assert '"comments"' in result.output
+        assert '"First comment"' in result.output
+        assert '"Second comment"' in result.output
+        assert mock_client.get.call_args_list == [
+            (("/repos/owner/repo/issues/42",),),
+            (("/repos/owner/repo/issues/42/comments",),),
+        ]
 
-class TestIssueCreate:
+
+    def test_comments_default_keeps_metadata_and_comments(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {
+                "number": "42",
+                "title": "Test",
+                "state": "open",
+                "author": {"login": "alice"},
+                "body": "Body",
+                "html_url": "https://ex.com/42",
+            },
+            [
+                {"id": 1, "body": "First comment"},
+                {"id": 2, "body": "Second comment"},
+            ],
+        ]
+        result = runner.invoke(main, ["issue", "view", "42", "--comments"])
+        assert result.exit_code == 0
+        assert "Title:\tTest" in result.output
+        assert "Comments:" in result.output
+        assert "- First comment" in result.output
+        assert "- Second comment" in result.output
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0
@@ -190,6 +282,26 @@ class TestIssueComment:
         result = runner.invoke(main, ["issue", "comment", "42"], input="comment body\n")
         assert result.exit_code == 0
         assert "comment body" in str(mock_client.post.call_args[1]["json"]["body"])
+
+    def test_body_file(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "comment.md"
+        body_file.write_text("file comment")
+        result = runner.invoke(main, ["issue", "comment", "42", "-F", str(body_file)])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "file comment"
+
+    def test_editor(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: "edited comment")
+        result = runner.invoke(main, ["issue", "comment", "42", "-e"])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "edited comment"
+
+    def test_web_opens_issue_page_without_posting(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "comment", "42", "--web"])
+        assert result.exit_code == 0
+        mock_client.post.assert_not_called()
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
 
     def test_url(self, runner, mock_client):
         result = runner.invoke(main, ["issue", "comment", "https://gitcode.com/owner/repo/issues/42", "-b", "hi"])

@@ -40,27 +40,63 @@ def mock_repo(monkeypatch):
 
 
 class TestPrList:
-    def test_pr_list_default(self, runner, mock_client, mock_repo):
+    def test_pr_list_default_renders_author_column(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
-            {"number": 1, "state": "open", "title": "First PR"},
+            {"number": 1, "state": "open", "title": "First PR", "user": {"login": "alice"}},
         ]
         result = runner.invoke(main, ["pr", "list"])
         assert result.exit_code == 0
-        assert "#1\topen\tFirst PR" in result.output
+        assert "#1\topen\tFirst PR\talice" in result.output
 
-    def test_pr_list_with_options(self, runner, mock_client, mock_repo):
+    def test_pr_list_with_additional_compat_filters(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": 1, "state": "open", "title": "First PR"},
         ]
         result = runner.invoke(
             main,
-            ["pr", "list", "-s", "open", "-A", "user", "-B", "master", "-l", "bug", "-S", "search", "-L", "1"],
+            [
+                "pr",
+                "list",
+                "-s",
+                "open",
+                "-A",
+                "user",
+                "-B",
+                "master",
+                "--assignee",
+                "octocat",
+                "--draft",
+                "--head",
+                "feature-branch",
+                "-l",
+                "bug",
+                "-S",
+                "search",
+                "-L",
+                "1",
+            ],
         )
         assert result.exit_code == 0
         assert mock_client.get.call_args == call(
             "/repos/owner/repo/pulls",
-            params={"state": "open", "author": "user", "base": "master", "labels": "bug", "search": "search"},
+            params={
+                "state": "open",
+                "author": "user",
+                "base": "master",
+                "assignee": "octocat",
+                "draft": True,
+                "head": "feature-branch",
+                "labels": "bug",
+                "search": "search",
+            },
         )
+
+    def test_pr_list_web_opens_pulls_page_without_fetch(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["pr", "list", "--web"])
+        assert result.exit_code == 0
+        mock_client.get.assert_not_called()
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/pulls")
 
     def test_pr_list_repeated_labels_are_normalized(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
@@ -70,8 +106,22 @@ class TestPrList:
         assert result.exit_code == 0
         assert mock_client.get.call_args == call(
             "/repos/owner/repo/pulls",
-            params={"state": None, "author": None, "base": None, "labels": "bug,docs", "search": None},
+            params={
+                "state": None,
+                "author": None,
+                "base": None,
+                "assignee": None,
+                "draft": None,
+                "head": None,
+                "labels": "bug,docs",
+                "search": None,
+            },
         )
+
+    def test_pr_list_rejects_value_for_draft_flag(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "list", "--draft", "true"])
+        assert result.exit_code != 0
+        assert "Got unexpected extra argument (true)" in result.output
 
     def test_pr_list_json(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
@@ -91,12 +141,29 @@ class TestPrList:
         assert "#1\topen\tFirst PR" in result.output
 
 
-class TestPrView:
-    def test_pr_view(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": 42, "title": "Test PR", "body": "PR body"}
+    def test_pr_list_help_shows_default_limit(self, runner):
+        result = runner.invoke(main, ["pr", "list", "--help"])
+        assert result.exit_code == 0
+        assert "Maximum number of items to fetch." in result.output
+        assert "[default:" in result.output
+
+    def test_pr_view_renders_metadata_lines(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {
+            "number": 42,
+            "title": "Test PR",
+            "state": "open",
+            "body": "PR body",
+            "user": {"login": "alice"},
+            "head": {"label": "alice:feature"},
+            "base": {"label": "owner:main"},
+        }
         result = runner.invoke(main, ["pr", "view", "42"])
         assert result.exit_code == 0
-        assert "#42 Test PR" in result.output
+        assert "Title:\tTest PR" in result.output
+        assert "State:\topen" in result.output
+        assert "Author:\talice" in result.output
+        assert "Branch:\talice:feature -> owner:main" in result.output
+        assert "Body:\nPR body" in result.output
 
     def test_pr_view_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
@@ -180,13 +247,90 @@ class TestPrCreate:
         assert mock_body.call_args == call(body=None, body_file=None, editor=False)
         assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
 
-    def test_pr_create_repeated_labels_are_normalized(self, runner, mock_client, mock_repo):
+    def test_pr_create_editor_uses_body_helper_with_editor(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.get_body_from_options", return_value="resolved body") as mock_body:
+            result = runner.invoke(main, ["pr", "create", "--title", "Test", "--head", "feature", "--base", "main", "--editor"])
+        assert result.exit_code == 0
+        assert mock_body.call_args == call(body=None, body_file=None, editor=True)
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
+
+    def test_pr_create_dry_run_prints_normalized_payload_without_post(self, runner, mock_client, mock_repo):
         result = runner.invoke(
             main,
-            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature", "-l", "bug", "-l", "docs"],
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--body",
+                "Body",
+                "--base",
+                "master",
+                "--head",
+                "feature",
+                "--dry-run",
+                "-l",
+                "bug",
+                "-l",
+                "docs",
+                "-r",
+                "alice",
+                "-r",
+                "bob",
+                "-a",
+                "carol",
+                "-a",
+                "dave",
+                "--milestone",
+                "v1",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.post.assert_not_called()
+        assert '"title": "Test"' in result.output
+        assert '"body": "Body"' in result.output
+        assert '"base": "master"' in result.output
+        assert '"head": "feature"' in result.output
+        assert '"labels": "bug,docs"' in result.output
+        assert '"reviewers": "alice,bob"' in result.output
+        assert '"assignees": "carol,dave"' in result.output
+        assert '"milestone": "v1"' in result.output
+
+    def test_pr_create_repeatable_people_and_labels_are_normalized(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--body",
+                "Body",
+                "--base",
+                "master",
+                "--head",
+                "feature",
+                "-l",
+                "bug",
+                "-l",
+                "docs",
+                "-r",
+                "alice",
+                "-r",
+                "bob",
+                "-a",
+                "carol",
+                "-a",
+                "dave",
+                "--milestone",
+                "v1",
+            ],
         )
         assert result.exit_code == 0
         assert mock_client.post.call_args.kwargs["json"]["labels"] == "bug,docs"
+        assert mock_client.post.call_args.kwargs["json"]["reviewers"] == "alice,bob"
+        assert mock_client.post.call_args.kwargs["json"]["assignees"] == "carol,dave"
+        assert mock_client.post.call_args.kwargs["json"]["milestone"] == "v1"
 
     def test_pr_create_alias_new(self, runner, mock_client, mock_repo):
         result = runner.invoke(
@@ -226,12 +370,18 @@ class TestPrClose:
             mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
-            assert "Deleted branch feature" in result.output
+            assert "Deleted remote branch feature" in result.output
             assert "Closed pull request #42" in result.output
             mock_run.assert_called_once_with(
                 ["git", "push", "origin", "--delete", "feature"],
                 check=True,
             )
+
+    def test_pr_close_delete_branch_help_mentions_remote_only(self, runner):
+        result = runner.invoke(main, ["pr", "close", "--help"])
+        assert result.exit_code == 0
+        assert "Delete the remote branch after closing." in result.output
+        assert "Delete the local and remote branch after closing." not in result.output
 class TestPrMerge:
     def test_pr_merge(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42"])
@@ -276,24 +426,54 @@ class TestPrComment:
 
 
 class TestPrReview:
-    def test_pr_review_approve(self, runner, mock_client, mock_repo):
-        mock_client.post.return_value = {"number": 42}
+    def test_pr_review_approve_uses_requested_pr_number_when_review_response_lacks_number(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 987, "body": "approved"}
         result = runner.invoke(main, ["pr", "review", "42", "--approve"])
         assert result.exit_code == 0
         assert "Reviewed pull request #42" in result.output
 
     def test_pr_review_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
-        mock_client.post.return_value = {"number": 42}
+        mock_client.post.return_value = {"id": 987, "body": "approved"}
         with patch("gitcode_cli.commands.pr.resolve_pr_identifier_or_current_branch", return_value="42") as mock_resolver:
             result = runner.invoke(main, ["pr", "review", "--approve"])
         assert result.exit_code == 0
         assert "Reviewed pull request #42" in result.output
         mock_resolver.assert_called_once_with(None)
 
-    def test_pr_review_no_approve(self, runner, mock_client, mock_repo):
+    def test_pr_review_comment_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
+        assert result.exit_code == 0
+        assert "GitCode review API does not support comment reviews; posted a pull request comment instead." in result.output
+        assert "Posted pull request comment 123" in result.output
+        post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
+        assert len(post_calls) == 1
+        assert post_calls[0].kwargs["json"]["body"] == "Needs more tests"
+
+    def test_pr_review_request_changes_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 456}
+        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
+        assert result.exit_code == 0
+        assert "GitCode review API does not support request-changes reviews; posted a pull request comment instead." in result.output
+        assert "Posted pull request comment 456" in result.output
+        post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
+        assert len(post_calls) == 1
+        assert post_calls[0].kwargs["json"]["body"] == "Please address feedback"
+
+    def test_pr_review_requires_explicit_mode(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "review", "42"])
         assert result.exit_code != 0
-        assert "Only --approve is currently supported" in result.output
+        assert "Specify exactly one of --approve, --comment, or --request-changes." in result.output
+
+    def test_pr_review_rejects_multiple_modes(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "review", "42", "--approve", "--comment"])
+        assert result.exit_code != 0
+        assert "Specify exactly one of --approve, --comment, or --request-changes." in result.output
+
+    def test_pr_review_comment_requires_body(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "review", "42", "--comment"])
+        assert result.exit_code != 0
+        assert "Body is required when using --comment or --request-changes." in result.output
 
 
 class TestPrReopen:
@@ -404,14 +584,14 @@ class TestPrCloseEdgeCases:
             mock_run.side_effect = Exception("git failed")
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
-            assert "Warning: could not delete branch" in result.output
+            assert "Warning: could not delete remote branch" in result.output
 
 
 class TestPrReviewEdgeCases:
-    def test_review_no_approve(self, runner, mock_client, mock_repo):
+    def test_review_no_mode(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "review", "42"])
         assert result.exit_code != 0
-        assert "Only --approve is currently supported" in result.output
+        assert "Specify exactly one of --approve, --comment, or --request-changes." in result.output
 
 
 class TestPrCheckoutEdgeCases:

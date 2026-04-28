@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin
 
 import httpx
@@ -17,7 +17,14 @@ class GitCodeClient:
         self._client = httpx.Client(timeout=30.0)
 
     def request(
-        self, method: str, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        accept: str = "application/json",
+        response_format: Literal["json", "text"] = "json",
     ) -> Any | None:
         merged_params: dict[str, Any] = {"access_token": self.token}
         if params:
@@ -27,7 +34,7 @@ class GitCodeClient:
             urljoin(self.base_url, path.lstrip("/")),
             params=merged_params,
             json=json,
-            headers={"Accept": "application/json"},
+            headers={"Accept": accept},
         )
         if response.status_code >= 400:
             try:
@@ -38,6 +45,8 @@ class GitCodeClient:
             raise APIError(message or "GitCode API request failed", response.status_code)
         if not response.content:
             return None
+        if response_format == "text":
+            return response.text
         return response.json()
 
     def get(self, path: str, *, params: dict[str, Any] | None = None) -> Any | None:

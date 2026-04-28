@@ -12,6 +12,10 @@ from gitcode_cli.formatters import (
     _filter_fields,
     apply_jq,
     dump_json,
+    format_issue_detail,
+    format_issue_list,
+    format_pr_detail,
+    format_pr_list,
     output_result,
     render_template,
 )
@@ -114,6 +118,62 @@ class TestRenderTemplate:
         data = {"title": "Hello"}
         result = render_template(data, "no placeholders")
         assert result == "no placeholders"
+
+
+class TestListAndDetailFormatters:
+    def test_format_issue_list_includes_author_when_available(self):
+        items = [
+            {"number": "12", "state": "open", "title": "Fix login", "author": {"login": "alice"}},
+            {"number": "13", "state": "closed", "title": "Tidy docs"},
+        ]
+
+        assert format_issue_list(items).splitlines() == [
+            "#12\topen\tFix login\talice",
+            "#13\tclosed\tTidy docs\t",
+        ]
+
+    def test_format_pr_list_includes_author_when_available(self):
+        items = [
+            {"number": 7, "state": "open", "title": "Add feature", "user": {"login": "bob"}},
+        ]
+
+        assert format_pr_list(items) == "#7\topen\tAdd feature\tbob"
+
+    def test_format_issue_detail_includes_metadata_lines(self):
+        item = {
+            "number": "42",
+            "title": "Investigate timeout",
+            "state": "open",
+            "author": {"login": "alice"},
+            "created_at": "2026-04-24T12:00:00Z",
+            "body": "Issue body",
+        }
+
+        result = format_issue_detail(item)
+
+        assert "Title:\tInvestigate timeout" in result
+        assert "State:\topen" in result
+        assert "Author:\talice" in result
+        assert "Body:\nIssue body" in result
+
+    def test_format_pr_detail_includes_branch_metadata_lines(self):
+        item = {
+            "number": 101,
+            "title": "Ship formatter upgrade",
+            "state": "open",
+            "user": {"login": "carol"},
+            "head": {"label": "carol:task-7", "ref": "task-7"},
+            "base": {"label": "owner:main", "ref": "main"},
+            "body": "PR body",
+        }
+
+        result = format_pr_detail(item)
+
+        assert "Title:\tShip formatter upgrade" in result
+        assert "State:\topen" in result
+        assert "Author:\tcarol" in result
+        assert "Branch:\tcarol:task-7 -> owner:main" in result
+        assert "Body:\nPR body" in result
 
 
 class TestOutputResult:

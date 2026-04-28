@@ -36,13 +36,15 @@ class PullRequestService:
             f"/repos/{owner}/{repo}/pulls/{number}/comments", json={k: v for k, v in payload.items() if v is not None}
         )
 
-    def review(self, owner: str, repo: str, number: int, force: bool = False) -> Any | None:
-        return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json={"force": force})
+    def review(self, owner: str, repo: str, number: int, body: str | None = None, force: bool = False) -> Any | None:
+        payload = {"body": body, "force": force}
+        return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json={k: v for k, v in payload.items() if v is not None})
 
     def diff(self, owner: str, repo: str, number: int) -> str:
-        response = self.client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}/diff")
-        if response is None:
-            return ""
-        if isinstance(response, str):
-            return response
-        return str(response)
+        response = self.client.request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{number}/diff",
+            accept="text/plain",
+            response_format="text",
+        )
+        return response or ""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 import click
@@ -10,7 +11,7 @@ from ..cli_compat import (
     normalize_multi_values,
     resolve_pr_identifier_or_current_branch,
 )
-from ..formatters import output_result
+from ..formatters import format_pr_detail, format_pr_list, output_result
 from ..repo import resolve_repo
 from ..services import PullRequestService
 from ..utils import get_current_git_branch, open_in_browser, prompt_if_missing, resolve_pr_arg
@@ -26,9 +27,13 @@ def pr_group() -> None:
 @click.option("-s", "--state")
 @click.option("-A", "--author")
 @click.option("-B", "--base")
+@click.option("--assignee")
+@click.option("--draft", is_flag=True, default=None)
+@click.option("--head")
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-S", "--search")
-@click.option("-L", "--limit", type=int, help="Maximum number of items to fetch.")
+@click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
+@click.option("-w", "--web", is_flag=True, help="Open the pull requests list in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")
@@ -39,23 +44,43 @@ def pr_list(
     state: str | None,
     author: str | None,
     base: str | None,
+    assignee: str | None,
+    draft: bool | None,
+    head: str | None,
     labels: tuple[str, ...] | None,
     search: str | None,
     limit: int | None,
+    web: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls")
+        return
     service = PullRequestService(app.client())
     labels = normalize_multi_values(labels)
-    items = service.list(owner, repo, state=state, author=author, base=base, labels=labels, search=search)
+    items = service.list(
+        owner,
+        repo,
+        state=state,
+        author=author,
+        base=base,
+        assignee=assignee,
+        draft=draft,
+        head=head,
+        labels=labels,
+        search=search,
+    )
     if limit is not None:
         items = items[:limit]
+
     def default_formatter(data):
-        for item in data:
-            click.echo(f"#{item['number']}\t{item['state']}\t{item['title']}")
+        output = format_pr_list(data)
+        if output:
+            click.echo(output)
 
     output_result(
         items,
@@ -98,7 +123,7 @@ def pr_view(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(f"#{data['number']} {data['title']}\n\n{data.get('body') or ''}"),
+        default_formatter=lambda data: click.echo(format_pr_detail(data)),
     )
 
 
@@ -107,12 +132,15 @@ def pr_view(
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
+@click.option("--editor", is_flag=True)
+@click.option("--dry-run", is_flag=True)
 @click.option("-B", "--base")
 @click.option("-H", "--head")
 @click.option("-d", "--draft", is_flag=True)
+@click.option("--milestone")
 @click.option("-l", "--label", "labels", multiple=True)
-@click.option("-r", "--reviewer")
-@click.option("-a", "--assignee")
+@click.option("-r", "--reviewer", "reviewers", multiple=True)
+@click.option("-a", "--assignee", "assignees", multiple=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
@@ -124,12 +152,15 @@ def pr_create(
     title: str | None,
     body: str | None,
     body_file: str | None,
+    editor: bool,
+    dry_run: bool,
     base: str | None,
     head: str | None,
     draft: bool,
+    milestone: str | None,
     labels: tuple[str, ...] | None,
-    reviewer: str | None,
-    assignee: str | None,
+    reviewers: tuple[str, ...] | None,
+    assignees: tuple[str, ...] | None,
     web: bool,
     json_fields: str | None,
     jq_query: str | None,
@@ -147,21 +178,23 @@ def pr_create(
     if not base:
         base = get_default_base_branch()
     title = prompt_if_missing(title, "Title")
-    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    payload = {
+        "title": title,
+        "body": body,
+        "base": base,
+        "head": head,
+        "draft": draft,
+        "labels": normalize_multi_values(labels),
+        "assignees": normalize_multi_values(assignees),
+        "reviewers": normalize_multi_values(reviewers),
+        "milestone": milestone,
+    }
+    if dry_run:
+        click.echo(json.dumps({k: v for k, v in payload.items() if v is not None}, indent=2, sort_keys=True))
+        return
     service = PullRequestService(app.client())
-    labels = normalize_multi_values(labels)
-    item = service.create(
-        owner,
-        repo,
-        title=title,
-        body=body,
-        base=base,
-        head=head,
-        draft=draft,
-        labels=labels,
-        assignees=assignee,
-        reviewers=reviewer,
-    )
+    item = service.create(owner, repo, **payload)
     output_result(
         item,
         json_fields,
@@ -175,7 +208,7 @@ def pr_create(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-c", "--comment")
-@click.option("-d", "--delete-branch", is_flag=True, help="Delete the local and remote branch after closing.")
+@click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after closing.")
 @click.pass_context
 def pr_close(
     ctx: click.Context, repo_name: str | None, identifier: str, comment: str | None, delete_branch: bool
@@ -193,11 +226,11 @@ def pr_close(
             branch = item.get("head", {}).get("ref")
             if branch:
                 subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                click.echo(f"Deleted branch {branch}")
+                click.echo(f"Deleted remote branch {branch}")
             else:
                 click.echo("Warning: could not determine branch to delete.", err=True)
         except Exception as exc:
-            click.echo(f"Warning: could not delete branch: {exc}", err=True)
+            click.echo(f"Warning: could not delete remote branch: {exc}", err=True)
     click.echo(f"Closed pull request #{item['number']}")
 
 
@@ -249,19 +282,45 @@ def pr_comment(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
+@click.option("--body")
+@click.option("--comment", is_flag=True, help="Leave a review comment. Downgrades to a PR comment on GitCode.")
+@click.option("--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
 @click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
 @click.pass_context
-def pr_review(ctx: click.Context, repo_name: str | None, identifier: str | None, approve: bool, force: bool) -> None:
+def pr_review(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    approve: bool,
+    body: str | None,
+    comment: bool,
+    request_changes: bool,
+    force: bool,
+) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
-    if not approve:
-        raise click.ClickException("Only --approve is currently supported because GitCode review API differs from gh.")
-    item = service.review(owner, repo, number, force=force)
-    click.echo(f"Reviewed pull request #{item['number']}")
+
+    selected_modes = [approve, comment, request_changes]
+    if sum(1 for selected in selected_modes if selected) != 1:
+        raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
+
+    if comment or request_changes:
+        if not body:
+            raise click.ClickException("Body is required when using --comment or --request-changes.")
+        item = service.comment(owner, repo, number, body=body)
+        if comment:
+            click.echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
+        else:
+            click.echo("GitCode review API does not support request-changes reviews; posted a pull request comment instead.")
+        click.echo(f"Posted pull request comment {item['id']}")
+        return
+
+    item = service.review(owner, repo, number, body=body, force=force)
+    click.echo(f"Reviewed pull request #{number}")
 
 
 @pr_group.command("reopen")

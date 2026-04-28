@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import click
 
-from ..formatters import output_result
+from ..cli_compat import get_body_from_options, normalize_multi_values
+from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
 from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
-    for item in items:
-        click.echo(f"#{item['number']}\t{item['state']}\t{item['title']}")
+    output = format_issue_list(items)
+    if output:
+        click.echo(output)
 
 
 @click.group("issue")
@@ -21,11 +23,14 @@ def issue_group() -> None:
 @issue_group.command("list")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-s", "--state")
-@click.option("-l", "--label", "labels")
+@click.option("-l", "--label", "labels", multiple=True)
 @click.option("-A", "--author")
 @click.option("-a", "--assignee")
+@click.option("--milestone")
+@click.option("--mention")
 @click.option("-S", "--search")
-@click.option("-L", "--limit", type=int, help="Maximum number of items to fetch.")
+@click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
+@click.option("-w", "--web", is_flag=True, help="Open the issue list in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")
@@ -34,19 +39,36 @@ def issue_list(
     ctx: click.Context,
     repo_name: str | None,
     state: str | None,
-    labels: str | None,
+    labels: tuple[str, ...] | None,
     author: str | None,
     assignee: str | None,
+    milestone: str | None,
+    mention: str | None,
     search: str | None,
     limit: int | None,
+    web: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
+        return
     service = IssueService(app.client())
-    items = service.list(owner, repo, state=state, labels=labels, creator=author, assignee=assignee, search=search)
+    labels = normalize_multi_values(labels)
+    items = service.list(
+        owner,
+        repo,
+        state=state,
+        labels=labels,
+        creator=author,
+        assignee=assignee,
+        milestone=milestone,
+        mention=mention,
+        search=search,
+    )
     if limit is not None:
         items = items[:limit]
     output_result(
@@ -62,6 +84,7 @@ def issue_list(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
+@click.option("-c", "--comments", is_flag=True, help="View issue comments.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")
@@ -71,6 +94,7 @@ def issue_view(
     repo_name: str | None,
     identifier: str,
     web: bool,
+    comments: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
@@ -82,17 +106,37 @@ def issue_view(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
+        open_in_browser(target_url)
+        return
     service = IssueService(app.client())
     item = service.get(owner, repo, number)
-    if web:
-        open_in_browser(item["html_url"])
+    if comments:
+        comment_items = service.list_comments(owner, repo, number)
+        data = {**item, "comments": comment_items}
+
+        def default_formatter(data: dict) -> None:
+            click.echo(format_issue_detail(data))
+            if comment_items:
+                click.echo("\nComments:")
+                for comment in comment_items:
+                    click.echo(f"- {comment.get('body') or ''}")
+
+        output_result(
+            data,
+            json_fields,
+            jq_query,
+            template,
+            default_formatter=default_formatter,
+        )
         return
     output_result(
         item,
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(f"#{data['number']} {data['title']}\n\n{data.get('body') or ''}"),
+        default_formatter=lambda data: click.echo(format_issue_detail(data)),
     )
 
 
@@ -163,8 +207,19 @@ def issue_close(ctx: click.Context, repo_name: str | None, identifier: str) -> N
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.pass_context
-def issue_comment(ctx: click.Context, repo_name: str | None, identifier: str, body: str | None) -> None:
+def issue_comment(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str,
+    body: str | None,
+    body_file: str | None,
+    editor: bool,
+    web: bool,
+) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -172,6 +227,10 @@ def issue_comment(ctx: click.Context, repo_name: str | None, identifier: str, bo
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
+        return
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
     service = IssueService(app.client())
     item = service.comment(owner, repo, number, body)

@@ -386,6 +386,18 @@ class TestPrClose:
         assert "Delete the remote branch after closing." in result.output
         assert "Delete the local and remote branch after closing." not in result.output
 
+    def test_pr_close_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": 42, "head": {"ref": "feature"}}
+        result = runner.invoke(main, ["pr", "close", "42"])
+        assert result.exit_code == 0
+        assert "Closed pull request #42" in result.output
+
+    def test_pr_close_without_number_or_iid_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"state": "closed", "head": {"ref": "feature"}}
+        result = runner.invoke(main, ["pr", "close", "42"])
+        assert result.exit_code == 0
+        assert "Closed pull request #42" in result.output
+
 
 class TestPrMerge:
     def test_pr_merge(self, runner, mock_client, mock_repo):
@@ -502,6 +514,12 @@ class TestPrReopen:
         assert result.exit_code == 0
         assert "Reopened pull request #42" in result.output
 
+    def test_pr_reopen_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": 42}
+        result = runner.invoke(main, ["pr", "reopen", "42"])
+        assert result.exit_code == 0
+        assert "Reopened pull request #42" in result.output
+
 
 class TestPrEdit:
     def test_pr_edit(self, runner, mock_client, mock_repo):
@@ -511,6 +529,12 @@ class TestPrEdit:
         assert "Edited pull request #42" in result.output
         assert mock_client.patch.call_args.kwargs["json"]["title"] == "New"
         assert mock_client.patch.call_args.kwargs["json"]["base"] == "develop"
+
+    def test_pr_edit_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": 42}
+        result = runner.invoke(main, ["pr", "edit", "42", "-t", "New"])
+        assert result.exit_code == 0
+        assert "Edited pull request #42" in result.output
 
 
 class TestPrStatus:
@@ -570,6 +594,18 @@ class TestPrReady:
         result = runner.invoke(main, ["pr", "ready", "42"])
         assert result.exit_code == 0
         assert "Marked pull request #42 as ready for review" in result.output
+
+    def test_pr_ready_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": 42}
+        result = runner.invoke(main, ["pr", "ready", "42"])
+        assert result.exit_code == 0
+        assert "Marked pull request #42 as ready for review" in result.output
+
+    def test_pr_ready_undo_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.patch.return_value = {"iid": 42}
+        result = runner.invoke(main, ["pr", "ready", "42", "--undo"])
+        assert result.exit_code == 0
+        assert "Converted pull request #42 to draft" in result.output
 
 
 class TestPrCreateEdgeCases:

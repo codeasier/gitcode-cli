@@ -16,6 +16,7 @@ from gitcode_cli.utils import (
     read_body_file,
     resolve_issue_arg,
     resolve_pr_arg,
+    safe_number,
 )
 
 
@@ -158,3 +159,23 @@ class TestResolvePrArg:
             "repo",
             "42",
         )
+
+
+class TestSafeNumber:
+    def test_returns_number_when_present(self):
+        assert safe_number({"number": 42, "iid": 1}, 99) == 42
+
+    def test_returns_iid_when_number_missing(self):
+        assert safe_number({"iid": 1}, 99) == 1
+
+    def test_returns_fallback_when_both_missing(self):
+        assert safe_number({"state": "closed"}, 42) == 42
+
+    def test_returns_fallback_when_empty_dict(self):
+        assert safe_number({}, 42) == 42
+
+    def test_prefers_number_over_iid(self):
+        assert safe_number({"number": 10, "iid": 20}, 99) == 10
+
+    def test_string_fallback(self):
+        assert safe_number({}, "?") == "?"

@@ -21,7 +21,7 @@ def issue_group() -> None:
 
 
 @issue_group.command("list")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("-s", "--state")
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-A", "--author")
@@ -81,7 +81,7 @@ def issue_list(
 
 
 @issue_group.command("view")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.option("-c", "--comments", is_flag=True, help="View issue comments.")
@@ -142,7 +142,7 @@ def issue_view(
 
 
 @issue_group.command("create")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-a", "--assignee")
@@ -188,7 +188,7 @@ def issue_create(
 
 
 @issue_group.command("close")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.pass_context
 def issue_close(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
@@ -205,7 +205,7 @@ def issue_close(ctx: click.Context, repo_name: str | None, identifier: str) -> N
 
 
 @issue_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
@@ -239,7 +239,7 @@ def issue_comment(
 
 
 @issue_group.command("reopen")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.pass_context
 def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
@@ -256,7 +256,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 
 
 @issue_group.command("edit")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
@@ -303,7 +303,7 @@ def issue_edit(
 
 
 @issue_group.command("delete")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.confirmation_option(prompt="Are you sure you want to delete this issue?")
 @click.pass_context
@@ -321,7 +321,7 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 
 
 @issue_group.command("status")
-@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.pass_context
 def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]

@@ -632,3 +632,32 @@ class TestPrCheckoutEdgeCases:
             result = runner.invoke(main, ["pr", "checkout", "42"])
             assert result.exit_code != 0
             assert "Git checkout failed" in result.output
+
+
+class TestPrCreateMissingHtmlUrl:
+    def test_pr_create_missing_html_url_falls_back_to_url(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"number": 42, "url": "https://api.example.com/42", "title": "Test"}
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "https://api.example.com/42" in result.output
+
+    def test_pr_create_missing_html_url_and_url_falls_back_to_number(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"number": 42, "title": "Test"}
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "Created PR #42" in result.output
+
+    def test_pr_create_with_html_url_unchanged(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"number": 42, "html_url": "https://example.com/42", "title": "Test"}
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--body", "Body", "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert "https://example.com/42" in result.output

@@ -245,7 +245,9 @@ def pr_create(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(data["html_url"]),
+        default_formatter=lambda data: click.echo(
+            data.get("html_url") or data.get("url") or f"Created PR #{data.get('number', '?')}"
+        ),
     )
 
 

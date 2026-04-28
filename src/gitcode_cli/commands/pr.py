@@ -253,7 +253,11 @@ def pr_create(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: safe_echo(data["html_url"]),
+        default_formatter=lambda data: safe_echo(
+            data.get("html_url")
+            or data.get("url")
+            or (f"Created PR #{data['number']}" if "number" in data else "Created pull request")
+        ),
     )
 
 

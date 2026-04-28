@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.metadata
 import sys
 
 import click
@@ -24,8 +25,15 @@ def _configure_stdout_encoding() -> None:
                 stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
 
+def _get_version() -> str:
+    try:
+        return importlib.metadata.version("pygitcode")
+    except importlib.metadata.PackageNotFoundError:
+        return __version__
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version=__version__, prog_name="gitcode")
+@click.version_option(version=_get_version(), prog_name="gitcode")
 @click.option("--repo", "repo_name", "-R", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("--token", hidden=True, help="Override authentication token.")
 @click.pass_context
@@ -46,7 +54,7 @@ def process_result(*_args: object, **_kwargs: object) -> None:
 
 @main.command("version")
 def version_command() -> None:
-    safe_echo(f"gitcode version {__version__}")
+    safe_echo(f"gitcode version {_get_version()}")
 
 
 main.add_command(auth_group)

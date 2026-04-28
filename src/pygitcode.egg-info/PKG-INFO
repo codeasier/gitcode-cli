@@ -2,8 +2,8 @@ Metadata-Version: 2.4
 Name: pygitcode
 Version: 0.1.0
 Summary: A CLI tool for GitCode (api.gitcode.com), modeled after GitHub CLI.
-Author-email: Your Name <your.email@example.com>
-License: MIT
+Author-email: codeasier <825770651@qq.com>
+License-Expression: MIT
 Project-URL: Homepage, https://github.com/yourusername/pygitcode
 Project-URL: Documentation, https://github.com/yourusername/pygitcode#readme
 Project-URL: Repository, https://github.com/yourusername/pygitcode.git
@@ -12,7 +12,6 @@ Keywords: gitcode,cli,git,api,vcs,developer-tools
 Classifier: Development Status :: 4 - Beta
 Classifier: Environment :: Console
 Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.9
@@ -71,50 +70,101 @@ export GC_TOKEN=your_token_here
 ### Issues
 
 ```bash
-# List issues
+# List issues (with filtering options)
 gc issue list
+gc issue list --state closed --author @me
+gc issue list --label bug --label "help wanted"
+gc issue list --web    # Open in browser
 
-# View an issue
+# View an issue (with comments)
 gc issue view 42
+gc issue view 42 --comments
+gc issue view 42 --web
 
-# Create an issue (title/body are optional -- you'll be prompted)
+# Create an issue
 gc issue create -t "Bug report" -b "Something is broken"
+gc issue create --web    # Create in browser
 
-# Close / reopen / edit / delete
-gc issue close 42
-gc issue reopen 42
+# Edit an issue (add/remove labels, assignees)
 gc issue edit 42 -t "Updated title"
-gc issue delete 42
+gc issue edit 42 --add-label bug --remove-label "in progress"
+gc issue edit 42 --add-assignee @me --remove-assignee otheruser
 
 # Comment on an issue
 gc issue comment 42 -b "Thanks for the report!"
+gc issue comment 42 --editor    # Use system editor
+
+# Close / reopen / delete
+gc issue close 42
+gc issue reopen 42
+gc issue delete 42
 ```
 
 ### Pull Requests
 
 ```bash
-# List PRs
+# List PRs (with filtering options)
 gc pr list
+gc pr list --state merged --author @me
+gc pr list --base main --draft
+gc pr list --web    # Open in browser
 
-# View a PR (by number, URL, or branch name)
-gc pr view 42
+# View a PR (identifier optional - infers from current branch)
+gc pr view           # View PR for current branch
+gc pr view 42        # By number
 gc pr view https://gitcode.com/owner/repo/pulls/42
 gc pr view feature-branch
 
 # Create a PR (auto-detects current branch and default base)
 gc pr create -t "Add new feature"
 
-# Close / merge / reopen / edit
-gc pr close 42 -c "Closing as stale"
-gc pr merge 42 -s
-gc pr reopen 42
-gc pr edit 42 -t "New title"
+# Create with auto-fill from commits
+gc pr create --fill              # Use latest commit
+gc pr create --fill-first        # Use first commit
+gc pr create --fill-verbose      # Use all commits for body
 
-# Comment / review / diff / checkout
-gc pr comment 42 -b "LGTM"
-gc pr review 42 --approve
+# Create with editor
+gc pr create --editor
+
+# Preview without creating
+gc pr create --dry-run
+
+# Create in browser
+gc pr create --web
+
+# Close / merge / reopen (identifier optional)
+gc pr close          # Close PR for current branch
+gc pr close 42 -c "Closing as stale"
+gc pr close --delete-branch    # Delete remote branch too
+
+gc pr merge          # Merge PR for current branch
+gc pr merge 42 -s    # Squash merge
+gc pr merge --rebase
+
+# Edit a PR (add/remove labels, assignees, reviewers)
+gc pr edit 42 -t "New title"
+gc pr edit --add-label bug --remove-label "needs review"
+gc pr edit --add-reviewer @me --remove-reviewer otheruser
+
+# Mark as ready or convert to draft
+gc pr ready          # Mark current branch's PR as ready
+gc pr ready --undo   # Convert back to draft
+
+# Comment / review / diff (identifier optional)
+gc pr comment -b "LGTM"
+gc pr comment --path src/file.py --position 5 -b "Suggestion"
+
+gc pr review --approve
+gc pr review --comment -b "Looks good but needs tests"
+gc pr review --request-changes -b "Missing documentation"
+
+gc pr diff           # View diff for current branch's PR
 gc pr diff 42
+
+# Checkout a PR (identifier optional)
+gc pr checkout        # Checkout PR for current branch? (prompts if ambiguous)
 gc pr checkout 42
+gc pr checkout -b local-branch-name
 ```
 
 ### Global Options
@@ -122,29 +172,50 @@ gc pr checkout 42
 ```bash
 # Use a different repo without cd-ing into it
 gc issue list -R owner/repo
+gc pr list -R owner/repo
 
 # Output as JSON with field selection
-gc issue list --json number,title,state
+gc issue list --json number,title,state,author
+gc pr list --json number,title,state,head,base
 
 # Filter with jq
 gc issue list -q '.[] | select(.state == "open")'
+gc pr list -q '.[] | select(.draft == true)'
 
 # Format with Go-style templates
-gc issue list -t '{{.number}} {{.title}}'
+gc issue list -t '{{.number}} {{.title}} ({{.state}})'
+gc pr view -t 'PR #{{.number}}: {{.title}}\n{{.body}}'
 
 # Open in browser
 gc issue view 42 -w
+gc pr view -w
 ```
 
 ## Alignment with `gh` CLI
 
 `pygitcode` aims to be as familiar as possible to `gh` users:
 
-- Short options: `-a`, `-b`, `-l`, `-s`, `-t`, `-w`, etc.
-- Optional required fields with interactive prompts
-- Supports `<number>`, `<url>`, and `<branch>` identifiers for PR commands
-- `--json fields`, `-q jq`, `-t template` output formatting
-- Command aliases: `ls` → `list`, `new` → `create`
+| Feature | `gh` | `gc` |
+|---------|------|------|
+| PR identifier optional (current branch inference) | ✅ | ✅ |
+| `--fill` / `--fill-first` / `--fill-verbose` | ✅ | ✅ |
+| `--editor` | ✅ | ✅ |
+| `--dry-run` | ✅ | ✅ |
+| `--web` (create/view in browser) | ✅ | ✅ |
+| `--remove-*` flags for edit commands | ✅ | ✅ |
+| `pr ready --undo` (convert to draft) | ✅ | ✅ |
+| `pr review --comment` / `--request-changes` | ✅ | ✅ (fallback) |
+| `--json fields` | ✅ | ✅ |
+| `-q jq` filtering | ✅ | ✅ |
+| `-t template` formatting | ✅ | ✅ |
+| Command aliases (`ls` → `list`, `new` → `create`) | ✅ | ✅ |
+| Multi-value options (`--label bug --label feature`) | ✅ | ✅ |
+
+### Known Limitations (GitCode API differences)
+
+- **PR comment model**: GitCode uses `path + position`, not GitHub's `line/side/commit`
+- **PR review**: GitCode review API differs from GitHub; `--comment` and `--request-changes` fall back to PR comments
+- **Issue create/update API**: GitCode puts `repo` in request body, not URL path
 
 ## Development
 
@@ -168,6 +239,10 @@ python -m ruff check src/ tests/
 python -m ruff format src/ tests/
 python -m basedpyright src/
 ```
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned features and current gaps.
 
 ## License
 

@@ -3,6 +3,7 @@ README.md
 pyproject.toml
 src/gitcode_cli/__init__.py
 src/gitcode_cli/cli.py
+src/gitcode_cli/cli_compat.py
 src/gitcode_cli/client.py
 src/gitcode_cli/config.py
 src/gitcode_cli/context.py

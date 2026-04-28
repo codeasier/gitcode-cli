@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitCode API Documentation
+    url: https://docs.gitcode.com/docs/api
+    about: Check the official GitCode API docs for API-related questions.

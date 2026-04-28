@@ -1,0 +1,27 @@
+- [x] `safe_number` 函数在 `utils.py` 中实现，按 `number` → `iid` → `fallback` 优先级返回值
+- [x] `safe_number` 函数已从 `utils.py` 正确导出，可被 `commands/pr.py` 和 `commands/issue.py` 导入
+- [x] `pr close` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `pr reopen` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `pr edit` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `pr ready` 两处输出均使用 `safe_number(item, number)` 替代 `item['number']`
+- [x] `pr status` 使用 `safe_number(item, '?')` 替代 `item['number']`
+- [x] `issue close` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `issue reopen` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `issue edit` 使用 `safe_number(item, number)` 替代 `item['number']`，API 响应缺少 number 时不再崩溃
+- [x] `issue status` 使用 `safe_number(item, '?')` 替代 `item['number']`
+- [x] `safe_number` 函数有独立单元测试覆盖三种场景（有 number / 仅有 iid / 均无）
+- [x] `pr close` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `pr reopen` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `pr edit` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `pr ready` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `issue close` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `issue reopen` 有 API 响应缺少 `number` 字段的测试用例
+- [x] `issue edit` 有 API 响应缺少 `number` 字段的测试用例
+- [x] 所有单元测试通过 (`python -m pytest tests/unit/`) — 266 passed
+- [x] Lint 检查通过 (`python -m ruff check src/ tests/`)
+- [x] 格式检查通过 (`python -m ruff format --check src/ tests/`)
+- [x] 类型检查通过 (`python -m basedpyright src/`) — 0 errors, 0 warnings, 0 notes
+- [x] 测试覆盖率 >= 90% — 91.76%
+- [x] 代码在独立 git worktree 的 `fix/issue-12-keyerror-number` 分支中提交
+- [x] 使用 `gh pr create` 提交 PR，PR 内容使用项目 PR 模板
+- [x] PR 关联 Closes #12

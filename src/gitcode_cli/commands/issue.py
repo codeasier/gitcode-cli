@@ -6,7 +6,7 @@ from ..cli_compat import get_body_from_options, normalize_multi_values
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
-from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_echo
+from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_echo, safe_number
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
@@ -217,7 +217,7 @@ def issue_close(
     if reason:
         update_data["state_reason"] = reason
     item = service.update(owner, repo, number, **update_data)
-    safe_echo(f"Closed issue #{item['number']}")
+    safe_echo(f"Closed issue #{safe_number(item, number)}")
 
 
 @issue_group.command("comment")
@@ -268,7 +268,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
     item = service.update(owner, repo, number, state="open")
-    safe_echo(f"Reopened issue #{item['number']}")
+    safe_echo(f"Reopened issue #{safe_number(item, number)}")
 
 
 @issue_group.command("edit")
@@ -326,7 +326,7 @@ def issue_edit(
         raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
     item = service.update(owner, repo, number, **data)
-    safe_echo(f"Edited issue #{item['number']}")
+    safe_echo(f"Edited issue #{safe_number(item, number)}")
 
 
 @issue_group.command("delete")
@@ -358,7 +358,7 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     safe_echo("GitCode-limited approximation of gh issue status")
     safe_echo(f"Repository open issues for {owner}/{repo}:")
     for item in items:
-        safe_echo(f"  #{item['number']}\t{item['state']}\t{item['title']}")
+        safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
 
 
 issue_group.add_command(issue_list, name="ls")

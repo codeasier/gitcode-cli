@@ -15,7 +15,7 @@ from ..cli_compat import (
 from ..formatters import format_pr_detail, format_pr_list, output_result
 from ..repo import resolve_repo
 from ..services import PullRequestService
-from ..utils import get_current_git_branch, open_in_browser, prompt_if_missing, resolve_pr_arg
+from ..utils import get_current_git_branch, open_in_browser, prompt_if_missing, read_body_file, resolve_pr_arg
 
 
 @click.group("pr")
@@ -96,6 +96,7 @@ def pr_list(
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
+@click.option("-c", "--comments", is_flag=True, help="View pull request comments.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")
@@ -105,6 +106,7 @@ def pr_view(
     repo_name: str | None,
     identifier: str | None,
     web: bool,
+    comments: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
@@ -118,6 +120,26 @@ def pr_view(
     item = service.get(owner, repo, number)
     if web:
         open_in_browser(item["html_url"])
+        return
+    if comments:
+        comment_items = service.list_comments(owner, repo, number)
+        data = dict(item) if item else {}
+        data["comments"] = comment_items
+
+        def default_formatter(data: dict) -> None:
+            click.echo(format_pr_detail(data))
+            if comment_items:
+                click.echo("\nComments:")
+                for comment in comment_items:
+                    click.echo(f"- {comment.get('body') or ''}")
+
+        output_result(
+            data,
+            json_fields,
+            jq_query,
+            template,
+            default_formatter=default_formatter,
+        )
         return
     output_result(
         item,
@@ -264,22 +286,43 @@ def pr_close(
 @click.option("-m", "--merge", "merge_mode", flag_value="merge")
 @click.option("-s", "--squash", "merge_mode", flag_value="squash")
 @click.option("-r", "--rebase", "merge_mode", flag_value="rebase")
+@click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after merge.")
 @click.pass_context
-def pr_merge(ctx: click.Context, repo_name: str | None, identifier: str | None, merge_mode: str | None) -> None:
+def pr_merge(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    merge_mode: str | None,
+    delete_branch: bool,
+) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    pr_item = service.get(owner, repo, number)
     item = service.merge(owner, repo, number, merge_method=merge_mode or "merge")
     click.echo(item["message"])
+    if delete_branch:
+        try:
+            branch = pr_item.get("head", {}).get("ref")
+            if branch:
+                subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
+                click.echo(f"Deleted remote branch {branch}")
+            else:
+                click.echo("Warning: could not determine branch to delete.", err=True)
+        except Exception as exc:
+            click.echo(f"Warning: could not delete remote branch: {exc}", err=True)
 
 
 @pr_group.command("comment")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--path")
 @click.option("--position", type=int)
 @click.pass_context
@@ -288,6 +331,9 @@ def pr_comment(
     repo_name: str | None,
     identifier: str | None,
     body: str | None,
+    body_file: str | None,
+    editor: bool,
+    web: bool,
     path: str | None,
     position: int | None,
 ) -> None:
@@ -297,6 +343,11 @@ def pr_comment(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    if web:
+        pr_item = service.get(owner, repo, number)
+        open_in_browser(pr_item["html_url"])
+        return
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
     item = service.comment(owner, repo, number, body=body, path=path, position=position)
     click.echo(str(item["id"]))
@@ -369,6 +420,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
 @click.argument("identifier", required=False)
 @click.option("-t", "--title")
 @click.option("-b", "--body")
+@click.option("-F", "--body-file")
 @click.option("-B", "--base")
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label")
@@ -376,6 +428,8 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
 @click.option("--remove-assignee")
 @click.option("--remove-label")
 @click.option("--remove-reviewer")
+@click.option("-m", "--milestone")
+@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the pull request.")
 @click.pass_context
 def pr_edit(
     ctx: click.Context,
@@ -383,6 +437,7 @@ def pr_edit(
     identifier: str | None,
     title: str | None,
     body: str | None,
+    body_file: str | None,
     base: str | None,
     add_assignee: str | None,
     add_label: str | None,
@@ -390,6 +445,8 @@ def pr_edit(
     remove_assignee: str | None,
     remove_label: str | None,
     remove_reviewer: str | None,
+    milestone: str | None,
+    remove_milestone: bool,
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
@@ -397,6 +454,8 @@ def pr_edit(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    if body_file:
+        body = read_body_file(body_file)
     data = {
         k: v
         for k, v in {
@@ -409,9 +468,12 @@ def pr_edit(
             "unassignee": remove_assignee,
             "unset_labels": remove_label,
             "unset_reviewer": remove_reviewer,
+            "milestone": milestone,
         }.items()
         if v is not None
     }
+    if remove_milestone:
+        data["milestone"] = ""
     if not data:
         raise click.UsageError("must specify at least one field to edit")
     item = service.update(owner, repo, number, **data)

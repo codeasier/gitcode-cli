@@ -146,7 +146,7 @@ def issue_view(
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-a", "--assignee")
-@click.option("-l", "--label", "labels")
+@click.option("-l", "--label", "labels", multiple=True)
 @click.option("-m", "--milestone")
 @click.option("-F", "--body-file")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
@@ -160,7 +160,7 @@ def issue_create(
     title: str | None,
     body: str | None,
     assignee: str | None,
-    labels: str | None,
+    labels: tuple[str, ...] | None,
     milestone: str | None,
     body_file: str | None,
     web: bool,
@@ -176,8 +176,11 @@ def issue_create(
     title = prompt_if_missing(title, "Title")
     if body_file:
         body = read_body_file(body_file)
+    labels_str = normalize_multi_values(labels)
     service = IssueService(app.client())
-    item = service.create(owner, repo, title=title, body=body, assignee=assignee, labels=labels, milestone=milestone)
+    item = service.create(
+        owner, repo, title=title, body=body, assignee=assignee, labels=labels_str, milestone=milestone
+    )
     output_result(
         item,
         json_fields,
@@ -190,8 +193,16 @@ def issue_create(
 @issue_group.command("close")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
+@click.option("-c", "--comment", help="Leave a closing comment.")
+@click.option("-r", "--reason", type=click.Choice(["completed", "not_planned"]), help="Reason for closing.")
 @click.pass_context
-def issue_close(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+def issue_close(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str,
+    comment: str | None,
+    reason: str | None,
+) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -200,7 +211,12 @@ def issue_close(ctx: click.Context, repo_name: str | None, identifier: str) -> N
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    item = service.update(owner, repo, number, state="closed")
+    if comment:
+        service.comment(owner, repo, number, comment)
+    update_data: dict = {"state": "closed"}
+    if reason:
+        update_data["state_reason"] = reason
+    item = service.update(owner, repo, number, **update_data)
     click.echo(f"Closed issue #{item['number']}")
 
 
@@ -260,10 +276,13 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 @click.argument("identifier")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
+@click.option("-F", "--body-file")
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label")
 @click.option("--remove-assignee")
 @click.option("--remove-label")
+@click.option("-m", "--milestone")
+@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
 @click.pass_context
 def issue_edit(
     ctx: click.Context,
@@ -271,10 +290,13 @@ def issue_edit(
     identifier: str,
     title: str | None,
     body: str | None,
+    body_file: str | None,
     add_assignee: str | None,
     add_label: str | None,
     remove_assignee: str | None,
     remove_label: str | None,
+    milestone: str | None,
+    remove_milestone: bool,
 ) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
@@ -283,7 +305,8 @@ def issue_edit(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    service = IssueService(app.client())
+    if body_file:
+        body = read_body_file(body_file)
     data = {
         k: v
         for k, v in {
@@ -293,11 +316,15 @@ def issue_edit(
             "labels": add_label,
             "unassignee": remove_assignee,
             "unset_labels": remove_label,
+            "milestone": milestone,
         }.items()
         if v is not None
     }
+    if remove_milestone:
+        data["milestone"] = ""
     if not data:
         raise click.UsageError("must specify at least one field to edit")
+    service = IssueService(app.client())
     item = service.update(owner, repo, number, **data)
     click.echo(f"Edited issue #{item['number']}")
 

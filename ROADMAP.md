@@ -6,7 +6,7 @@
 
 ## 高优先级
 
-### 1. Issue 评论管理（差异4）
+### 1. Issue 评论管理
 
 **当前差距：**
 - `gc issue comment` 和 `gc pr comment` 缺少编辑/删除已有评论的能力
@@ -26,7 +26,7 @@
 
 ---
 
-### 2. PR 评审增强（差异5）
+### 2. PR 评审增强
 
 **当前差距：**
 - `gc pr review` 现已支持 `--approve`、`--comment`、`--request-changes`（降级为 PR 评论）

@@ -7,7 +7,7 @@ name = "pygitcode"
 version = "0.1.0"
 description = "A CLI tool for GitCode (api.gitcode.com), modeled after GitHub CLI."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "Your Name", email = "your.email@example.com" },
@@ -17,7 +17,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",

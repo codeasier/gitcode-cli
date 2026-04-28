@@ -6,13 +6,13 @@ from ..cli_compat import get_body_from_options, normalize_multi_values
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
-from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_number
+from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_echo, safe_number
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
     output = format_issue_list(items)
     if output:
-        click.echo(output)
+        safe_echo(output)
 
 
 @click.group("issue")
@@ -118,11 +118,11 @@ def issue_view(
         data["comments"] = comment_items
 
         def default_formatter(data: dict) -> None:
-            click.echo(format_issue_detail(data))
+            safe_echo(format_issue_detail(data))
             if comment_items:
-                click.echo("\nComments:")
+                safe_echo("\nComments:")
                 for comment in comment_items:
-                    click.echo(f"- {comment.get('body') or ''}")
+                    safe_echo(f"- {comment.get('body') or ''}")
 
         output_result(
             data,
@@ -137,7 +137,7 @@ def issue_view(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(format_issue_detail(data)),
+        default_formatter=lambda data: safe_echo(format_issue_detail(data)),
     )
 
 
@@ -186,7 +186,7 @@ def issue_create(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(data["html_url"]),
+        default_formatter=lambda data: safe_echo(data["html_url"]),
     )
 
 
@@ -217,7 +217,7 @@ def issue_close(
     if reason:
         update_data["state_reason"] = reason
     item = service.update(owner, repo, number, **update_data)
-    click.echo(f"Closed issue #{safe_number(item, number)}")
+    safe_echo(f"Closed issue #{safe_number(item, number)}")
 
 
 @issue_group.command("comment")
@@ -251,7 +251,7 @@ def issue_comment(
     body = prompt_if_missing(body, "Body")
     service = IssueService(app.client())
     item = service.comment(owner, repo, number, body)
-    click.echo(str(item["id"]))
+    safe_echo(str(item["id"]))
 
 
 @issue_group.command("reopen")
@@ -268,7 +268,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
     item = service.update(owner, repo, number, state="open")
-    click.echo(f"Reopened issue #{safe_number(item, number)}")
+    safe_echo(f"Reopened issue #{safe_number(item, number)}")
 
 
 @issue_group.command("edit")
@@ -326,7 +326,7 @@ def issue_edit(
         raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
     item = service.update(owner, repo, number, **data)
-    click.echo(f"Edited issue #{safe_number(item, number)}")
+    safe_echo(f"Edited issue #{safe_number(item, number)}")
 
 
 @issue_group.command("delete")
@@ -344,7 +344,7 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
     service.delete(owner, repo, number)
-    click.echo(f"Deleted issue #{number}")
+    safe_echo(f"Deleted issue #{number}")
 
 
 @issue_group.command("status")
@@ -355,10 +355,10 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
     items = service.list(owner, repo, state="open")
-    click.echo("GitCode-limited approximation of gh issue status")
-    click.echo(f"Repository open issues for {owner}/{repo}:")
+    safe_echo("GitCode-limited approximation of gh issue status")
+    safe_echo(f"Repository open issues for {owner}/{repo}:")
     for item in items:
-        click.echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
+        safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
 
 
 issue_group.add_command(issue_list, name="ls")

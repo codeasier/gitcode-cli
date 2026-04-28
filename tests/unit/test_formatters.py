@@ -240,3 +240,45 @@ class TestApplyJq:
         mocker.patch("gitcode_cli.formatters.shutil.which", return_value=None)
         with pytest.raises(click.ClickException, match="jq is required"):
             apply_jq({"data": "test"}, ".data")
+
+
+class TestUnicodeOutput:
+    def test_format_issue_detail_with_emoji(self):
+        item = {
+            "number": "42",
+            "title": "Bug with 📚 emoji",
+            "state": "open",
+            "author": {"login": "alice"},
+            "body": "Issue body with 🎉 emoji",
+        }
+        result = format_issue_detail(item)
+        assert "📚" in result
+        assert "🎉" in result
+
+    def test_format_pr_detail_with_emoji(self):
+        item = {
+            "number": 101,
+            "title": "Feature with 🚀 emoji",
+            "state": "open",
+            "user": {"login": "bob"},
+            "head": {"label": "bob:task-7", "ref": "task-7"},
+            "base": {"label": "owner:main", "ref": "main"},
+            "body": "PR body with ✨ emoji",
+        }
+        result = format_pr_detail(item)
+        assert "🚀" in result
+        assert "✨" in result
+
+    def test_format_issue_list_with_emoji(self):
+        items = [
+            {"number": "12", "state": "open", "title": "Fix 🐛 bug", "author": {"login": "alice"}},
+        ]
+        result = format_issue_list(items)
+        assert "🐛" in result
+
+    def test_format_pr_list_with_emoji(self):
+        items = [
+            {"number": 7, "state": "open", "title": "Add 🎯 feature", "user": {"login": "bob"}},
+        ]
+        result = format_pr_list(items)
+        assert "🎯" in result

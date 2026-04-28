@@ -21,6 +21,7 @@ from ..utils import (
     prompt_if_missing,
     read_body_file,
     resolve_pr_arg,
+    safe_echo,
     safe_number,
 )
 
@@ -88,7 +89,7 @@ def pr_list(
     def default_formatter(data):
         output = format_pr_list(data)
         if output:
-            click.echo(output)
+            safe_echo(output)
 
     output_result(
         items,
@@ -134,11 +135,11 @@ def pr_view(
         data["comments"] = comment_items
 
         def default_formatter(data: dict) -> None:
-            click.echo(format_pr_detail(data))
+            safe_echo(format_pr_detail(data))
             if comment_items:
-                click.echo("\nComments:")
+                safe_echo("\nComments:")
                 for comment in comment_items:
-                    click.echo(f"- {comment.get('body') or ''}")
+                    safe_echo(f"- {comment.get('body') or ''}")
 
         output_result(
             data,
@@ -153,7 +154,7 @@ def pr_view(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(format_pr_detail(data)),
+        default_formatter=lambda data: safe_echo(format_pr_detail(data)),
     )
 
 
@@ -243,7 +244,7 @@ def pr_create(
         "milestone": milestone,
     }
     if dry_run:
-        click.echo(json.dumps({k: v for k, v in payload.items() if v is not None}, indent=2, sort_keys=True))
+        safe_echo(json.dumps({k: v for k, v in payload.items() if v is not None}, indent=2, sort_keys=True))
         return
     service = PullRequestService(app.client())
     item = service.create(owner, repo, **payload)
@@ -252,7 +253,7 @@ def pr_create(
         json_fields,
         jq_query,
         template,
-        default_formatter=lambda data: click.echo(data["html_url"]),
+        default_formatter=lambda data: safe_echo(data["html_url"]),
     )
 
 
@@ -279,12 +280,12 @@ def pr_close(
             branch = item.get("head", {}).get("ref")
             if branch:
                 subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                click.echo(f"Deleted remote branch {branch}")
+                safe_echo(f"Deleted remote branch {branch}")
             else:
-                click.echo("Warning: could not determine branch to delete.", err=True)
+                safe_echo("Warning: could not determine branch to delete.", err=True)
         except Exception as exc:
-            click.echo(f"Warning: could not delete remote branch: {exc}", err=True)
-    click.echo(f"Closed pull request #{safe_number(item, number)}")
+            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
+    safe_echo(f"Closed pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("merge")
@@ -310,17 +311,17 @@ def pr_merge(
     number = int(number)
     pr_item = service.get(owner, repo, number)
     item = service.merge(owner, repo, number, merge_method=merge_mode or "merge")
-    click.echo(item["message"])
+    safe_echo(item["message"])
     if delete_branch:
         try:
             branch = pr_item.get("head", {}).get("ref")
             if branch:
                 subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                click.echo(f"Deleted remote branch {branch}")
+                safe_echo(f"Deleted remote branch {branch}")
             else:
-                click.echo("Warning: could not determine branch to delete.", err=True)
+                safe_echo("Warning: could not determine branch to delete.", err=True)
         except Exception as exc:
-            click.echo(f"Warning: could not delete remote branch: {exc}", err=True)
+            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
 
 
 @pr_group.command("comment")
@@ -357,7 +358,7 @@ def pr_comment(
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
     item = service.comment(owner, repo, number, body=body, path=path, position=position)
-    click.echo(str(item["id"]))
+    safe_echo(str(item["id"]))
 
 
 @pr_group.command("review")
@@ -395,16 +396,16 @@ def pr_review(
             raise click.ClickException("Body is required when using --comment or --request-changes.")
         item = service.comment(owner, repo, number, body=body)
         if comment:
-            click.echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
+            safe_echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
         else:
-            click.echo(
+            safe_echo(
                 "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
             )
-        click.echo(f"Posted pull request comment {item['id']}")
+        safe_echo(f"Posted pull request comment {item['id']}")
         return
 
     item = service.review(owner, repo, number, body=body, force=force)
-    click.echo(f"Reviewed pull request #{number}")
+    safe_echo(f"Reviewed pull request #{number}")
 
 
 @pr_group.command("reopen")
@@ -419,7 +420,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     item = service.update(owner, repo, number, state="open")
-    click.echo(f"Reopened pull request #{safe_number(item, number)}")
+    safe_echo(f"Reopened pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("edit")
@@ -484,7 +485,7 @@ def pr_edit(
     if not data:
         raise click.UsageError("must specify at least one field to edit")
     item = service.update(owner, repo, number, **data)
-    click.echo(f"Edited pull request #{safe_number(item, number)}")
+    safe_echo(f"Edited pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("diff")
@@ -498,7 +499,7 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     diff_text = service.diff(owner, repo, int(number))
-    click.echo(diff_text)
+    safe_echo(diff_text)
 
 
 @pr_group.command("checkout")
@@ -520,7 +521,7 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
     try:
         subprocess.run(["git", "fetch", "origin", head_ref], check=True)
         subprocess.run(["git", "checkout", "-b", local_branch, f"origin/{head_ref}"], check=True)
-        click.echo(f"Checked out branch {local_branch}")
+        safe_echo(f"Checked out branch {local_branch}")
     except subprocess.CalledProcessError as exc:
         raise click.ClickException(f"Git checkout failed: {exc}") from exc
 
@@ -538,9 +539,9 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     item = service.update(owner, repo, int(number), draft=undo)
     if undo:
-        click.echo(f"Converted pull request #{safe_number(item, number)} to draft")
+        safe_echo(f"Converted pull request #{safe_number(item, number)} to draft")
     else:
-        click.echo(f"Marked pull request #{safe_number(item, number)} as ready for review")
+        safe_echo(f"Marked pull request #{safe_number(item, number)} as ready for review")
 
 
 @pr_group.command("status")
@@ -551,14 +552,14 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     items = service.list(owner, repo, state="open")
-    click.echo(
+    safe_echo(
         f"Open pull requests in {owner}/{repo}  (GitCode API approximation -- user-specific filtering is not available)"
     )
     if items:
         for item in items:
-            click.echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
+            safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
     else:
-        click.echo("  No open pull requests")
+        safe_echo("  No open pull requests")
 
 
 pr_group.add_command(pr_list, name="ls")

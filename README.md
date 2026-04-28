@@ -42,6 +42,15 @@ Set-Alias -Name gc -Value 'C:\Users\<user>\AppData\Roaming\Python\Python313\Scri
 # Login with your GitCode personal access token
 gc auth login
 
+# Check auth status
+gc auth status
+
+# Print the current auth token
+gc auth token
+
+# Logout
+gc auth logout
+
 # Or set environment variable
 export GC_TOKEN=your_token_here
 ```
@@ -62,12 +71,14 @@ gc issue view 42 --web
 
 # Create an issue
 gc issue create -t "Bug report" -b "Something is broken"
+gc issue create --label bug --label "help wanted"   # Multiple labels
 gc issue create --web    # Create in browser
 
-# Edit an issue (add/remove labels, assignees)
+# Edit an issue (add/remove labels, assignees, milestones)
 gc issue edit 42 -t "Updated title"
 gc issue edit 42 --add-label bug --remove-label "in progress"
 gc issue edit 42 --add-assignee @me --remove-assignee otheruser
+gc issue edit 42 --milestone v1.0 --remove-milestone
 
 # Comment on an issue
 gc issue comment 42 -b "Thanks for the report!"
@@ -75,8 +86,7 @@ gc issue comment 42 --editor    # Use system editor
 
 # Close / reopen / delete
 gc issue close 42
-gc issue reopen 42
-gc issue delete 42
+gc issue close 42 -c "Fixed in #50" --reason completed
 ```
 
 ### Pull Requests
@@ -91,6 +101,7 @@ gc pr list --web    # Open in browser
 # View a PR (identifier optional - infers from current branch)
 gc pr view           # View PR for current branch
 gc pr view 42        # By number
+gc pr view 42 --comments   # Include comments
 gc pr view https://gitcode.com/owner/repo/pulls/42
 gc pr view feature-branch
 
@@ -119,11 +130,13 @@ gc pr close --delete-branch    # Delete remote branch too
 gc pr merge          # Merge PR for current branch
 gc pr merge 42 -s    # Squash merge
 gc pr merge --rebase
+gc pr merge --delete-branch    # Delete remote branch after merge
 
-# Edit a PR (add/remove labels, assignees, reviewers)
+# Edit a PR (add/remove labels, assignees, reviewers, milestones)
 gc pr edit 42 -t "New title"
 gc pr edit --add-label bug --remove-label "needs review"
 gc pr edit --add-reviewer @me --remove-reviewer otheruser
+gc pr edit --milestone v1.0 --remove-milestone
 
 # Mark as ready or convert to draft
 gc pr ready          # Mark current branch's PR as ready
@@ -132,6 +145,8 @@ gc pr ready --undo   # Convert back to draft
 # Comment / review / diff (identifier optional)
 gc pr comment -b "LGTM"
 gc pr comment --path src/file.py --position 5 -b "Suggestion"
+gc pr comment --body-file comment.txt
+gc pr comment --editor
 
 gc pr review --approve
 gc pr review --comment -b "Looks good but needs tests"

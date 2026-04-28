@@ -53,6 +53,7 @@ Issues = "https://github.com/yourusername/pygitcode/issues"
 
 [project.scripts]
 gc = "gitcode_cli.cli:main"
+gitcode = "gitcode_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

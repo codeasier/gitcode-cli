@@ -5,7 +5,6 @@
 [![PyPI](https://img.shields.io/pypi/v/pygitcode)](https://pypi.org/project/pygitcode/)
 [![Python](https://img.shields.io/pypi/pyversions/pygitcode)](https://pypi.org/project/pygitcode/)
 [![License](https://img.shields.io/pypi/l/pygitcode)](https://github.com/yourusername/pygitcode/blob/main/LICENSE)
-[![Tests](https://github.com/codeasier/gitcode-cli/workflows/Tests/badge.svg)](https://github.com/yourusername/pygitcode/actions)
 
 ## Installation
 

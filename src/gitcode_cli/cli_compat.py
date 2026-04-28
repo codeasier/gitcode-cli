@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 
 import click
@@ -43,3 +44,73 @@ def resolve_pr_identifier_or_current_branch(identifier: str | None) -> str:
     if not branch:
         raise click.ClickException("Unable to detect current branch. Specify a PR or branch explicitly.")
     return branch
+
+
+def get_fill_info(mode: str = "last") -> tuple[str, str]:
+    """Get title and body from git commits on current branch.
+
+    Args:
+        mode: "last" (latest commit), "first" (first commit), or "verbose" (all commits)
+
+    Returns:
+        (title, body) tuple
+    """
+    base_branch = get_default_git_branch() or "main"
+    current_branch = get_current_git_branch()
+    if not current_branch:
+        raise click.ClickException("Unable to detect current branch for --fill.")
+
+    try:
+        if mode == "last":
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%s%n%n%b", "--no-merges"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        elif mode == "first":
+            result = subprocess.run(
+                ["git", "log", f"{base_branch}..{current_branch}", "--format=%s%n%n%b", "--no-merges", "--reverse"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lines = result.stdout.strip().split("\n\n", 1)
+            result = subprocess.run(
+                ["echo", lines[0] if lines else ""],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            result = subprocess.run(
+                ["git", "log", f"{base_branch}..{current_branch}", "--format=%s%n%n%b", "--no-merges"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"Failed to get commit info: {exc}") from exc
+
+    output = result.stdout.strip()
+    if not output:
+        return "", ""
+
+    parts = output.split("\n\n", 1)
+    title = parts[0].strip()
+    body = parts[1].strip() if len(parts) > 1 else ""
+
+    if mode == "verbose" and body:
+        lines = []
+        commits = subprocess.run(
+            ["git", "log", f"{base_branch}..{current_branch}", "--format=%s", "--no-merges"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in commits.stdout.strip().split("\n"):
+            if line:
+                lines.append(f"- {line}")
+        body = "\n".join(lines)
+
+    return title, body

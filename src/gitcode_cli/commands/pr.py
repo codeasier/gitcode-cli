@@ -8,6 +8,7 @@ import click
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
+    get_fill_info,
     normalize_multi_values,
     resolve_pr_identifier_or_current_branch,
 )
@@ -61,7 +62,7 @@ def pr_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls")
         return
     service = PullRequestService(app.client())
-    labels = normalize_multi_values(labels)
+    labels_str = normalize_multi_values(labels)
     items = service.list(
         owner,
         repo,
@@ -71,7 +72,7 @@ def pr_list(
         assignee=assignee,
         draft=draft,
         head=head,
-        labels=labels,
+        labels=labels_str,
         search=search,
     )
     if limit is not None:
@@ -133,6 +134,9 @@ def pr_view(
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
 @click.option("--editor", is_flag=True)
+@click.option("--fill", is_flag=True, help="Use commit info for title and body.")
+@click.option("--fill-first", is_flag=True, help="Use first commit info for title and body.")
+@click.option("--fill-verbose", is_flag=True, help="Use all commits for body description.")
 @click.option("--dry-run", is_flag=True)
 @click.option("-B", "--base")
 @click.option("-H", "--head")
@@ -153,6 +157,9 @@ def pr_create(
     body: str | None,
     body_file: str | None,
     editor: bool,
+    fill: bool,
+    fill_first: bool,
+    fill_verbose: bool,
     dry_run: bool,
     base: str | None,
     head: str | None,
@@ -177,6 +184,22 @@ def pr_create(
             raise click.ClickException("Unable to detect current branch. Use --head.")
     if not base:
         base = get_default_base_branch()
+
+    fill_mode = None
+    if fill_verbose:
+        fill_mode = "verbose"
+    elif fill_first:
+        fill_mode = "first"
+    elif fill:
+        fill_mode = "last"
+
+    if fill_mode:
+        fill_title, fill_body = get_fill_info(fill_mode)
+        if title is None:
+            title = fill_title
+        if body is None:
+            body = fill_body
+
     title = prompt_if_missing(title, "Title")
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     payload = {
@@ -206,17 +229,18 @@ def pr_create(
 
 @pr_group.command("close")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.option("-c", "--comment")
 @click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after closing.")
 @click.pass_context
 def pr_close(
-    ctx: click.Context, repo_name: str | None, identifier: str, comment: str | None, delete_branch: bool
+    ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None, delete_branch: bool
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     if comment:
         service.comment(owner, repo, number, body=comment)
@@ -315,7 +339,9 @@ def pr_review(
         if comment:
             click.echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
         else:
-            click.echo("GitCode review API does not support request-changes reviews; posted a pull request comment instead.")
+            click.echo(
+                "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
+            )
         click.echo(f"Posted pull request comment {item['id']}")
         return
 
@@ -325,13 +351,14 @@ def pr_review(
 
 @pr_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.pass_context
-def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     item = service.update(owner, repo, number, state="open")
     click.echo(f"Reopened pull request #{item['number']}")
@@ -339,29 +366,36 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> Non
 
 @pr_group.command("edit")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-B", "--base")
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label")
 @click.option("-r", "--add-reviewer")
+@click.option("--remove-assignee")
+@click.option("--remove-label")
+@click.option("--remove-reviewer")
 @click.pass_context
 def pr_edit(
     ctx: click.Context,
     repo_name: str | None,
-    identifier: str,
+    identifier: str | None,
     title: str | None,
     body: str | None,
     base: str | None,
     add_assignee: str | None,
     add_label: str | None,
     add_reviewer: str | None,
+    remove_assignee: str | None,
+    remove_label: str | None,
+    remove_reviewer: str | None,
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     data = {
         k: v
@@ -372,36 +406,43 @@ def pr_edit(
             "assignee": add_assignee,
             "labels": add_label,
             "reviewer": add_reviewer,
+            "unassignee": remove_assignee,
+            "unset_labels": remove_label,
+            "unset_reviewer": remove_reviewer,
         }.items()
         if v is not None
     }
+    if not data:
+        raise click.UsageError("must specify at least one field to edit")
     item = service.update(owner, repo, number, **data)
     click.echo(f"Edited pull request #{item['number']}")
 
 
 @pr_group.command("diff")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.pass_context
-def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     diff_text = service.diff(owner, repo, int(number))
     click.echo(diff_text)
 
 
 @pr_group.command("checkout")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
 @click.pass_context
-def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str, branch: str | None) -> None:
+def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | None, branch: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     item = service.get(owner, repo, int(number))
     head_ref = item.get("head", {}).get("ref")
     if not head_ref:
@@ -417,15 +458,20 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str, bran
 
 @pr_group.command("ready")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.argument("identifier")
+@click.argument("identifier", required=False)
+@click.option("--undo", is_flag=True, help="Convert a pull request to draft.")
 @click.pass_context
-def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, undo: bool) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    owner, repo, number = resolve_pr_arg(identifier, owner, repo, service)
-    item = service.update(owner, repo, int(number), draft=False)
-    click.echo(f"Marked pull request #{item['number']} as ready for review")
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    item = service.update(owner, repo, int(number), draft=undo)
+    if undo:
+        click.echo(f"Converted pull request #{item['number']} to draft")
+    else:
+        click.echo(f"Marked pull request #{item['number']} as ready for review")
 
 
 @pr_group.command("status")

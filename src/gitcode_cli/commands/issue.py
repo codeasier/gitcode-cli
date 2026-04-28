@@ -57,12 +57,12 @@ def issue_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
     service = IssueService(app.client())
-    labels = normalize_multi_values(labels)
+    labels_str = normalize_multi_values(labels)
     items = service.list(
         owner,
         repo,
         state=state,
-        labels=labels,
+        labels=labels_str,
         creator=author,
         assignee=assignee,
         milestone=milestone,
@@ -114,7 +114,8 @@ def issue_view(
     item = service.get(owner, repo, number)
     if comments:
         comment_items = service.list_comments(owner, repo, number)
-        data = {**item, "comments": comment_items}
+        data = dict(item) if item else {}
+        data["comments"] = comment_items
 
         def default_formatter(data: dict) -> None:
             click.echo(format_issue_detail(data))

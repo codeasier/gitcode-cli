@@ -38,7 +38,8 @@ class PullRequestService:
 
     def review(self, owner: str, repo: str, number: int, body: str | None = None, force: bool = False) -> Any | None:
         payload = {"body": body, "force": force}
-        return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json={k: v for k, v in payload.items() if v is not None})
+        filtered_payload = {k: v for k, v in payload.items() if v is not None}
+        return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json=filtered_payload)
 
     def diff(self, owner: str, repo: str, number: int) -> str:
         response = self.client.request(

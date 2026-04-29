@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import _configure_stdout_encoding, main
+from gitcode_cli.errors import APIError
 
 
 @pytest.fixture
@@ -87,7 +88,6 @@ class TestCli:
             import gitcode_cli.cli as cli_mod
 
             monkeypatch.setattr(cli_mod, "__name__", "__main__")
-            # Re-execute the module-level code by reloading
             importlib.reload(cli_mod)
             assert cli_mod.main is not None
 
@@ -154,3 +154,29 @@ class TestConfigureStdoutEncoding:
         monkeypatch.setattr("gitcode_cli.cli.sys.stderr", mock_stderr)
         monkeypatch.setattr("gitcode_cli.cli.sys.platform", "win32")
         _configure_stdout_encoding()
+
+
+class TestGlobalErrorHandler:
+    def test_api_error_produces_clean_message_without_traceback(self, runner):
+        with patch("gitcode_cli.cli.get_token", return_value="fake-token"):
+            with patch("gitcode_cli.context.AppContext.client") as mock_client_factory:
+                mock_client = MagicMock()
+                mock_client.get.side_effect = APIError("Not Found", status_code=404)
+                mock_client_factory.return_value = mock_client
+                result = runner.invoke(main, ["pr", "view", "999999"])
+        assert result.exit_code == 1
+        assert "error: Not Found" in result.output
+        assert "Traceback" not in result.output
+
+    def test_gc_error_produces_clean_message_without_traceback(self, runner):
+        from gitcode_cli.errors import AuthError
+
+        with patch("gitcode_cli.cli.get_token", return_value="fake-token"):
+            with patch("gitcode_cli.context.AppContext.client") as mock_client_factory:
+                mock_client = MagicMock()
+                mock_client.get.side_effect = AuthError("Invalid token")
+                mock_client_factory.return_value = mock_client
+                result = runner.invoke(main, ["pr", "list"])
+        assert result.exit_code == 1
+        assert "error: Invalid token" in result.output
+        assert "Traceback" not in result.output

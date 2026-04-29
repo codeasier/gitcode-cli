@@ -63,11 +63,11 @@
 ### 5. PR 编辑移除操作（差异3）
 
 **当前状态：**
-- ✅ `issue edit --remove-assignee` / `--remove-label` 已实现
+- ❌ `issue edit` 尚未对齐 `gh` 的 `--remove-assignee` / `--remove-label`
 - ❌ `pr edit` 缺少 `--remove-assignee`、`--remove-label`、`--remove-reviewer`
 
 **计划实现：**
-- 向 `pr edit` 命令添加移除标志
+- 待确认 GitCode API 对移除 assignee/label 的正式契约后，再补齐 `issue edit` / `pr edit` 的移除标志
 - 确保所有移除操作正确传递给 API
 
 ---
@@ -129,7 +129,6 @@
 
 - ✅ PR 命令：`view`、`merge`、`comment`、`review` 支持可选标识符（当前分支推断）
 - ✅ `pr create` 支持 `--editor` 和 `--dry-run`
-- ✅ `issue edit` 支持移除操作（`--remove-assignee`、`--remove-label`）
 - ✅ `pr review` 支持 `--comment` 和 `--request-changes`（降级处理）
 - ✅ 改进 `issue view`、`pr view`、`issue list`、`pr list` 默认输出格式
 - ✅ 向 `issue list`、`pr list` 添加 `--web` 标志用于浏览器查看

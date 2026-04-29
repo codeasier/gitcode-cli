@@ -276,12 +276,13 @@ def pr_close(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    pr_item = service.get(owner, repo, number) if delete_branch else None
     if comment:
         service.comment(owner, repo, number, body=comment)
     item = service.update(owner, repo, number, state="closed")
     if delete_branch:
         try:
-            branch = item.get("head", {}).get("ref")
+            branch = (pr_item or item).get("head", {}).get("ref")
             if branch:
                 subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
                 safe_echo(f"Deleted remote branch {branch}")
@@ -295,16 +296,18 @@ def pr_close(
 @pr_group.command("merge")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
-@click.option("-m", "--merge", "merge_mode", flag_value="merge")
-@click.option("-s", "--squash", "merge_mode", flag_value="squash")
-@click.option("-r", "--rebase", "merge_mode", flag_value="rebase")
+@click.option("-m", "--merge", is_flag=True, help="Merge the pull request.")
+@click.option("-s", "--squash", is_flag=True, help="Squash the pull request.")
+@click.option("-r", "--rebase", is_flag=True, help="Rebase the pull request.")
 @click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after merge.")
 @click.pass_context
 def pr_merge(
     ctx: click.Context,
     repo_name: str | None,
     identifier: str | None,
-    merge_mode: str | None,
+    merge: bool,
+    squash: bool,
+    rebase: bool,
     delete_branch: bool,
 ) -> None:
     app = ctx.obj["app"]
@@ -313,8 +316,12 @@ def pr_merge(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    selected = [merge, squash, rebase]
+    if sum(selected) > 1:
+        raise click.UsageError("-m, -s, and -r are mutually exclusive. Specify only one merge method.")
+    merge_method = ["merge", "squash", "rebase"][selected.index(True)] if any(selected) else "merge"
     pr_item = service.get(owner, repo, number)
-    item = service.merge(owner, repo, number, merge_method=merge_mode or "merge")
+    item = service.merge(owner, repo, number, merge_method=merge_method)
     safe_echo(item["message"])
     if delete_branch:
         try:
@@ -399,14 +406,14 @@ def pr_review(
         if not body:
             raise click.ClickException("Body is required when using --comment or --request-changes.")
         item = service.comment(owner, repo, number, body=body)
-        if comment:
-            safe_echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
-        else:
-            safe_echo(
-                "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
-            )
         safe_echo(f"Posted pull request comment {item['id']}")
-        return
+        if comment:
+            raise click.ClickException(
+                "GitCode review API does not support comment reviews; the pull request comment was posted instead."
+            )
+        raise click.ClickException(
+            "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
+        )
 
     item = service.review(owner, repo, number, body=body, force=force)
     safe_echo(f"Reviewed pull request #{number}")

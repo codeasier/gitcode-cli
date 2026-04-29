@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from click.testing import CliRunner
@@ -36,7 +36,6 @@ def mock_repo(monkeypatch):
     from gitcode_cli import repo
 
     monkeypatch.setattr(repo, "resolve_repo", lambda x=None: ("owner", "repo"))
-    # Also patch in commands.issue since it binds locally
     import gitcode_cli.commands.issue as issue_mod
 
     monkeypatch.setattr(issue_mod, "resolve_repo", lambda x=None: ("owner", "repo"))
@@ -131,6 +130,12 @@ class TestIssueList:
         assert "Maximum number of items to fetch." in result.output
         assert "[default:" in result.output
 
+    def test_rejects_zero_limit(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "list", "-L", "0"])
+        assert result.exit_code != 0
+        assert "must be greater than 0" in result.output
+        mock_client.get.assert_not_called()
+
 
 class TestIssueView:
     def test_default_renders_metadata_lines(self, runner, mock_client, mock_repo):
@@ -184,8 +189,8 @@ class TestIssueView:
         assert '"First comment"' in result.output
         assert '"Second comment"' in result.output
         assert mock_client.get.call_args_list == [
-            (("/repos/owner/repo/issues/42",),),
-            (("/repos/owner/repo/issues/42/comments",),),
+            call("/repos/owner/repo/issues/42"),
+            call("/repos/owner/repo/issues/42/comments"),
         ]
 
     def test_comments_default_keeps_metadata_and_comments(self, runner, mock_client, mock_repo):
@@ -210,6 +215,21 @@ class TestIssueView:
         assert "- First comment" in result.output
         assert "- Second comment" in result.output
 
+    def test_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "view", "not-a-number"])
+        assert result.exit_code != 0
+        assert "Issue identifier must be a number or a valid issue URL." in result.output
+        mock_client.get.assert_not_called()
+
+    def test_not_found_returns_friendly_error(self, runner, mock_client, mock_repo):
+        from gitcode_cli.errors import APIError
+
+        mock_client.get.side_effect = APIError("Issue not found", 404)
+        result = runner.invoke(main, ["issue", "view", "42"])
+        assert result.exit_code != 0
+        assert "error: Issue not found" in result.output
+        assert "Traceback" not in result.output
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0
@@ -229,6 +249,33 @@ class TestIssueView:
         result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", str(body_file)])
         assert result.exit_code == 0
         assert mock_client.post.call_args[1]["json"]["body"] == "file body content"
+
+    def test_reads_body_from_stdin_when_body_file_is_dash(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", "-"], input="stdin body")
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "stdin body"
+
+    def test_rejects_body_and_body_file_together(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("file body content")
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "inline", "-F", str(body_file)])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+        mock_client.post.assert_not_called()
+
+    def test_missing_body_file_returns_click_error(self, runner, mock_client, mock_repo, tmp_path):
+        missing = tmp_path / "missing.md"
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", str(missing)])
+        assert result.exit_code != 0
+        assert "Body file not found" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_rejects_title_longer_than_255_characters(self, runner, mock_client, mock_repo):
+        title = "T" * 256
+        result = runner.invoke(main, ["issue", "create", "-t", title])
+        assert result.exit_code != 0
+        assert "title must be 255 characters or fewer" in result.output
+        mock_client.post.assert_not_called()
 
     def test_web(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
@@ -345,6 +392,13 @@ class TestIssueComment:
         assert result.exit_code == 0
         assert mock_client.post.call_args[1]["json"]["body"] == "edited comment"
 
+    def test_editor_cancel_returns_error(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: None)
+        result = runner.invoke(main, ["issue", "comment", "42", "-e"])
+        assert result.exit_code != 0
+        assert "Editor was closed without saving a comment." in result.output
+        mock_client.post.assert_not_called()
+
     def test_web_opens_issue_page_without_posting(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "comment", "42", "--web"])
@@ -403,6 +457,25 @@ class TestIssueEdit:
         assert json_data["assignee"] == "user"
         assert json_data["labels"] == "bug"
 
+    def test_supports_multiple_labels(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-l", "bug", "-l", "docs"])
+        assert result.exit_code == 0
+        json_data = mock_client.patch.call_args[1]["json"]
+        assert json_data["labels"] == "bug,docs"
+
+    def test_body_and_body_file_are_mutually_exclusive(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("file body")
+        result = runner.invoke(main, ["issue", "edit", "42", "-b", "inline body", "-F", str(body_file)])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+        mock_client.patch.assert_not_called()
+
+    def test_body_file_can_read_from_stdin(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-F", "-"], input="stdin body\n")
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args[1]["json"]["body"] == "stdin body\n"
+
     def test_rejects_empty_edit(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "edit", "42"])
         assert result.exit_code != 0
@@ -421,15 +494,26 @@ class TestIssueEdit:
 
 
 class TestIssueDelete:
-    def test_default(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "delete", "42"], input="y\n")
+    def test_default(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: True)
+        monkeypatch.setattr("gitcode_cli.commands.issue.click.confirm", lambda *args, **kwargs: True)
+        result = runner.invoke(main, ["issue", "delete", "42"])
         assert result.exit_code == 0
         assert "Deleted issue #42" in result.output
         mock_client.delete.assert_called_once()
 
-    def test_url(self, runner, mock_client):
-        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42"], input="y\n")
+    def test_url(self, runner, mock_client, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: True)
+        monkeypatch.setattr("gitcode_cli.commands.issue.click.confirm", lambda *args, **kwargs: True)
+        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
+
+    def test_non_tty_stdin_returns_clear_error(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: False)
+        result = runner.invoke(main, ["issue", "delete", "42"])
+        assert result.exit_code != 0
+        assert "Cannot prompt for confirmation when stdin is not a TTY." in result.output
+        mock_client.delete.assert_not_called()
 
 
 class TestIssueStatus:

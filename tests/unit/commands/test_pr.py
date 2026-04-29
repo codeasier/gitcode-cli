@@ -132,6 +132,20 @@ class TestPrList:
         assert '"number": 1' in result.output
         assert '"title": "First PR"' in result.output
 
+    def test_pr_list_template_with_json_uses_template(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "title": "First PR"},
+            {"number": 2, "title": "Second PR"},
+        ]
+        result = runner.invoke(
+            main,
+            ["pr", "list", "--json", "number,title", "-t", "{{.number}} {{.title}}"],
+        )
+        assert result.exit_code == 0
+        assert "1 First PR" in result.output
+        assert "2 Second PR" in result.output
+        assert '"number"' not in result.output
+
     def test_pr_list_alias_ls(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": 1, "state": "open", "title": "First PR"},
@@ -370,6 +384,7 @@ class TestPrClose:
 
     def test_pr_close_delete_branch(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
             mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
@@ -427,6 +442,27 @@ class TestPrMerge:
         assert "Merged" in result.output
         assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "rebase"
 
+    def test_pr_merge_rejects_mutually_exclusive_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s"])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower() or "only one" in result.output.lower()
+        mock_client.put.assert_not_called()
+
+    def test_pr_merge_rejects_all_three_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s", "-r"])
+        assert result.exit_code != 0
+        mock_client.put.assert_not_called()
+
+    def test_pr_merge_rebase_error_shows_clean_message(self, runner, mock_client, mock_repo):
+        from gitcode_cli.errors import APIError
+
+        mock_client.get.return_value = {"number": 42, "state": "open"}
+        mock_client.put.side_effect = APIError("this patch has already been applied", status_code=405)
+        result = runner.invoke(main, ["pr", "merge", "42", "-r"])
+        assert result.exit_code != 0
+        assert "this patch has already been applied" in result.output
+        assert "Traceback" not in result.output
+
 
 class TestPrComment:
     def test_pr_comment(self, runner, mock_client, mock_repo):
@@ -468,12 +504,9 @@ class TestPrReview:
     def test_pr_review_comment_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
-        assert result.exit_code == 0
-        assert (
-            "GitCode review API does not support comment reviews; posted a pull request comment instead."
-            in result.output
-        )
+        assert result.exit_code != 0
         assert "Posted pull request comment 123" in result.output
+        assert "does not support comment reviews" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1
         assert post_calls[0].kwargs["json"]["body"] == "Needs more tests"
@@ -481,12 +514,9 @@ class TestPrReview:
     def test_pr_review_request_changes_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 456}
         result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
-        assert result.exit_code == 0
-        assert (
-            "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
-            in result.output
-        )
+        assert result.exit_code != 0
         assert "Posted pull request comment 456" in result.output
+        assert "does not support request-changes reviews" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1
         assert post_calls[0].kwargs["json"]["body"] == "Please address feedback"
@@ -505,6 +535,18 @@ class TestPrReview:
         result = runner.invoke(main, ["pr", "review", "42", "--comment"])
         assert result.exit_code != 0
         assert "Body is required when using --comment or --request-changes." in result.output
+
+    def test_pr_review_comment_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
+        assert result.exit_code != 0
+        assert "Posted pull request comment 123" in result.output
+
+    def test_pr_review_request_changes_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 456}
+        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
+        assert result.exit_code != 0
+        assert "Posted pull request comment 456" in result.output
 
 
 class TestPrReopen:
@@ -623,9 +665,34 @@ class TestPrCreateEdgeCases:
             assert result.exit_code == 0
             mock_browser.assert_called_once()
 
+    def test_pr_create_rejects_body_and_body_file_together(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.txt"
+        body_file.write_text("file body")
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "-t",
+                "Test",
+                "-b",
+                "inline body",
+                "-F",
+                str(body_file),
+                "--base",
+                "master",
+                "--head",
+                "feature",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+        mock_client.post.assert_not_called()
+
 
 class TestPrCloseEdgeCases:
     def test_close_delete_branch_no_ref(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "head": {}}
         mock_client.patch.return_value = {"number": 42, "head": {}}
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
@@ -634,12 +701,26 @@ class TestPrCloseEdgeCases:
             mock_run.assert_not_called()
 
     def test_close_delete_branch_git_fails(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
         mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
             mock_run.side_effect = Exception("git failed")
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
             assert "Warning: could not delete remote branch" in result.output
+
+    def test_close_delete_branch_fetches_pr_before_close(self, runner, mock_client, mock_repo):
+        """When close response lacks head.ref, we should have fetched it beforehand."""
+        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
+        mock_client.patch.return_value = {"number": 42, "head": {}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            result = runner.invoke(main, ["pr", "close", "42", "-d"])
+            assert result.exit_code == 0
+            assert "Deleted remote branch feature" in result.output
+            mock_run.assert_called_once_with(
+                ["git", "push", "origin", "--delete", "feature"],
+                check=True,
+            )
 
 
 class TestPrReviewEdgeCases:

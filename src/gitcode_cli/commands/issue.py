@@ -1,18 +1,31 @@
 from __future__ import annotations
 
+import sys
+
 import click
 
 from ..cli_compat import get_body_from_options, normalize_multi_values
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
-from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_echo, safe_number
+from ..utils import (
+    open_in_browser,
+    prompt_if_missing,
+    require_issue_number,
+    resolve_issue_arg,
+    safe_echo,
+    safe_number,
+)
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
     output = format_issue_list(items)
     if output:
         safe_echo(output)
+
+
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
 
 
 @click.group("issue")
@@ -53,6 +66,8 @@ def issue_list(
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if limit is not None and limit < 1:
+        raise click.BadParameter("must be greater than 0", param_hint="--limit")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
@@ -106,6 +121,7 @@ def issue_view(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     if web:
         target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
         open_in_browser(target_url)
@@ -174,8 +190,9 @@ def issue_create(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
     title = prompt_if_missing(title, "Title")
-    if body_file:
-        body = read_body_file(body_file)
+    if len(title) > 255:
+        raise click.ClickException("title must be 255 characters or fewer")
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
     labels_str = normalize_multi_values(labels)
     service = IssueService(app.client())
     item = service.create(
@@ -234,7 +251,7 @@ def issue_close(
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
 @click.option("-e", "--editor", is_flag=True)
-@click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
+@click.option("-w", "--web", is_flag=True)
 @click.pass_context
 def issue_comment(
     ctx: click.Context,
@@ -253,13 +270,16 @@ def issue_comment(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     if web:
-        open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
+        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
+        open_in_browser(target_url)
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
-    body = prompt_if_missing(body, "Body")
+    if editor and body is None:
+        raise click.ClickException("Editor was closed without saving a comment.")
+    body = prompt_if_missing(body, "Comment")
     service = IssueService(app.client())
     item = service.comment(owner, repo, number, body)
-    safe_echo(str(item["id"]))
+    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 
 
 @issue_group.command("reopen")
@@ -290,9 +310,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
 @click.option("-a", "--add-assignee")
-@click.option("-l", "--add-label")
-@click.option("--remove-assignee")
-@click.option("--remove-label")
+@click.option("-l", "--add-label", "add_labels", multiple=True)
 @click.option("-m", "--milestone")
 @click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
 @click.pass_context
@@ -304,9 +322,7 @@ def issue_edit(
     body: str | None,
     body_file: str | None,
     add_assignee: str | None,
-    add_label: str | None,
-    remove_assignee: str | None,
-    remove_label: str | None,
+    add_labels: tuple[str, ...] | None,
     milestone: str | None,
     remove_milestone: bool,
 ) -> None:
@@ -317,17 +333,14 @@ def issue_edit(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    if body_file:
-        body = read_body_file(body_file)
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
     data = {
         k: v
         for k, v in {
             "title": title,
             "body": body,
             "assignee": add_assignee,
-            "labels": add_label,
-            "unassignee": remove_assignee,
-            "unset_labels": remove_label,
+            "labels": normalize_multi_values(add_labels),
             "milestone": milestone,
         }.items()
         if v is not None
@@ -344,7 +357,6 @@ def issue_edit(
 @issue_group.command("delete")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
-@click.confirmation_option(prompt="Are you sure you want to delete this issue?")
 @click.pass_context
 def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
     app = ctx.obj["app"]
@@ -354,6 +366,9 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+    if not _stdin_is_tty():
+        raise click.ClickException("Cannot prompt for confirmation when stdin is not a TTY.")
+    click.confirm("Are you sure you want to delete this issue?", abort=True)
     service = IssueService(app.client())
     service.delete(owner, repo, number)
     safe_echo(f"Deleted issue #{number}")

@@ -648,6 +648,30 @@ class TestPrCreateEdgeCases:
             assert result.exit_code == 0
             mock_browser.assert_called_once()
 
+    def test_pr_create_rejects_body_and_body_file_together(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.txt"
+        body_file.write_text("file body")
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "-t",
+                "Test",
+                "-b",
+                "inline body",
+                "-F",
+                str(body_file),
+                "--base",
+                "master",
+                "--head",
+                "feature",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "cannot use --body and --body-file together" in result.output.lower()
+        mock_client.post.assert_not_called()
+
 
 class TestPrCloseEdgeCases:
     def test_close_delete_branch_no_ref(self, runner, mock_client, mock_repo):

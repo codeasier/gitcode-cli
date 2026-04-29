@@ -442,6 +442,20 @@ class TestIssueDelete:
         assert result.exit_code == 0
 
 
+class TestIssueDevelop:
+    def test_develop_opens_browser(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "develop", "42"])
+        assert result.exit_code == 0
+        assert "not fully supported" in result.output
+        mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
+
+    def test_develop_help(self, runner):
+        result = runner.invoke(main, ["issue", "develop", "--help"])
+        assert result.exit_code == 0
+        assert "Create a local branch" in result.output
+
+
 class TestIssueStatus:
     def test_default(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "state": "open", "title": "T"}]

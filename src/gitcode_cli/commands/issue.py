@@ -388,5 +388,33 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
         safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
 
 
+@issue_group.command("develop")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier")
+@click.option("-b", "--base", help="Base branch for the develop branch.")
+@click.option("-n", "--name", help="Name for the local branch.")
+@click.pass_context
+def issue_develop(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str,
+    base: str | None,
+    name: str | None,
+) -> None:
+    if base is not None or name is not None:
+        raise click.UsageError("--base and --name are not supported by 'gc issue develop'")
+
+    app = ctx.obj["app"]
+    url_owner, url_repo, number = resolve_issue_arg(identifier)
+    if url_owner:
+        assert url_repo is not None
+        owner, repo = url_owner, url_repo
+    else:
+        owner, repo = resolve_repo(repo_name or app.repo)
+    safe_echo("Note: 'issue develop' does not create a local branch on GitCode.")
+    safe_echo(f"Opening issue #{number} in the browser instead.")
+    open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
+
+
 issue_group.add_command(issue_list, name="ls")
 issue_group.add_command(issue_create, name="new")

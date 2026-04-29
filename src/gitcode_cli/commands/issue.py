@@ -377,6 +377,9 @@ def issue_develop(
     base: str | None,
     name: str | None,
 ) -> None:
+    if base is not None or name is not None:
+        raise click.UsageError("--base and --name are not supported by 'gc issue develop'")
+
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -384,8 +387,7 @@ def issue_develop(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    _ = base, name
-    safe_echo("Note: 'issue develop' is not fully supported on GitCode.")
+    safe_echo("Note: 'issue develop' does not create a local branch on GitCode.")
     safe_echo(f"Opening issue #{number} in the browser instead.")
     open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
 

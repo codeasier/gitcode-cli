@@ -447,13 +447,30 @@ class TestIssueDevelop:
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "develop", "42"])
         assert result.exit_code == 0
-        assert "not fully supported" in result.output
+        assert "does not create a local branch" in result.output
         mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
 
     def test_develop_help(self, runner):
         result = runner.invoke(main, ["issue", "develop", "--help"])
         assert result.exit_code == 0
-        assert "Create a local branch" in result.output
+        assert "Base branch for the develop branch." in result.output
+        assert "Name for the local branch." in result.output
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--base", "main"],
+            ["--name", "feature-42"],
+            ["--base", "main", "--name", "feature-42"],
+        ],
+    )
+    def test_rejects_unimplemented_branch_options(self, runner, mock_client, mock_repo, args):
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "develop", "42", *args])
+
+        assert result.exit_code != 0
+        assert "--base and --name are not supported" in result.output
+        mock_browser.assert_not_called()
 
 
 class TestIssueStatus:

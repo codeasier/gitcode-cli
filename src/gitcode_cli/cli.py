@@ -5,6 +5,7 @@ import importlib.metadata
 import sys
 
 import click
+from click.shell_completion import get_completion_class
 
 from . import __version__
 from .commands.auth import auth_group
@@ -64,8 +65,6 @@ def version_command() -> None:
 @main.command("completion")
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completion_command(shell: str) -> None:
-    from click.shell_completion import get_completion_class
-
     comp_class = get_completion_class(shell)
     if comp_class is None:
         raise click.ClickException(f"Shell completion not supported for: {shell}")

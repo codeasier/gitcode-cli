@@ -33,11 +33,11 @@ def _get_version() -> str:
 
 
 class _GCMainGroup(click.Group):
-    def invoke(self, ctx: click.Context) -> None:
+    def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
         except GCError as exc:
-            click.echo(f"error: {exc}", err=True)
+            safe_echo(f"error: {exc}", err=True)
             ctx.exit(1)
 
 

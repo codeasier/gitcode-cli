@@ -213,7 +213,11 @@ def issue_close(
     service = IssueService(app.client())
     current = service.get(owner, repo, number)
     if current and current.get("state") == "closed":
-        safe_echo(f"Issue #{safe_number(current, number)} is already closed")
+        if comment:
+            service.comment(owner, repo, number, comment)
+            safe_echo(f"Issue #{safe_number(current, number)} is already closed; posted comment")
+        else:
+            safe_echo(f"Issue #{safe_number(current, number)} is already closed")
         return
     if comment:
         service.comment(owner, repo, number, comment)

@@ -289,10 +289,18 @@ class TestIssueClose:
 class TestIssueCloseIdempotency:
     def test_close_already_closed_issue_is_idempotent(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"number": "42", "state": "closed"}
-        mock_client.patch.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "already closed" in result.output.lower()
+        mock_client.patch.assert_not_called()
+        mock_client.post.assert_not_called()
+
+    def test_close_already_closed_issue_still_posts_explicit_comment(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42", "-c", "done"])
+        assert result.exit_code == 0
+        assert "already closed; posted comment" in result.output.lower()
+        mock_client.post.assert_called_once()
         mock_client.patch.assert_not_called()
 
     def test_close_with_comment_and_reason(self, runner, mock_client, mock_repo):
@@ -311,16 +319,6 @@ class TestIssueCloseIdempotency:
         assert result.exit_code == 0
         patch_kwargs = mock_client.patch.call_args.kwargs
         assert patch_kwargs["json"]["state_reason"] == "completed"
-
-
-class TestIssueReopenIdempotency:
-    def test_reopen_already_open_issue_is_idempotent(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
-        mock_client.patch.return_value = {"number": "42", "state": "open"}
-        result = runner.invoke(main, ["issue", "reopen", "42"])
-        assert result.exit_code == 0
-        assert "already open" in result.output.lower()
-        mock_client.patch.assert_not_called()
 
 
 class TestIssueComment:
@@ -378,6 +376,15 @@ class TestIssueReopen:
         result = runner.invoke(main, ["issue", "reopen", "42"])
         assert result.exit_code == 0
         assert "Reopened issue #42" in result.output
+
+
+class TestIssueReopenIdempotency:
+    def test_reopen_already_open_issue_is_idempotent(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        result = runner.invoke(main, ["issue", "reopen", "42"])
+        assert result.exit_code == 0
+        assert "already open" in result.output.lower()
+        mock_client.patch.assert_not_called()
 
 
 class TestIssueEdit:

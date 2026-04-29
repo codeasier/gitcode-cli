@@ -132,6 +132,20 @@ class TestPrList:
         assert '"number": 1' in result.output
         assert '"title": "First PR"' in result.output
 
+    def test_pr_list_template_with_json_uses_template(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "title": "First PR"},
+            {"number": 2, "title": "Second PR"},
+        ]
+        result = runner.invoke(
+            main,
+            ["pr", "list", "--json", "number,title", "-t", "{{.number}} {{.title}}"],
+        )
+        assert result.exit_code == 0
+        assert "1 First PR" in result.output
+        assert "2 Second PR" in result.output
+        assert '"number"' not in result.output
+
     def test_pr_list_alias_ls(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": 1, "state": "open", "title": "First PR"},

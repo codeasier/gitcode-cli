@@ -427,6 +427,17 @@ class TestPrMerge:
         assert "Merged" in result.output
         assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "rebase"
 
+    def test_pr_merge_rejects_mutually_exclusive_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s"])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower() or "only one" in result.output.lower()
+        mock_client.put.assert_not_called()
+
+    def test_pr_merge_rejects_all_three_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s", "-r"])
+        assert result.exit_code != 0
+        mock_client.put.assert_not_called()
+
 
 class TestPrComment:
     def test_pr_comment(self, runner, mock_client, mock_repo):

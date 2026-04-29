@@ -255,7 +255,7 @@ class TestIssueView:
         body_file.write_text("file body content")
         result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "inline", "-F", str(body_file)])
         assert result.exit_code != 0
-        assert "cannot use --body and --body-file together" in result.output
+        assert "mutually exclusive" in result.output.lower()
         mock_client.post.assert_not_called()
 
     def test_missing_body_file_returns_click_error(self, runner, mock_client, mock_repo, tmp_path):

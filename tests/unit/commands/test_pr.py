@@ -453,6 +453,16 @@ class TestPrMerge:
         assert result.exit_code != 0
         mock_client.put.assert_not_called()
 
+    def test_pr_merge_rebase_error_shows_clean_message(self, runner, mock_client, mock_repo):
+        from gitcode_cli.errors import APIError
+
+        mock_client.get.return_value = {"number": 42, "state": "open"}
+        mock_client.put.side_effect = APIError("this patch has already been applied", status_code=405)
+        result = runner.invoke(main, ["pr", "merge", "42", "-r"])
+        assert result.exit_code != 0
+        assert "this patch has already been applied" in result.output
+        assert "Traceback" not in result.output
+
 
 class TestPrComment:
     def test_pr_comment(self, runner, mock_client, mock_repo):

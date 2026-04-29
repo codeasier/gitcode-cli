@@ -22,6 +22,10 @@ class TestGetBodyFromOptions:
         assert get_body_from_options(body="inline", body_file=None, editor=False) == "inline"
         edit_mock.assert_not_called()
 
+    def test_rejects_body_and_body_file_together(self):
+        with pytest.raises(click.UsageError, match="cannot use --body and --body-file together"):
+            get_body_from_options(body="inline", body_file="body.md", editor=False)
+
     def test_reads_body_from_file(self, tmp_path: Path):
         body_file = tmp_path / "body.md"
         body_file.write_text("file body", encoding="utf-8")

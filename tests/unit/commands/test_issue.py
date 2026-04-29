@@ -245,6 +245,33 @@ class TestIssueView:
         assert result.exit_code == 0
         assert mock_client.post.call_args[1]["json"]["body"] == "file body content"
 
+    def test_reads_body_from_stdin_when_body_file_is_dash(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", "-"], input="stdin body")
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "stdin body"
+
+    def test_rejects_body_and_body_file_together(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("file body content")
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "inline", "-F", str(body_file)])
+        assert result.exit_code != 0
+        assert "cannot use --body and --body-file together" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_missing_body_file_returns_click_error(self, runner, mock_client, mock_repo, tmp_path):
+        missing = tmp_path / "missing.md"
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", str(missing)])
+        assert result.exit_code != 0
+        assert "Body file not found" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_rejects_title_longer_than_255_characters(self, runner, mock_client, mock_repo):
+        title = "T" * 256
+        result = runner.invoke(main, ["issue", "create", "-t", title])
+        assert result.exit_code != 0
+        assert "title must be 255 characters or fewer" in result.output
+        mock_client.post.assert_not_called()
+
     def test_web(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "create", "-t", "T", "-w"])

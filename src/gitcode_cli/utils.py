@@ -53,7 +53,10 @@ def get_default_git_branch() -> str | None:
 
 def read_body_file(path: str) -> str:
     """Read body content from a file."""
-    return Path(path).read_text(encoding="utf-8")
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise click.ClickException(f"Body file not found: {path}") from exc
 
 
 def open_in_browser(url: str) -> None:

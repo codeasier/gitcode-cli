@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 
 from gitcode_cli.utils import (
@@ -82,6 +83,11 @@ class TestReadBodyFile:
         file_path = tmp_path / "body.md"
         file_path.write_text("Hello 世界", encoding="utf-8")
         assert read_body_file(str(file_path)) == "Hello 世界"
+
+    def test_raises_click_exception_for_missing_file(self, tmp_path: Path):
+        missing = tmp_path / "missing.md"
+        with pytest.raises(click.ClickException, match="Body file not found"):
+            read_body_file(str(missing))
 
 
 class TestOpenInBrowser:

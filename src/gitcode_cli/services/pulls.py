@@ -44,6 +44,11 @@ class PullRequestService:
     def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/comments")
 
+    def assign_reviewers(self, owner: str, repo: str, number: int, reviewers: str) -> Any | None:
+        return self.client.post(
+            f"/repos/{owner}/{repo}/pulls/{number}/reviewers", json={"reviewers": reviewers, "add": True}
+        )
+
     def diff(self, owner: str, repo: str, number: int) -> str:
         response = self.client.request(
             "GET",

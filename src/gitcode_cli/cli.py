@@ -16,6 +16,15 @@ from .errors import GCError
 from .utils import safe_echo
 
 
+class _GCMainGroup(click.Group):
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except GCError as exc:
+            safe_echo(f"error: {exc}", err=True)
+            ctx.exit(1)
+
+
 def _configure_stdout_encoding() -> None:
     if sys.platform != "win32":
         return
@@ -30,15 +39,6 @@ def _get_version() -> str:
         return importlib.metadata.version("pygitcode")
     except importlib.metadata.PackageNotFoundError:
         return __version__
-
-
-class _GCMainGroup(click.Group):
-    def invoke(self, ctx: click.Context):
-        try:
-            return super().invoke(ctx)
-        except GCError as exc:
-            safe_echo(f"error: {exc}", err=True)
-            ctx.exit(1)
 
 
 @click.group(cls=_GCMainGroup, context_settings={"help_option_names": ["-h", "--help"]})

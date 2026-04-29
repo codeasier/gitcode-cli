@@ -180,7 +180,7 @@ def pr_view(
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("--template", help="Format output using a Go template string.")
 @click.pass_context
-def pr_create(
+def pr_create(  # noqa: PLR0912
     ctx: click.Context,
     repo_name: str | None,
     title: str | None,
@@ -232,6 +232,7 @@ def pr_create(
 
     title = prompt_if_missing(title, "Title")
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    reviewers_str = normalize_multi_values(reviewers)
     payload = {
         "title": title,
         "body": body,
@@ -240,14 +241,17 @@ def pr_create(
         "draft": draft,
         "labels": normalize_multi_values(labels),
         "assignees": normalize_multi_values(assignees),
-        "reviewers": normalize_multi_values(reviewers),
-        "milestone": milestone,
+        "milestone_number": milestone,
     }
     if dry_run:
         safe_echo(json.dumps({k: v for k, v in payload.items() if v is not None}, indent=2, sort_keys=True))
+        if reviewers_str:
+            safe_echo(f"Reviewers (post-create): {reviewers_str}")
         return
     service = PullRequestService(app.client())
     item = service.create(owner, repo, **payload)
+    if reviewers_str:
+        service.assign_reviewers(owner, repo, item.get("number") or item.get("iid"), reviewers_str)
     output_result(
         item,
         json_fields,

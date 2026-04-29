@@ -309,11 +309,16 @@ class TestPrCreate:
         assert '"base": "master"' in result.output
         assert '"head": "feature"' in result.output
         assert '"labels": "bug,docs"' in result.output
-        assert '"reviewers": "alice,bob"' in result.output
+        assert '"reviewers"' not in result.output
         assert '"assignees": "carol,dave"' in result.output
-        assert '"milestone": "v1"' in result.output
+        assert '"milestone_number": "v1"' in result.output
+        assert "Reviewers (post-create): alice,bob" in result.output
 
     def test_pr_create_repeatable_people_and_labels_are_normalized(self, runner, mock_client, mock_repo):
+        mock_client.post.side_effect = [
+            {"number": 42, "html_url": "https://example.com/42", "title": "Test", "head": {"ref": "feature"}},
+            {"id": 1},
+        ]
         result = runner.invoke(
             main,
             [
@@ -344,10 +349,15 @@ class TestPrCreate:
             ],
         )
         assert result.exit_code == 0
-        assert mock_client.post.call_args.kwargs["json"]["labels"] == "bug,docs"
-        assert mock_client.post.call_args.kwargs["json"]["reviewers"] == "alice,bob"
-        assert mock_client.post.call_args.kwargs["json"]["assignees"] == "carol,dave"
-        assert mock_client.post.call_args.kwargs["json"]["milestone"] == "v1"
+        create_call = mock_client.post.call_args_list[0]
+        assert create_call.kwargs["json"]["labels"] == "bug,docs"
+        assert "reviewers" not in create_call.kwargs["json"]
+        assert create_call.kwargs["json"]["assignees"] == "carol,dave"
+        assert create_call.kwargs["json"]["milestone_number"] == "v1"
+        # Second call assigns reviewers via separate API
+        reviewers_call = mock_client.post.call_args_list[1]
+        assert "/pulls/42/reviewers" in reviewers_call.args[0]
+        assert reviewers_call.kwargs["json"]["reviewers"] == "alice,bob"
 
     def test_pr_create_alias_new(self, runner, mock_client, mock_repo):
         result = runner.invoke(
@@ -743,6 +753,61 @@ class TestPrCheckoutEdgeCases:
             result = runner.invoke(main, ["pr", "checkout", "42"])
             assert result.exit_code != 0
             assert "Git checkout failed" in result.output
+
+
+class TestPrCreateMetadata:
+    def test_pr_create_sends_milestone_number_not_milestone(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--body",
+                "Body",
+                "--base",
+                "master",
+                "--head",
+                "feature",
+                "--milestone",
+                "v1",
+            ],
+        )
+        assert result.exit_code == 0
+        json_payload = mock_client.post.call_args.kwargs["json"]
+        assert "milestone_number" in json_payload
+        assert "milestone" not in json_payload or json_payload.get("milestone") is None
+
+    def test_pr_create_with_reviewers_calls_reviewers_api(self, runner, mock_client, mock_repo):
+        mock_client.post.side_effect = [
+            {"number": 42, "html_url": "https://example.com/42", "title": "Test", "head": {"ref": "feature"}},
+            {"id": 1},
+        ]
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--body",
+                "Body",
+                "--base",
+                "master",
+                "--head",
+                "feature",
+                "-r",
+                "alice",
+                "-r",
+                "bob",
+            ],
+        )
+        assert result.exit_code == 0
+        post_calls = mock_client.post.call_args_list
+        assert len(post_calls) == 2
+        assert "/pulls/42/reviewers" in post_calls[1].args[0]
+        assert post_calls[1].kwargs["json"]["reviewers"] == "alice,bob"
 
 
 class TestPrCreateMissingHtmlUrl:

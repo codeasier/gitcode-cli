@@ -174,8 +174,9 @@ def issue_create(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
     title = prompt_if_missing(title, "Title")
-    if body_file:
-        body = read_body_file(body_file)
+    if len(title) > 255:
+        raise click.ClickException("title must be 255 characters or fewer")
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
     labels_str = normalize_multi_values(labels)
     service = IssueService(app.client())
     item = service.create(

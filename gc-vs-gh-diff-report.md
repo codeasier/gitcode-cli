@@ -290,8 +290,8 @@ Body:
 | `-F, --body-file` | ✅ | ✅ | ✅ 对齐 |
 | `-a, --add-assignee` | ✅，支持 `@me`/`@copilot` | ✅ | **部分对齐** |
 | `-l, --add-label` | ✅ | ✅ | 对齐 |
-| `--remove-assignee` | ✅，支持 `@me`/`@copilot` | ✅，映射为 `unassignee` 参数 | **部分对齐** |
-| `--remove-label` | ✅ | ✅，映射为 `unset_labels` 参数 | **部分对齐** |
+| `--remove-assignee` | ✅，支持 `@me`/`@copilot` | ❌ | **缺失** |
+| `--remove-label` | ✅ | ❌ | **缺失** |
 | `-m, --milestone` | ✅ | ✅ | ✅ 对齐 |
 | `--remove-milestone` | ✅ | ✅ | ✅ 对齐 |
 | `--add-project` | ✅ | ❌ | **缺失** |
@@ -300,7 +300,7 @@ Body:
 说明：
 
 - `gh issue edit` 支持同时编辑多个 issue（同一仓库内），`gc` 仅支持单个
-- `remove-assignee` 和 `remove-label` 已映射到 API 参数（`unassignee`/`unset_labels`），但需验证 GitCode API 是否真正支持
+- 当前 `gc issue edit` 仅覆盖 issue #32 要求的 title/body/assignee/labels/milestone 编辑，尚未实现 remove-assignee/remove-label
 
 对应实现：[issue.py](file:///Users/codeasier/Projects/gitcode-cli/src/gitcode_cli/commands/issue.py)
 

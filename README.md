@@ -74,10 +74,10 @@ gc issue create -t "Bug report" -b "Something is broken"
 gc issue create --label bug --label "help wanted"   # Multiple labels
 gc issue create --web    # Create in browser
 
-# Edit an issue (add/remove labels, assignees, milestones)
+# Edit an issue (title, labels, assignee, milestone)
 gc issue edit 42 -t "Updated title"
-gc issue edit 42 --add-label bug --remove-label "in progress"
-gc issue edit 42 --add-assignee @me --remove-assignee otheruser
+gc issue edit 42 --add-label bug --add-label docs
+gc issue edit 42 --add-assignee @me
 gc issue edit 42 --milestone v1.0 --remove-milestone
 
 # Comment on an issue

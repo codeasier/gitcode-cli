@@ -9,7 +9,6 @@ from ..services import IssueService
 from ..utils import (
     open_in_browser,
     prompt_if_missing,
-    read_body_file,
     require_issue_number,
     resolve_issue_arg,
     safe_echo,
@@ -252,10 +251,11 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 @click.argument("identifier")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
-@click.option("-a", "--assignee")
-@click.option("-l", "--label", "labels")
-@click.option("-m", "--milestone")
 @click.option("-F", "--body-file")
+@click.option("-a", "--add-assignee")
+@click.option("-l", "--add-label", "add_labels", multiple=True)
+@click.option("-m", "--milestone")
+@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
 @click.pass_context
 def issue_edit(
     ctx: click.Context,
@@ -263,10 +263,11 @@ def issue_edit(
     identifier: str,
     title: str | None,
     body: str | None,
-    assignee: str | None,
-    labels: str | None,
-    milestone: str | None,
     body_file: str | None,
+    add_assignee: str | None,
+    add_labels: tuple[str, ...] | None,
+    milestone: str | None,
+    remove_milestone: bool,
 ) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
@@ -275,20 +276,24 @@ def issue_edit(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    if body_file:
-        body = read_body_file(body_file)
-    payload = {
-        "title": title,
-        "body": body,
-        "assignee": assignee,
-        "labels": labels,
-        "milestone": milestone,
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    data = {
+        k: v
+        for k, v in {
+            "title": title,
+            "body": body,
+            "assignee": add_assignee,
+            "labels": normalize_multi_values(add_labels),
+            "milestone": milestone,
+        }.items()
+        if v is not None
     }
-    payload = {k: v for k, v in payload.items() if v is not None}
-    if not payload:
-        raise click.ClickException("must specify at least one field to edit")
+    if remove_milestone:
+        data["milestone"] = ""
+    if not data:
+        raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
-    item = service.update(owner, repo, number, **payload)
+    item = service.update(owner, repo, number, **data)
     safe_echo(f"Edited issue #{safe_number(item, number)}")
 
 

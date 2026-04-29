@@ -23,7 +23,7 @@ class TestGetBodyFromOptions:
         edit_mock.assert_not_called()
 
     def test_rejects_body_and_body_file_together(self):
-        with pytest.raises(click.UsageError, match="cannot use --body and --body-file together"):
+        with pytest.raises(click.UsageError, match="mutually exclusive"):
             get_body_from_options(body="inline", body_file="body.md", editor=False)
 
     def test_reads_body_from_file(self, tmp_path: Path):

@@ -505,8 +505,8 @@ class TestPrReview:
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
         assert result.exit_code != 0
+        assert "Posted pull request comment 123" in result.output
         assert "does not support comment reviews" in result.output
-        assert "123" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1
         assert post_calls[0].kwargs["json"]["body"] == "Needs more tests"
@@ -515,8 +515,8 @@ class TestPrReview:
         mock_client.post.return_value = {"id": 456}
         result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
         assert result.exit_code != 0
+        assert "Posted pull request comment 456" in result.output
         assert "does not support request-changes reviews" in result.output
-        assert "456" in result.output
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert len(post_calls) == 1
         assert post_calls[0].kwargs["json"]["body"] == "Please address feedback"
@@ -540,13 +540,13 @@ class TestPrReview:
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
         assert result.exit_code != 0
-        assert "does not support comment reviews" in result.output
+        assert "Posted pull request comment 123" in result.output
 
     def test_pr_review_request_changes_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 456}
         result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
         assert result.exit_code != 0
-        assert "does not support request-changes reviews" in result.output
+        assert "Posted pull request comment 456" in result.output
 
 
 class TestPrReopen:

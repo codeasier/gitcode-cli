@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import httpx
 import pytest
 import respx
 from httpx import Response
 
 from gitcode_cli.client import BASE_URL, GitCodeClient
-from gitcode_cli.errors import APIError
+from gitcode_cli.errors import APIError, NetworkError
 
 
 class TestGitCodeClientInit:
@@ -129,3 +132,33 @@ class TestGitCodeClientMethods:
             assert params["access_token"] == "test-token"
             assert params["page"] == "1"
             assert params["per_page"] == "20"
+
+
+class TestNetworkErrorWrapping:
+    def test_connect_error_raises_network_error(self):
+        client = GitCodeClient(token="fake")
+        client._client = MagicMock()
+        client._client.request.side_effect = httpx.ConnectError("Connection refused")
+
+        with pytest.raises(NetworkError, match="Connection failed"):
+            client.get("/test")
+
+    def test_timeout_raises_network_error(self):
+        client = GitCodeClient(token="fake")
+        client._client = MagicMock()
+        client._client.request.side_effect = httpx.TimeoutException("Timed out")
+
+        with pytest.raises(NetworkError, match="Request timed out"):
+            client.get("/test")
+
+    def test_401_raises_api_error_with_auth_message(self):
+        client = GitCodeClient(token="invalid")
+        client._client = MagicMock()
+        response = MagicMock()
+        response.status_code = 401
+        response.json.return_value = {"message": "Unauthorized"}
+        response.content = b'{"message":"Unauthorized"}'
+        client._client.request.return_value = response
+
+        with pytest.raises(APIError, match="Authentication failed: Unauthorized"):
+            client.get("/test")

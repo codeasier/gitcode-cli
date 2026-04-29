@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import _configure_stdout_encoding, main
-from gitcode_cli.errors import APIError
+from gitcode_cli.errors import APIError, NetworkError
 
 
 @pytest.fixture
@@ -90,6 +90,37 @@ class TestCli:
             monkeypatch.setattr(cli_mod, "__name__", "__main__")
             importlib.reload(cli_mod)
             assert cli_mod.main is not None
+
+
+class TestNetworkErrorExitCode:
+    def test_network_error_returns_nonzero_exit_code(self, runner):
+        with patch("gitcode_cli.cli.get_token", return_value="fake-token"):
+            with patch("gitcode_cli.repo.resolve_repo", return_value=("owner", "repo")):
+                with patch("gitcode_cli.context.AppContext.client") as mock_client_factory:
+                    mock_client = MagicMock()
+                    mock_client.get.side_effect = NetworkError("Connection failed: Connection refused")
+                    mock_client_factory.return_value = mock_client
+                    result = runner.invoke(main, ["issue", "list"])
+
+        assert result.exit_code != 0
+        assert "Connection failed" in result.output
+        assert "Traceback" not in result.output
+
+    def test_invalid_token_returns_nonzero_exit_code(self, runner):
+        with patch("gitcode_cli.cli.get_token", return_value="fake-token"):
+            with patch("gitcode_cli.repo.resolve_repo", return_value=("owner", "repo")):
+                with patch("gitcode_cli.context.AppContext.client") as mock_client_factory:
+                    mock_client = MagicMock()
+                    mock_client.get.side_effect = APIError(
+                        "Authentication failed: Unauthorized. Run 'gc auth login' to authenticate.",
+                        401,
+                    )
+                    mock_client_factory.return_value = mock_client
+                    result = runner.invoke(main, ["issue", "list"])
+
+        assert result.exit_code != 0
+        assert "Authentication failed" in result.output
+        assert "Traceback" not in result.output
 
 
 class TestConfigureStdoutEncoding:

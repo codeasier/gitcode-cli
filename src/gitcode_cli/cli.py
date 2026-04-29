@@ -5,6 +5,7 @@ import importlib.metadata
 import sys
 
 import click
+import httpx
 
 from . import __version__
 from .commands.auth import auth_group
@@ -38,6 +39,15 @@ class _GCMainGroup(click.Group):
             return super().invoke(ctx)
         except GCError as exc:
             safe_echo(f"error: {exc}", err=True)
+            ctx.exit(1)
+        except httpx.TimeoutException as exc:
+            safe_echo(f"error: Request timed out: {exc}", err=True)
+            ctx.exit(1)
+        except httpx.ConnectError as exc:
+            safe_echo(f"error: Connection failed: {exc}", err=True)
+            ctx.exit(1)
+        except httpx.HTTPError as exc:
+            safe_echo(f"error: Network error: {exc}", err=True)
             ctx.exit(1)
 
 

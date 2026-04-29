@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .errors import APIError
+from .errors import APIError, NetworkError
 
 BASE_URL = "https://api.gitcode.com/api/v5/"
 
@@ -29,13 +29,22 @@ class GitCodeClient:
         merged_params: dict[str, Any] = {"access_token": self.token}
         if params:
             merged_params.update({k: v for k, v in params.items() if v is not None})
-        response = self._client.request(
-            method,
-            urljoin(self.base_url, path.lstrip("/")),
-            params=merged_params,
-            json=json,
-            headers={"Accept": accept},
-        )
+        try:
+            response = self._client.request(
+                method,
+                urljoin(self.base_url, path.lstrip("/")),
+                params=merged_params,
+                json=json,
+                headers={"Accept": accept},
+            )
+        except httpx.TimeoutException as exc:
+            raise NetworkError(f"Request timed out: {exc}") from exc
+        except httpx.ConnectError as exc:
+            raise NetworkError(f"Connection failed: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise NetworkError(f"Network error: {exc}") from exc
+        if response.status_code == 401:
+            raise APIError("Authentication failed. Run 'gc auth login' to authenticate.", 401)
         if response.status_code >= 400:
             try:
                 data = response.json()

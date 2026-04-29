@@ -187,6 +187,22 @@ class TestConfigureStdoutEncoding:
         _configure_stdout_encoding()
 
 
+class TestCompletion:
+    def test_completion_zsh(self, runner):
+        result = runner.invoke(main, ["completion", "zsh"])
+        assert result.exit_code == 0
+        assert len(result.output) > 0
+
+    def test_completion_bash(self, runner):
+        result = runner.invoke(main, ["completion", "bash"])
+        assert result.exit_code == 0
+        assert len(result.output) > 0
+
+    def test_completion_invalid_shell(self, runner):
+        result = runner.invoke(main, ["completion", "invalid_shell"])
+        assert result.exit_code != 0
+
+
 class TestGlobalErrorHandler:
     def test_api_error_produces_clean_message_without_traceback(self, runner):
         with patch("gitcode_cli.cli.get_token", return_value="fake-token"):

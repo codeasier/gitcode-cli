@@ -160,5 +160,5 @@ class TestNetworkErrorWrapping:
         response.content = b'{"message":"Unauthorized"}'
         client._client.request.return_value = response
 
-        with pytest.raises(APIError, match="Authentication failed"):
+        with pytest.raises(APIError, match="Authentication failed: Unauthorized"):
             client.get("/test")

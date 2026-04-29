@@ -44,7 +44,12 @@ class GitCodeClient:
         except httpx.HTTPError as exc:
             raise NetworkError(f"Network error: {exc}") from exc
         if response.status_code == 401:
-            raise APIError("Authentication failed. Run 'gc auth login' to authenticate.", 401)
+            try:
+                data = response.json()
+                original = data.get("message") or str(data)
+            except Exception:
+                original = response.text
+            raise APIError(f"Authentication failed: {original}. Run 'gc auth login' to authenticate.", 401)
         if response.status_code >= 400:
             try:
                 data = response.json()

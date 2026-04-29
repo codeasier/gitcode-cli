@@ -210,6 +210,21 @@ class TestIssueView:
         assert "- First comment" in result.output
         assert "- Second comment" in result.output
 
+    def test_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "view", "not-a-number"])
+        assert result.exit_code != 0
+        assert "Issue identifier must be a number or a valid issue URL." in result.output
+        mock_client.get.assert_not_called()
+
+    def test_not_found_returns_friendly_error(self, runner, mock_client, mock_repo):
+        from gitcode_cli.errors import APIError
+
+        mock_client.get.side_effect = APIError("Issue not found", 404)
+        result = runner.invoke(main, ["issue", "view", "42"])
+        assert result.exit_code != 0
+        assert "error: Issue not found" in result.output
+        assert "Traceback" not in result.output
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0

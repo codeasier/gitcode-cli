@@ -106,22 +106,28 @@ def resolve_issue_arg(identifier: str):
     return None, None, identifier
 
 
+def require_issue_number(identifier: str) -> str:
+    url_result = parse_issue_url(identifier)
+    if url_result:
+        return url_result[2]
+    if identifier.isdigit():
+        return identifier
+    raise click.ClickException("Issue identifier must be a number or a valid issue URL.")
+
+
 def resolve_pr_arg(identifier: str, owner: str, repo: str, service: PullRequestService) -> tuple[str, str, str]:
     """Resolve a PR identifier (number, URL, or branch) into (owner, repo, number).
 
     Returns (owner, repo, number). If branch is given, queries the API to find the PR.
     Raises click.ClickException if not found.
     """
-    # Try URL first
     url_result = parse_pr_url(identifier)
     if url_result:
         return url_result
 
-    # Try pure number
     if identifier.isdigit():
         return owner, repo, identifier
 
-    # Treat as branch name — search open PRs with this head branch
     items = service.list(owner, repo, state="open", head=identifier)
     for item in items:
         head_ref = item.get("head", {}).get("ref", "")

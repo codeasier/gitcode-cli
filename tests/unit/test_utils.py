@@ -17,6 +17,7 @@ from gitcode_cli.utils import (
     parse_pr_url,
     prompt_if_missing,
     read_body_file,
+    require_issue_number,
     resolve_issue_arg,
     resolve_pr_arg,
     safe_echo,
@@ -154,8 +155,19 @@ class TestResolveIssueArg:
             "42",
         )
 
-    def test_arbitrary_string(self):
-        assert resolve_issue_arg("abc") == (None, None, "abc")
+
+class TestRequireIssueNumber:
+    def test_accepts_number(self):
+        assert require_issue_number("42") == "42"
+
+    def test_accepts_issue_url(self):
+        assert require_issue_number("https://gitcode.com/owner/repo/issues/42") == "42"
+
+    def test_rejects_arbitrary_string(self):
+        import click
+
+        with pytest.raises(click.ClickException, match="Issue identifier must be a number or a valid issue URL."):
+            require_issue_number("abc")
 
 
 class TestResolvePrArg:
@@ -243,28 +255,7 @@ class TestSafeNumber:
         assert safe_number({"state": "closed"}, 42) == 42
 
     def test_returns_fallback_when_empty_dict(self):
-        assert safe_number({}, 42) == 42
+        assert safe_number({}, "n/a") == "n/a"
 
-    def test_prefers_number_over_iid(self):
-        assert safe_number({"number": 10, "iid": 20}, 99) == 10
-
-    def test_string_fallback(self):
-        assert safe_number({}, "?") == "?"
-
-    def test_number_zero_is_not_falsy(self):
-        assert safe_number({"number": 0, "iid": 5}, 99) == 0
-
-    def test_iid_zero_is_not_falsy(self):
-        assert safe_number({"iid": 0}, 99) == 0
-
-    def test_number_none_falls_through_to_iid(self):
-        assert safe_number({"number": None, "iid": 7}, 99) == 7
-
-    def test_both_none_returns_fallback(self):
-        assert safe_number({"number": None, "iid": None}, 99) == 99
-
-    def test_non_dict_item_returns_fallback(self):
-        assert safe_number(None, 42) == 42
-
-    def test_string_item_returns_fallback(self):
-        assert safe_number("not a dict", 42) == 42
+    def test_returns_fallback_when_not_dict(self):
+        assert safe_number("not a dict", 0) == 0

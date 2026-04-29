@@ -272,6 +272,8 @@ def issue_comment(
     service = IssueService(app.client())
     item = service.comment(owner, repo, number, body)
     safe_echo(item.get("html_url") or f"Commented on issue #{number}")
+
+
 @issue_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
@@ -338,41 +340,6 @@ def issue_edit(
     service = IssueService(app.client())
     item = service.update(owner, repo, number, **data)
     safe_echo(f"Edited issue #{safe_number(item, number)}")
-
-
-@issue_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier")
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-e", "--editor", is_flag=True)
-@click.option("-w", "--web", is_flag=True)
-@click.pass_context
-def issue_comment(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str,
-    body: str | None,
-    body_file: str | None,
-    editor: bool,
-    web: bool,
-) -> None:
-    app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-    if web:
-        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
-        open_in_browser(target_url)
-        return
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
-    body = prompt_if_missing(body, "Comment")
-    service = IssueService(app.client())
-    item = service.comment(owner, repo, number, body)
-    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 
 
 @issue_group.command("delete")

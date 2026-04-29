@@ -407,13 +407,13 @@ def pr_review(
             raise click.ClickException("Body is required when using --comment or --request-changes.")
         item = service.comment(owner, repo, number, body=body)
         if comment:
-            safe_echo("GitCode review API does not support comment reviews; posted a pull request comment instead.")
-        else:
-            safe_echo(
-                "GitCode review API does not support request-changes reviews; posted a pull request comment instead."
+            raise click.ClickException(
+                f"GitCode review API does not support comment reviews; posted a pull request comment instead. Comment ID: {item['id']}"
             )
-        safe_echo(f"Posted pull request comment {item['id']}")
-        return
+        else:
+            raise click.ClickException(
+                f"GitCode review API does not support request-changes reviews; posted a pull request comment instead. Comment ID: {item['id']}"
+            )
 
     item = service.review(owner, repo, number, body=body, force=force)
     safe_echo(f"Reviewed pull request #{number}")

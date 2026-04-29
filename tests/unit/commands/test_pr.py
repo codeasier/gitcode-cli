@@ -655,7 +655,7 @@ class TestPrCreateEdgeCases:
             ],
         )
         assert result.exit_code != 0
-        assert "mutually exclusive" in result.output.lower() or "only one" in result.output.lower()
+        assert "cannot use --body and --body-file together" in result.output.lower()
         mock_client.post.assert_not_called()
 
 

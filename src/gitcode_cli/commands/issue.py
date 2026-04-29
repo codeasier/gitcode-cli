@@ -228,6 +228,14 @@ def issue_close(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
+    current = service.get(owner, repo, number)
+    if current and current.get("state") == "closed":
+        if comment:
+            service.comment(owner, repo, number, comment)
+            safe_echo(f"Issue #{safe_number(current, number)} is already closed; posted comment")
+        else:
+            safe_echo(f"Issue #{safe_number(current, number)} is already closed")
+        return
     if comment:
         service.comment(owner, repo, number, comment)
     update_data: dict = {"state": "closed"}
@@ -287,6 +295,10 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
+    current = service.get(owner, repo, number)
+    if current and current.get("state") == "open":
+        safe_echo(f"Issue #{safe_number(current, number)} is already open")
+        return
     item = service.update(owner, repo, number, state="open")
     safe_echo(f"Reopened issue #{safe_number(item, number)}")
 

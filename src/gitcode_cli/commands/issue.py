@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import click
 
 from ..cli_compat import get_body_from_options, normalize_multi_values
@@ -20,6 +22,10 @@ def _echo_issue_summary(items: list[dict]) -> None:
     output = format_issue_list(items)
     if output:
         safe_echo(output)
+
+
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
 
 
 @click.group("issue")
@@ -60,6 +66,8 @@ def issue_list(
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if limit is not None and limit < 1:
+        raise click.BadParameter("must be greater than 0", param_hint="--limit")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
@@ -229,6 +237,41 @@ def issue_close(
     safe_echo(f"Closed issue #{safe_number(item, number)}")
 
 
+@issue_group.command("comment")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-w", "--web", is_flag=True)
+@click.pass_context
+def issue_comment(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str,
+    body: str | None,
+    body_file: str | None,
+    editor: bool,
+    web: bool,
+) -> None:
+    app = ctx.obj["app"]
+    url_owner, url_repo, number = resolve_issue_arg(identifier)
+    if url_owner:
+        assert url_repo is not None
+        owner, repo = url_owner, url_repo
+    else:
+        owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
+        open_in_browser(target_url)
+        return
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    if editor and body is None:
+        raise click.ClickException("Editor was closed without saving a comment.")
+    body = prompt_if_missing(body, "Comment")
+    service = IssueService(app.client())
+    item = service.comment(owner, repo, number, body)
+    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 @issue_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
@@ -335,7 +378,6 @@ def issue_comment(
 @issue_group.command("delete")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
-@click.confirmation_option(prompt="Are you sure you want to delete this issue?")
 @click.pass_context
 def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
     app = ctx.obj["app"]
@@ -345,6 +387,9 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+    if not _stdin_is_tty():
+        raise click.ClickException("Cannot prompt for confirmation when stdin is not a TTY.")
+    click.confirm("Are you sure you want to delete this issue?", abort=True)
     service = IssueService(app.client())
     service.delete(owner, repo, number)
     safe_echo(f"Deleted issue #{number}")

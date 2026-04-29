@@ -259,27 +259,68 @@ class TestIssueView:
 
 class TestIssueClose:
     def test_default(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
         mock_client.patch.assert_called_once()
 
     def test_url(self, runner, mock_client):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
         result = runner.invoke(main, ["issue", "close", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
         mock_client.patch.assert_called_once()
 
     def test_close_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
         mock_client.patch.return_value = {"iid": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
 
     def test_close_without_number_or_iid_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
         mock_client.patch.return_value = {"state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
+
+
+class TestIssueCloseIdempotency:
+    def test_close_already_closed_issue_is_idempotent(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.patch.return_value = {"number": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42"])
+        assert result.exit_code == 0
+        assert "already closed" in result.output.lower()
+        mock_client.patch.assert_not_called()
+
+    def test_close_with_comment_and_reason(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.patch.return_value = {"number": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42", "-c", "done", "-r", "completed"])
+        assert result.exit_code == 0
+        assert "Closed issue" in result.output
+        post_calls = [c for c in mock_client.post.call_args_list if "comments" in str(c)]
+        assert len(post_calls) == 1
+
+    def test_close_with_reason_sends_state_reason(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.patch.return_value = {"number": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "close", "42", "-r", "completed"])
+        assert result.exit_code == 0
+        patch_kwargs = mock_client.patch.call_args.kwargs
+        assert patch_kwargs["json"]["state_reason"] == "completed"
+
+
+class TestIssueReopenIdempotency:
+    def test_reopen_already_open_issue_is_idempotent(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.patch.return_value = {"number": "42", "state": "open"}
+        result = runner.invoke(main, ["issue", "reopen", "42"])
+        assert result.exit_code == 0
+        assert "already open" in result.output.lower()
+        mock_client.patch.assert_not_called()
 
 
 class TestIssueComment:
@@ -320,16 +361,19 @@ class TestIssueComment:
 
 class TestIssueReopen:
     def test_default(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "reopen", "42"])
         assert result.exit_code == 0
         assert "Reopened issue #42" in result.output
         mock_client.patch.assert_called_once()
 
     def test_url(self, runner, mock_client):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "reopen", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
 
     def test_reopen_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
         mock_client.patch.return_value = {"iid": "42", "state": "open"}
         result = runner.invoke(main, ["issue", "reopen", "42"])
         assert result.exit_code == 0

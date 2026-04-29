@@ -6,7 +6,15 @@ from ..cli_compat import get_body_from_options, normalize_multi_values
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
-from ..utils import open_in_browser, prompt_if_missing, read_body_file, resolve_issue_arg, safe_echo, safe_number
+from ..utils import (
+    open_in_browser,
+    prompt_if_missing,
+    read_body_file,
+    require_issue_number,
+    resolve_issue_arg,
+    safe_echo,
+    safe_number,
+)
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
@@ -106,6 +114,7 @@ def issue_view(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     if web:
         target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
         open_in_browser(target_url)
@@ -220,40 +229,6 @@ def issue_close(
     safe_echo(f"Closed issue #{safe_number(item, number)}")
 
 
-@issue_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier")
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-e", "--editor", is_flag=True)
-@click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
-@click.pass_context
-def issue_comment(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str,
-    body: str | None,
-    body_file: str | None,
-    editor: bool,
-    web: bool,
-) -> None:
-    app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-    if web:
-        open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
-        return
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
-    body = prompt_if_missing(body, "Body")
-    service = IssueService(app.client())
-    item = service.comment(owner, repo, number, body)
-    safe_echo(str(item["id"]))
-
-
 @issue_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
@@ -276,13 +251,10 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 @click.argument("identifier")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-a", "--add-assignee")
-@click.option("-l", "--add-label")
-@click.option("--remove-assignee")
-@click.option("--remove-label")
+@click.option("-a", "--assignee")
+@click.option("-l", "--label", "labels")
 @click.option("-m", "--milestone")
-@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
+@click.option("-F", "--body-file")
 @click.pass_context
 def issue_edit(
     ctx: click.Context,
@@ -290,13 +262,10 @@ def issue_edit(
     identifier: str,
     title: str | None,
     body: str | None,
-    body_file: str | None,
-    add_assignee: str | None,
-    add_label: str | None,
-    remove_assignee: str | None,
-    remove_label: str | None,
+    assignee: str | None,
+    labels: str | None,
     milestone: str | None,
-    remove_milestone: bool,
+    body_file: str | None,
 ) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
@@ -307,26 +276,54 @@ def issue_edit(
         owner, repo = resolve_repo(repo_name or app.repo)
     if body_file:
         body = read_body_file(body_file)
-    data = {
-        k: v
-        for k, v in {
-            "title": title,
-            "body": body,
-            "assignee": add_assignee,
-            "labels": add_label,
-            "unassignee": remove_assignee,
-            "unset_labels": remove_label,
-            "milestone": milestone,
-        }.items()
-        if v is not None
+    payload = {
+        "title": title,
+        "body": body,
+        "assignee": assignee,
+        "labels": labels,
+        "milestone": milestone,
     }
-    if remove_milestone:
-        data["milestone"] = ""
-    if not data:
-        raise click.UsageError("must specify at least one field to edit")
+    payload = {k: v for k, v in payload.items() if v is not None}
+    if not payload:
+        raise click.ClickException("must specify at least one field to edit")
     service = IssueService(app.client())
-    item = service.update(owner, repo, number, **data)
+    item = service.update(owner, repo, number, **payload)
     safe_echo(f"Edited issue #{safe_number(item, number)}")
+
+
+@issue_group.command("comment")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-w", "--web", is_flag=True)
+@click.pass_context
+def issue_comment(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str,
+    body: str | None,
+    body_file: str | None,
+    editor: bool,
+    web: bool,
+) -> None:
+    app = ctx.obj["app"]
+    url_owner, url_repo, number = resolve_issue_arg(identifier)
+    if url_owner:
+        assert url_repo is not None
+        owner, repo = url_owner, url_repo
+    else:
+        owner, repo = resolve_repo(repo_name or app.repo)
+    if web:
+        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
+        open_in_browser(target_url)
+        return
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    body = prompt_if_missing(body, "Comment")
+    service = IssueService(app.client())
+    item = service.comment(owner, repo, number, body)
+    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 
 
 @issue_group.command("delete")

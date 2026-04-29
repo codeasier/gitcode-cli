@@ -394,6 +394,25 @@ class TestIssueEdit:
         assert json_data["assignee"] == "user"
         assert json_data["labels"] == "bug"
 
+    def test_supports_multiple_labels(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-l", "bug", "-l", "docs"])
+        assert result.exit_code == 0
+        json_data = mock_client.patch.call_args[1]["json"]
+        assert json_data["labels"] == "bug,docs"
+
+    def test_body_and_body_file_are_mutually_exclusive(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.md"
+        body_file.write_text("file body")
+        result = runner.invoke(main, ["issue", "edit", "42", "-b", "inline body", "-F", str(body_file)])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+        mock_client.patch.assert_not_called()
+
+    def test_body_file_can_read_from_stdin(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-F", "-"], input="stdin body\n")
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args[1]["json"]["body"] == "stdin body\n"
+
     def test_rejects_empty_edit(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "edit", "42"])
         assert result.exit_code != 0

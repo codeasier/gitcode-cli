@@ -9,7 +9,6 @@ from ..services import IssueService
 from ..utils import (
     open_in_browser,
     prompt_if_missing,
-    read_body_file,
     require_issue_number,
     resolve_issue_arg,
     safe_echo,

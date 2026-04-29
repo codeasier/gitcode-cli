@@ -384,6 +384,7 @@ class TestPrClose:
 
     def test_pr_close_delete_branch(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
             mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
@@ -675,6 +676,7 @@ class TestPrCreateEdgeCases:
 
 class TestPrCloseEdgeCases:
     def test_close_delete_branch_no_ref(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "head": {}}
         mock_client.patch.return_value = {"number": 42, "head": {}}
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
@@ -683,12 +685,26 @@ class TestPrCloseEdgeCases:
             mock_run.assert_not_called()
 
     def test_close_delete_branch_git_fails(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
         mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
             mock_run.side_effect = Exception("git failed")
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
             assert "Warning: could not delete remote branch" in result.output
+
+    def test_close_delete_branch_fetches_pr_before_close(self, runner, mock_client, mock_repo):
+        """When close response lacks head.ref, we should have fetched it beforehand."""
+        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
+        mock_client.patch.return_value = {"number": 42, "head": {}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            result = runner.invoke(main, ["pr", "close", "42", "-d"])
+            assert result.exit_code == 0
+            assert "Deleted remote branch feature" in result.output
+            mock_run.assert_called_once_with(
+                ["git", "push", "origin", "--delete", "feature"],
+                check=True,
+            )
 
 
 class TestPrReviewEdgeCases:

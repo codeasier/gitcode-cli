@@ -276,12 +276,13 @@ def pr_close(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+    pr_item = service.get(owner, repo, number) if delete_branch else None
     if comment:
         service.comment(owner, repo, number, body=comment)
     item = service.update(owner, repo, number, state="closed")
     if delete_branch:
         try:
-            branch = item.get("head", {}).get("ref")
+            branch = (pr_item or item).get("head", {}).get("ref")
             if branch:
                 subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
                 safe_echo(f"Deleted remote branch {branch}")

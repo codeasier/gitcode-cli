@@ -196,4 +196,3 @@ class TestGlobalErrorHandler:
         assert result.exit_code == 1
         assert "error: Invalid token" in result.output
         assert "Traceback" not in result.output
-

@@ -151,15 +151,21 @@ def output_result(data, json_fields: str | None, jq_query: str | None, template:
         data = apply_jq(data, jq_query)
         safe_echo(dump_json(data))
         return
-    if json_fields:
-        fields = [f.strip() for f in json_fields.split(",")]
-        safe_echo(dump_json(data, fields=fields))
-        return
     if template:
+        if json_fields:
+            fields = [f.strip() for f in json_fields.split(",")]
+            if isinstance(data, list):
+                data = [_filter_fields(item, fields) for item in data]
+            else:
+                data = _filter_fields(data, fields)
         if isinstance(data, list):
             for item in data:
                 safe_echo(render_template(item, template))
         else:
             safe_echo(render_template(data, template))
+        return
+    if json_fields:
+        fields = [f.strip() for f in json_fields.split(",")]
+        safe_echo(dump_json(data, fields=fields))
         return
     default_formatter(data)

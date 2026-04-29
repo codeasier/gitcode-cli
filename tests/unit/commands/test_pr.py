@@ -132,6 +132,20 @@ class TestPrList:
         assert '"number": 1' in result.output
         assert '"title": "First PR"' in result.output
 
+    def test_pr_list_template_with_json_uses_template(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "title": "First PR"},
+            {"number": 2, "title": "Second PR"},
+        ]
+        result = runner.invoke(
+            main,
+            ["pr", "list", "--json", "number,title", "-t", "{{.number}} {{.title}}"],
+        )
+        assert result.exit_code == 0
+        assert "1 First PR" in result.output
+        assert "2 Second PR" in result.output
+        assert '"number"' not in result.output
+
     def test_pr_list_alias_ls(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": 1, "state": "open", "title": "First PR"},
@@ -428,6 +442,17 @@ class TestPrMerge:
         assert "Merged" in result.output
         assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "rebase"
 
+    def test_pr_merge_rejects_mutually_exclusive_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s"])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower() or "only one" in result.output.lower()
+        mock_client.put.assert_not_called()
+
+    def test_pr_merge_rejects_all_three_merge_flags(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "-m", "-s", "-r"])
+        assert result.exit_code != 0
+        mock_client.put.assert_not_called()
+
 
 class TestPrComment:
     def test_pr_comment(self, runner, mock_client, mock_repo):
@@ -623,6 +648,30 @@ class TestPrCreateEdgeCases:
             result = runner.invoke(main, ["pr", "create", "-t", "T", "-B", "master", "-H", "feature", "-w"])
             assert result.exit_code == 0
             mock_browser.assert_called_once()
+
+    def test_pr_create_rejects_body_and_body_file_together(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "body.txt"
+        body_file.write_text("file body")
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "-t",
+                "Test",
+                "-b",
+                "inline body",
+                "-F",
+                str(body_file),
+                "--base",
+                "master",
+                "--head",
+                "feature",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "cannot use --body and --body-file together" in result.output.lower()
+        mock_client.post.assert_not_called()
 
 
 class TestPrCloseEdgeCases:

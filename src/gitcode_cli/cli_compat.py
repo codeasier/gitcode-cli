@@ -10,6 +10,8 @@ from .utils import get_current_git_branch, get_default_git_branch, read_body_fil
 
 def get_body_from_options(body: str | None, body_file: str | None, editor: bool) -> str | None:
     """Resolve body text from inline text, file/stdin, or editor."""
+    if body is not None and body_file:
+        raise click.UsageError("cannot use --body and --body-file together")
     if body is not None:
         return body
     if body_file:

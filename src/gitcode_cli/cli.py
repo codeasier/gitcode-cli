@@ -32,7 +32,16 @@ def _get_version() -> str:
         return __version__
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+class _GCMainGroup(click.Group):
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except GCError as exc:
+            safe_echo(f"error: {exc}", err=True)
+            ctx.exit(1)
+
+
+@click.group(cls=_GCMainGroup, context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version=_get_version(), prog_name="gitcode")
 @click.option("--repo", "repo_name", "-R", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("--token", hidden=True, help="Override authentication token.")
@@ -45,11 +54,6 @@ def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:
     except GCError:
         resolved_token = token
     ctx.obj["app"] = AppContext(token=resolved_token or "", repo=repo_name)
-
-
-@main.result_callback()
-def process_result(*_args: object, **_kwargs: object) -> None:
-    return None
 
 
 @main.command("version")

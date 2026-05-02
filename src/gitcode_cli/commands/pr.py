@@ -5,11 +5,11 @@ import subprocess
 
 import click
 
+from ..adapters import PullRequestAdapter
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
     get_fill_info,
-    normalize_multi_values,
     resolve_pr_identifier_or_current_branch,
 )
 from ..formatters import format_pr_detail, format_pr_list, output_result
@@ -70,8 +70,8 @@ def pr_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls")
         return
     service = PullRequestService(app.client())
-    labels_str = normalize_multi_values(labels)
-    items = service.list(
+    adapter = PullRequestAdapter(service)
+    items = adapter.list_prs(
         owner,
         repo,
         state=state,
@@ -80,11 +80,10 @@ def pr_list(
         assignee=assignee,
         draft=draft,
         head=head,
-        labels=labels_str,
+        labels=labels,
         search=search,
+        limit=limit,
     )
-    if limit is not None:
-        items = items[:limit]
 
     def default_formatter(data):
         output = format_pr_list(data)
@@ -232,22 +231,26 @@ def pr_create(
 
     title = prompt_if_missing(title, "Title")
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
-    payload = {
-        "title": title,
-        "body": body,
-        "base": base,
-        "head": head,
-        "draft": draft,
-        "labels": normalize_multi_values(labels),
-        "assignees": normalize_multi_values(assignees),
-        "reviewers": normalize_multi_values(reviewers),
-        "milestone": milestone,
-    }
-    if dry_run:
-        safe_echo(json.dumps({k: v for k, v in payload.items() if v is not None}, indent=2, sort_keys=True))
-        return
     service = PullRequestService(app.client())
-    item = service.create(owner, repo, **payload)
+    adapter = PullRequestAdapter(service)
+    result = adapter.create_pr(
+        owner,
+        repo,
+        title=title,
+        body=body,
+        base=base,
+        head=head,
+        draft=draft,
+        milestone=milestone,
+        labels=labels,
+        reviewers=reviewers,
+        assignees=assignees,
+        dry_run=dry_run,
+    )
+    if dry_run:
+        safe_echo(json.dumps(result.item or {}, indent=2, sort_keys=True))
+        return
+    item = result.item
     output_result(
         item,
         json_fields,
@@ -401,21 +404,23 @@ def pr_review(
     selected_modes = [approve, comment, request_changes]
     if sum(1 for selected in selected_modes if selected) != 1:
         raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
+    if (comment or request_changes) and not body:
+        raise click.ClickException("Body is required when using --comment or --request-changes.")
 
-    if comment or request_changes:
-        if not body:
-            raise click.ClickException("Body is required when using --comment or --request-changes.")
-        item = service.comment(owner, repo, number, body=body)
-        safe_echo(f"Posted pull request comment {item['id']}")
-        if comment:
-            raise click.ClickException(
-                "GitCode review API does not support comment reviews; the pull request comment was posted instead."
-            )
-        raise click.ClickException(
-            "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
-        )
-
-    item = service.review(owner, repo, number, body=body, force=force)
+    adapter = PullRequestAdapter(service)
+    result = adapter.review_pr(
+        owner,
+        repo,
+        number,
+        approve=approve,
+        body=body,
+        comment=comment,
+        request_changes=request_changes,
+        force=force,
+    )
+    if result.degraded:
+        safe_echo(f"Posted pull request comment {result.item['id']}")
+        raise click.ClickException(result.message)
     safe_echo(f"Reviewed pull request #{number}")
 
 
@@ -475,27 +480,39 @@ def pr_edit(
     number = int(number)
     if body_file:
         body = read_body_file(body_file)
-    data = {
-        k: v
-        for k, v in {
-            "title": title,
-            "body": body,
-            "base": base,
-            "assignee": add_assignee,
-            "labels": add_label,
-            "reviewer": add_reviewer,
-            "unassignee": remove_assignee,
-            "unset_labels": remove_label,
-            "unset_reviewer": remove_reviewer,
-            "milestone": milestone,
-        }.items()
-        if v is not None
-    }
-    if remove_milestone:
-        data["milestone"] = ""
-    if not data:
+    if not any(
+        [
+            title is not None,
+            body is not None,
+            base is not None,
+            add_assignee is not None,
+            add_label is not None,
+            add_reviewer is not None,
+            remove_assignee is not None,
+            remove_label is not None,
+            remove_reviewer is not None,
+            milestone is not None,
+            remove_milestone,
+        ]
+    ):
         raise click.UsageError("must specify at least one field to edit")
-    item = service.update(owner, repo, number, **data)
+    adapter = PullRequestAdapter(service)
+    item = adapter.edit_pr(
+        owner,
+        repo,
+        number,
+        title=title,
+        body=body,
+        base=base,
+        add_assignee=add_assignee,
+        add_label=add_label,
+        add_reviewer=add_reviewer,
+        remove_assignee=remove_assignee,
+        remove_label=remove_label,
+        remove_reviewer=remove_reviewer,
+        milestone=milestone,
+        remove_milestone=remove_milestone,
+    )
     safe_echo(f"Edited pull request #{safe_number(item, number)}")
 
 
@@ -562,12 +579,11 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
-    items = service.list(owner, repo, state="open")
-    safe_echo(
-        f"Open pull requests in {owner}/{repo}  (GitCode API approximation -- user-specific filtering is not available)"
-    )
-    if items:
-        for item in items:
+    adapter = PullRequestAdapter(service)
+    result = adapter.status(owner, repo)
+    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message})")
+    if result.items:
+        for item in result.items:
             safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
     else:
         safe_echo("  No open pull requests")

@@ -4,7 +4,8 @@ import sys
 
 import click
 
-from ..cli_compat import get_body_from_options, normalize_multi_values
+from ..adapters import IssueAdapter
+from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
 from ..services import IssueService
@@ -72,20 +73,19 @@ def issue_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
     service = IssueService(app.client())
-    labels_str = normalize_multi_values(labels)
-    items = service.list(
+    adapter = IssueAdapter(service)
+    items = adapter.list_issues(
         owner,
         repo,
         state=state,
-        labels=labels_str,
-        creator=author,
+        labels=labels,
+        author=author,
         assignee=assignee,
         milestone=milestone,
         mention=mention,
         search=search,
+        limit=limit,
     )
-    if limit is not None:
-        items = items[:limit]
     output_result(
         items,
         json_fields,
@@ -193,10 +193,16 @@ def issue_create(
     if len(title) > 255:
         raise click.ClickException("title must be 255 characters or fewer")
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
-    labels_str = normalize_multi_values(labels)
     service = IssueService(app.client())
-    item = service.create(
-        owner, repo, title=title, body=body, assignee=assignee, labels=labels_str, milestone=milestone
+    adapter = IssueAdapter(service)
+    item = adapter.create_issue(
+        owner,
+        repo,
+        title=title,
+        body=body,
+        assignee=assignee,
+        labels=labels,
+        milestone=milestone,
     )
     output_result(
         item,
@@ -228,21 +234,15 @@ def issue_close(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    current = service.get(owner, repo, number)
-    if current and current.get("state") == "closed":
-        if comment:
-            service.comment(owner, repo, number, comment)
-            safe_echo(f"Issue #{safe_number(current, number)} is already closed; posted comment")
-        else:
-            safe_echo(f"Issue #{safe_number(current, number)} is already closed")
+    adapter = IssueAdapter(service)
+    result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
+    if result.message == "already_closed_commented":
+        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed; posted comment")
         return
-    if comment:
-        service.comment(owner, repo, number, comment)
-    update_data: dict = {"state": "closed"}
-    if reason:
-        update_data["state_reason"] = reason
-    item = service.update(owner, repo, number, **update_data)
-    safe_echo(f"Closed issue #{safe_number(item, number)}")
+    if result.message == "already_closed":
+        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed")
+        return
+    safe_echo(f"Closed issue #{safe_number(result.item, number)}")
 
 
 @issue_group.command("comment")
@@ -278,7 +278,8 @@ def issue_comment(
         raise click.ClickException("Editor was closed without saving a comment.")
     body = prompt_if_missing(body, "Comment")
     service = IssueService(app.client())
-    item = service.comment(owner, repo, number, body)
+    adapter = IssueAdapter(service)
+    item = adapter.comment_issue(owner, repo, number, body=body)
     safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 
 
@@ -295,12 +296,12 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    current = service.get(owner, repo, number)
-    if current and current.get("state") == "open":
-        safe_echo(f"Issue #{safe_number(current, number)} is already open")
+    adapter = IssueAdapter(service)
+    result = adapter.reopen_issue(owner, repo, number)
+    if result.message == "already_open":
+        safe_echo(f"Issue #{safe_number(result.item, number)} is already open")
         return
-    item = service.update(owner, repo, number, state="open")
-    safe_echo(f"Reopened issue #{safe_number(item, number)}")
+    safe_echo(f"Reopened issue #{safe_number(result.item, number)}")
 
 
 @issue_group.command("edit")
@@ -334,23 +335,21 @@ def issue_edit(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
-    data = {
-        k: v
-        for k, v in {
-            "title": title,
-            "body": body,
-            "assignee": add_assignee,
-            "labels": normalize_multi_values(add_labels),
-            "milestone": milestone,
-        }.items()
-        if v is not None
-    }
-    if remove_milestone:
-        data["milestone"] = ""
-    if not data:
+    if not any([title is not None, body is not None, add_assignee is not None, add_labels, milestone is not None, remove_milestone]):
         raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
-    item = service.update(owner, repo, number, **data)
+    adapter = IssueAdapter(service)
+    item = adapter.edit_issue(
+        owner,
+        repo,
+        number,
+        title=title,
+        body=body,
+        add_assignee=add_assignee,
+        add_labels=add_labels,
+        milestone=milestone,
+        remove_milestone=remove_milestone,
+    )
     safe_echo(f"Edited issue #{safe_number(item, number)}")
 
 
@@ -381,10 +380,11 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    items = service.list(owner, repo, state="open")
-    safe_echo("GitCode-limited approximation of gh issue status")
+    adapter = IssueAdapter(service)
+    result = adapter.status(owner, repo)
+    safe_echo(result.message)
     safe_echo(f"Repository open issues for {owner}/{repo}:")
-    for item in items:
+    for item in result.items or []:
         safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
 
 
@@ -401,9 +401,6 @@ def issue_develop(
     base: str | None,
     name: str | None,
 ) -> None:
-    if base is not None or name is not None:
-        raise click.UsageError("--base and --name are not supported by 'gc issue develop'")
-
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -411,8 +408,13 @@ def issue_develop(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    safe_echo("Note: 'issue develop' does not create a local branch on GitCode.")
-    safe_echo(f"Opening issue #{number} in the browser instead.")
+    service = IssueService(app.client())
+    adapter = IssueAdapter(service)
+    result = adapter.develop(owner, repo, number, base=base, name=name)
+    if result.warning:
+        safe_echo(result.warning)
+    if result.message:
+        safe_echo(result.message)
     open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
 
 

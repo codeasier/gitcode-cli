@@ -359,12 +359,13 @@ class TestIssueCloseIdempotency:
         post_calls = [c for c in mock_client.post.call_args_list if "comments" in str(c)]
         assert len(post_calls) == 1
 
-    def test_close_with_reason_sends_state_reason(self, runner, mock_client, mock_repo):
+    def test_close_with_reason_sends_state_close_and_state_reason(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"number": "42", "state": "open"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42", "-r", "completed"])
         assert result.exit_code == 0
         patch_kwargs = mock_client.patch.call_args.kwargs
+        assert patch_kwargs["json"]["state"] == "close"
         assert patch_kwargs["json"]["state_reason"] == "completed"
 
 

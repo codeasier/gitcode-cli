@@ -103,7 +103,7 @@ class IssueAdapter:
             return AdapterActionResult(item=current, message="already_closed")
         if comment:
             self.service.comment(owner, repo, number, comment)
-        payload: dict[str, Any] = {"state": "closed"}
+        payload: dict[str, Any] = {"state": "close"}
         if reason:
             payload["state_reason"] = reason
         item = self.service.update(owner, repo, number, **payload)
@@ -116,7 +116,7 @@ class IssueAdapter:
         current = self.service.get(owner, repo, number)
         if current and current.get("state") == "open":
             return AdapterActionResult(item=current, message="already_open")
-        item = self.service.update(owner, repo, number, state="open")
+        item = self.service.update(owner, repo, number, state="reopen")
         return AdapterActionResult(item=item, message="reopened")
 
     def edit_issue(

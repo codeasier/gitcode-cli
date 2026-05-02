@@ -335,14 +335,16 @@ def issue_edit(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
-    if not any([
-        title is not None,
-        body is not None,
-        add_assignee is not None,
-        add_labels,
-        milestone is not None,
-        remove_milestone,
-    ]):
+    if not any(
+        [
+            title is not None,
+            body is not None,
+            add_assignee is not None,
+            add_labels,
+            milestone is not None,
+            remove_milestone,
+        ]
+    ):
         raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
     adapter = IssueAdapter(service)

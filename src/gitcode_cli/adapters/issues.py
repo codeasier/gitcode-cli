@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..services import IssueService
 from .base import AdapterActionResult
 from .capabilities import capability_message, unsupported
-from ..services import IssueService
 
 
 def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
@@ -49,7 +49,7 @@ class IssueAdapter:
         mention: str | None,
         search: str | None,
         limit: int | None,
-    ) -> list[dict[str, Any]]:
+    ) -> Any:
         items = self.service.list(
             owner,
             repo,
@@ -163,7 +163,7 @@ class IssueAdapter:
             approximated=True,
         )
 
-    def develop(self, owner: str, repo: str, number: str, *, base: str | None, name: str | None) -> AdapterActionResult:
+    def develop(self, owner: str, repo: str, number: str, *, base: str | None, name: str | None) -> AdapterActionResult:  # noqa: ARG002
         if base is not None:
             raise unsupported("ISSUE_DEVELOP_BASE")
         if name is not None:

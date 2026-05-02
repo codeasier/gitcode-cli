@@ -420,7 +420,7 @@ def pr_review(
     )
     if result.degraded:
         safe_echo(f"Posted pull request comment {result.item['id']}")
-        raise click.ClickException(result.message)
+        raise click.ClickException(result.message or "degraded review operation")
     safe_echo(f"Reviewed pull request #{number}")
 
 

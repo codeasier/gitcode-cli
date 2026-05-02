@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..services import PullRequestService
 from .base import AdapterActionResult
 from .capabilities import capability_message
-from ..services import PullRequestService
 
 
 def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
@@ -31,7 +31,7 @@ class PullRequestAdapter:
         labels: tuple[str, ...] | None,
         search: str | None,
         limit: int | None,
-    ) -> list[dict[str, Any]]:
+    ) -> Any:
         items = self.service.list(
             owner,
             repo,
@@ -85,7 +85,7 @@ class PullRequestAdapter:
         repo: str,
         number: int,
         *,
-        approve: bool,
+        approve: bool,  # noqa: ARG002
         body: str | None,
         comment: bool,
         request_changes: bool,

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class AdapterActionResult:
     item: dict[str, Any] | None = None
     items: list[dict[str, Any]] | None = None

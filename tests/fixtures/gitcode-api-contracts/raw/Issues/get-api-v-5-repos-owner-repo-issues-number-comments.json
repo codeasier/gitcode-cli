@@ -1,0 +1,232 @@
+{
+  "category": "Issues",
+  "name": "获取仓库某个Issue所有的评论",
+  "slug": "get-api-v-5-repos-owner-repo-issues-number-comments",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues-number-comments",
+  "summary": "",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/issues/{number}/comments",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(企业、组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "string",
+      "required": true,
+      "description": "Issue 编号(区分大小写，无需添加 # 号)"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    },
+    {
+      "name": "page",
+      "type": "integer",
+      "required": false,
+      "description": "当前的页码"
+    },
+    {
+      "name": "per_page",
+      "type": "integer",
+      "required": false,
+      "description": "每页的数量，最大为 100，默认 20"
+    },
+    {
+      "name": "order",
+      "type": "string",
+      "required": false,
+      "description": "排序顺序: asc(default),desc"
+    },
+    {
+      "name": "since",
+      "type": "string",
+      "required": false,
+      "description": "起始的更新时间，要求时间格式为 2024-11-10T08:10:30.000+08:00（注意+号要url编码为%2B）"
+    }
+  ],
+  "requestBodyFields": [],
+  "responseFields": [
+    {
+      "name": "items[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.followers_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.following_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.gists_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.member_role",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.organizations_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.received_events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.remark",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.repos_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.starred_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.subscriptions_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.type",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].user.url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "items[].target.issue.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].target.issue.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].target.issue.nubmer",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].updated_at",
+      "type": "string",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "id": 271624,
+    "body": "评论内容。",
+    "user": {
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/fa/fe/f32a9fecc53e890afbd48fd098b0f6c5f20f062581400c76c85e5baab3f0d5b2.png",
+      "events_url": null,
+      "followers_url": null,
+      "following_url": null,
+      "gists_url": null,
+      "html_url": "https://test.gitcode.net/dengmengmian",
+      "id": "661ce4eab470b1430d456154",
+      "login": "dengmengmian",
+      "member_role": null,
+      "name": "麻凡_",
+      "organizations_url": null,
+      "received_events_url": null,
+      "remark": null,
+      "repos_url": null,
+      "starred_url": null,
+      "subscriptions_url": null,
+      "type": null,
+      "url": null
+    },
+    "target": {
+      "issue": {
+        "id": 152134,
+        "title": "",
+        "nubmer": 1
+      }
+    },
+    "created_at": "2024-04-19T17:50:18.199+08:00",
+    "updated_at": "2024-04-19T17:50:18.199+08:00"
+  },
+  "curlExample": "curl -X GET \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/issues/number_value/comments?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/issues/number_value/comments\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {}\n\nresponse = requests.get(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "requestBody omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/12d3a1c9.6f6f4b78.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

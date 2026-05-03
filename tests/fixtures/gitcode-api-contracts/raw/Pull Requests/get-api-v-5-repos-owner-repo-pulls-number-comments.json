@@ -1,0 +1,217 @@
+{
+  "category": "Pull Requests",
+  "name": "获取某个Pull Request的所有评论",
+  "slug": "get-api-v-5-repos-owner-repo-pulls-number-comments",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-comments",
+  "summary": "",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/comments",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "required": true,
+      "description": "第几个PR，即本仓库PR的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    },
+    {
+      "name": "page",
+      "type": "integer",
+      "required": false,
+      "description": "当前的页码:默认为 1"
+    },
+    {
+      "name": "per_page",
+      "type": "integer",
+      "required": false,
+      "description": "每页的数量，最大为 100，默认 20"
+    },
+    {
+      "name": "direction",
+      "type": "string",
+      "required": false,
+      "description": "可选。升序/降序(asc/desc)"
+    },
+    {
+      "name": "comment_type",
+      "type": "string",
+      "required": false,
+      "description": "可选。筛选评论类型。代码行评论/pr普通评论:diff_comment/pr_comment"
+    }
+  ],
+  "requestBodyFields": [],
+  "responseFields": [
+    {
+      "name": "items[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].discussion_id",
+      "type": "string",
+      "description": "讨论id"
+    },
+    {
+      "name": "items[].body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].comment_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].resolved",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_file",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_position.start_new_line",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_position.end_new_line",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_position.start_old_line",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_position.end_old_line",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].reply[].user.html_url",
+      "type": "string",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "id": "de772738e6dab92174c0e86c052ccf9bed24f747",
+    "body": "111",
+    "created_at": "2024-04-19T07:48:59.755+00:00",
+    "updated_at": "2024-04-19T07:48:59.755+00:00",
+    "user": {
+      "id": 708,
+      "login": "Lzm_0916",
+      "name": "Lzm_0916",
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/cb/da/6cb18d9ae9f1a94b4f640d3b848351c352c7869f33d0cb68e7acad4f224c4e23.png",
+      "html_url": "https://test.gitcode.net/Lzm_0916"
+    }
+  },
+  "curlExample": "curl -X GET \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/comments?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/comments\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {}\n\nresponse = requests.get(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "requestBody omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/f44c1bb6.21ffc5cd.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

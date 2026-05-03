@@ -9,7 +9,7 @@ import pytest
 from gitcode_cli.services.issues import IssueService
 from gitcode_cli.services.pulls import PullRequestService
 
-RAW_DOCS_RELATIVE_PATH = Path(".claude/skills/gitcode-docs/output/gitcode-api/raw")
+RAW_DOCS_RELATIVE_PATH = Path("tests/fixtures/gitcode-api-contracts/raw")
 
 
 def _find_raw_docs_root() -> Path:

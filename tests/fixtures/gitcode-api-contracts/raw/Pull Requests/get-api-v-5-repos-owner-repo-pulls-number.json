@@ -1,0 +1,761 @@
+{
+  "category": "Pull Requests",
+  "name": "获取单个Pull Request",
+  "slug": "get-api-v-5-repos-owner-repo-pulls-number",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number",
+  "summary": "",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "required": true,
+      "description": "第几个PR，即本仓库PR的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [],
+  "responseFields": [
+    {
+      "name": "id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "description": "序号"
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "description": "状态，open/closed/merged"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "标题"
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "description": "api url"
+    },
+    {
+      "name": "issue_url",
+      "type": "string",
+      "description": "关联的issue api url"
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "description": "描述"
+    },
+    {
+      "name": "assignees_number",
+      "type": "integer",
+      "description": "审核人人数"
+    },
+    {
+      "name": "assignees[].id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignees[].login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignees[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignees[].avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignees[].html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignees[].assignee",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "assignees[].code_owner",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "assignees[].accept",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "testers[].id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "testers[].login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "testers[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "testers[].html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "testers[].assignee",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "testers[].code_owner",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "testers[].accept",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].assignee",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].code_owner",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].accept",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "approval_reviewers[].avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "labels[].color",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].repository_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "labels[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "description": "创建时间"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "description": "更新时间"
+    },
+    {
+      "name": "closed_at",
+      "type": "string",
+      "description": "关闭时间"
+    },
+    {
+      "name": "merged_at",
+      "type": "string",
+      "description": "合并时间"
+    },
+    {
+      "name": "draft",
+      "type": "boolean",
+      "description": "是否为草稿"
+    },
+    {
+      "name": "can_merge_check",
+      "type": "boolean",
+      "description": "是否通过合并检查"
+    },
+    {
+      "name": "prune_branch",
+      "type": "boolean",
+      "description": "是否强制删除源分支"
+    },
+    {
+      "name": "mergeable",
+      "type": "boolean",
+      "description": "是否无冲突"
+    },
+    {
+      "name": "user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.ref",
+      "type": "string",
+      "description": "分支路径"
+    },
+    {
+      "name": "head.sha",
+      "type": "string",
+      "description": "commit id"
+    },
+    {
+      "name": "head.label",
+      "type": "string",
+      "description": "label"
+    },
+    {
+      "name": "head.repo.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.repo.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.repo.namespace.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.repo.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.repo.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "head.user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "base.ref",
+      "type": "string",
+      "description": "分支路径"
+    },
+    {
+      "name": "base.sha",
+      "type": "string",
+      "description": "commit id"
+    },
+    {
+      "name": "base.label",
+      "type": "string",
+      "description": "label"
+    },
+    {
+      "name": "base.repo.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "base.repo.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "base.repo.namespace.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "base.repo.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "base.repo.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "mergeable_state.merge_request_id",
+      "type": "integer",
+      "description": "合并请求ID"
+    },
+    {
+      "name": "mergeable_state.state",
+      "type": "boolean",
+      "description": "状态"
+    },
+    {
+      "name": "mergeable_state.status_without_user_auth",
+      "type": "boolean",
+      "description": "无用户授权的状态"
+    },
+    {
+      "name": "mergeable_state.conflict_passed",
+      "type": "boolean",
+      "description": "冲突通过"
+    },
+    {
+      "name": "mergeable_state.branch_missing_passed",
+      "type": "boolean",
+      "description": "分支缺失通过"
+    },
+    {
+      "name": "mergeable_state.non_ff_passed",
+      "type": "boolean",
+      "description": "非快进通过"
+    },
+    {
+      "name": "mergeable_state.mr_state_passed",
+      "type": "boolean",
+      "description": "合并请求状态通过"
+    },
+    {
+      "name": "mergeable_state.merged_by_user_passed",
+      "type": "boolean",
+      "description": "用户合并通过"
+    },
+    {
+      "name": "mergeable_state.work_in_progress_passed",
+      "type": "boolean",
+      "description": "工作进展通过"
+    },
+    {
+      "name": "mergeable_state.resolve_discussion_passed",
+      "type": "boolean",
+      "description": "解决讨论通过"
+    },
+    {
+      "name": "mergeable_state.ci_state_passed",
+      "type": "boolean",
+      "description": "CI状态通过"
+    },
+    {
+      "name": "mergeable_state.merge_by_self_passed",
+      "type": "boolean",
+      "description": "自我合并通过"
+    },
+    {
+      "name": "mergeable_state.can_force_merge",
+      "type": "boolean",
+      "description": "可以强制合并"
+    },
+    {
+      "name": "mergeable_state.approval_reviewers_required_passed",
+      "type": "boolean",
+      "description": "代码评审是否通过"
+    },
+    {
+      "name": "mergeable_state.approval_approvers_required_passed",
+      "type": "boolean",
+      "description": "代码审查是否通过"
+    },
+    {
+      "name": "mergeable_state.approval_testers_required_passed",
+      "type": "boolean",
+      "description": "代码测试是否通过"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.review_mode",
+      "type": "string",
+      "description": "审查模式"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.merge_method",
+      "type": "string",
+      "description": "合并方法"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.only_allow_merge_if_all_discussions_are_resolved",
+      "type": "boolean",
+      "description": "只有在解决所有讨论后才允许合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.disable_merge_by_self",
+      "type": "boolean",
+      "description": "禁止自我合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.only_allow_merge_if_pipeline_succeeds",
+      "type": "boolean",
+      "description": "只有在管道成功后才允许合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.disable_squash_merge",
+      "type": "boolean",
+      "description": "禁止压缩合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.squash_merge_with_no_merge_commit",
+      "type": "boolean",
+      "description": "无合并提交的压缩合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.approval_required_reviewers_count",
+      "type": "integer",
+      "description": "需要审批的审查者数量"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.approval_required_reviewers_branch",
+      "type": "string",
+      "description": "需要审批的审查者分支"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.add_notes_after_merged",
+      "type": "boolean",
+      "description": "合并后添加注释"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.mark_auto_merged_mr_as_closed",
+      "type": "boolean",
+      "description": "将自动合并的MR标记为已关闭"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.can_force_merge",
+      "type": "boolean",
+      "description": "可以强制合并"
+    },
+    {
+      "name": "mergeable_state.merge_request_switch.can_reopen",
+      "type": "boolean",
+      "description": "可以重新开放"
+    },
+    {
+      "name": "mergeable_state.reason",
+      "type": "object",
+      "description": "原因"
+    },
+    {
+      "name": "mergeable_state.check_tasks_num",
+      "type": "integer",
+      "description": "检查事项总数"
+    },
+    {
+      "name": "mergeable_state.all_depend_merge_request_merged_passed",
+      "type": "boolean",
+      "description": "所有依赖合并请求已合并通过"
+    },
+    {
+      "name": "mergeable_state.approval_approvers_result",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "mergeable_state.approval_testers_result",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "milestone.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "milestone.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "milestone.number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "milestone.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "milestone.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "milestone.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "visibility_reason",
+      "type": "string",
+      "description": "可见性，public：公开可见，other：仅项目成员可见"
+    },
+    {
+      "name": "merged_by.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged_by.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged_by.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged_by.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged_by.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "close_related_issue",
+      "type": "boolean",
+      "description": "合并时是否关闭关联的issue"
+    }
+  ],
+  "responseExample": {
+    "id": 111,
+    "html_url": "http://gitcode.com/sytest/paopao/pull/1",
+    "number": 1,
+    "url": "https://api.gitcode.com/api/v5/repos/sytest/paopao/pulls/1",
+    "issue_url": "https://api.gitcode.com/api/v5/repos/sytest/paopao/pulls/1/issues",
+    "state": "open",
+    "assignees_number": 1,
+    "assignees": [
+      {
+        "id": 2,
+        "login": "test",
+        "name": "test_web",
+        "avatar_url": "http://gitcode.com/sytest/paopao/pull/1.png",
+        "html_url": "http://gitcode.com/sytest/paopao/pull/1",
+        "assigness": true,
+        "code_owner": false,
+        "accept": true
+      }
+    ],
+    "testers": [
+      {
+        "id": 2,
+        "login": "test",
+        "name": "test_web",
+        "avatar_url": "http://gitcode.com/sytest/paopao/pull/1.png",
+        "html_url": "http://gitcode.com/sytest/paopao/pull/1",
+        "assigness": true,
+        "code_owner": false,
+        "accept": true
+      }
+    ],
+    "labels": [
+      {
+        "id": 222,
+        "name": "label1",
+        "repository_id": 1,
+        "created_at": "",
+        "updated_at": ""
+      }
+    ],
+    "created_at": "",
+    "updated_at": "",
+    "closed__at": "",
+    "draft": false,
+    "merged_at": "",
+    "can_merge_check": false,
+    "mergeable": true,
+    "body": "Description",
+    "user": {
+      "id": "userId",
+      "login": "test"
+    },
+    "head": {
+      "label": "test",
+      "ref": "test",
+      "sha": "91861a9668041fc1c0ff51d1db66b6297179f5e6",
+      "repo": {
+        "path": "paopao",
+        "name": "paopao"
+      }
+    },
+    "base": {
+      "label": "main",
+      "ref": "main",
+      "sha": "91861a9668041fc1c0ff51d1db66b6297179f5e6",
+      "repo": {
+        "path": "paopao",
+        "name": "paopao"
+      }
+    },
+    "prune_branch": false,
+    "mergeable_state": {
+      "merge_request_id": 111,
+      "state": false,
+      "status_without_user_auth": false,
+      "conflict_passed": false,
+      "branch_missing_passed": true,
+      "non_ff_passed": true,
+      "mr_state_passed": true,
+      "merged_by_user_passed": true,
+      "work_in_progress_passed": true,
+      "resolve_discussion_passed": true,
+      "ci_state_passed": true,
+      "merge_by_self_passed": true,
+      "can_force_merge": false,
+      "approval_reviewers_required_passed": true,
+      "approval_approvers_required_passed": true,
+      "approval_testers_required_passed": true,
+      "merge_request_switch": {
+        "review_mode": "approval",
+        "merge_method": "merge",
+        "only_allow_merge_if_all_discussions_are_resolved": false,
+        "disable_merge_by_self": false,
+        "only_allow_merge_if_pipeline_succeeds": false,
+        "disable_squash_merge": false,
+        "squash_merge_with_no_merge_commit": false,
+        "approval_required_reviewers_count": 0,
+        "approval_required_reviewers_branch": "*",
+        "add_notes_after_merged": false,
+        "mark_auto_merged_mr_as_closed": false,
+        "can_force_merge": false,
+        "can_reopen": true
+      },
+      "reason": {},
+      "check_tasks_num": 0
+    },
+    "ref_pull_requests": [
+      {
+        "id": 191973,
+        "number": 3,
+        "state": "merged",
+        "title": "dddd"
+      }
+    ]
+  },
+  "curlExample": "curl -X GET \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {}\n\nresponse = requests.get(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "requestBody omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/423ea94d.ef071756.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

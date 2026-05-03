@@ -1,0 +1,48 @@
+{
+  "issue": {
+    "subcommands": ["list", "view", "create", "close", "comment"],
+    "commands": {
+      "issue list": {
+        "flags": ["-s", "-l", "-A", "-a", "--milestone", "--mention", "--app", "-S", "-L", "-w", "--json", "-q", "-t", "-R"]
+      },
+      "issue view": {
+        "flags": ["-c", "-w", "--json", "-q", "-t", "-R"]
+      },
+      "issue create": {
+        "flags": ["-t", "-b", "-F", "-e", "-l", "-m", "-a", "-w", "-R"]
+      },
+      "issue close": {
+        "flags": ["-c", "-r", "--duplicate-of", "-R"]
+      },
+      "issue comment": {
+        "flags": ["-b", "-F", "-e", "-w", "--delete-last", "--edit-last", "-R"]
+      }
+    }
+  },
+  "pr": {
+    "subcommands": ["list", "view", "create", "close", "merge", "comment", "review"],
+    "commands": {
+      "pr list": {
+        "flags": ["-s", "-A", "-B", "-a", "-d", "-H", "-l", "-S", "-L", "-w", "--json", "-q", "-t", "-R"]
+      },
+      "pr view": {
+        "flags": ["-c", "-w", "--json", "-q", "-t", "-R"]
+      },
+      "pr create": {
+        "flags": ["-t", "-b", "-F", "-e", "-f", "-d", "-B", "-H", "-l", "-r", "-a", "-m", "-w", "--json", "-q", "-R", "--dry-run"]
+      },
+      "pr close": {
+        "flags": ["-c", "-d", "-R"]
+      },
+      "pr merge": {
+        "flags": ["-m", "-s", "-r", "-d", "-b", "-F", "-t", "-A", "--auto", "--admin", "-R"]
+      },
+      "pr comment": {
+        "flags": ["-b", "-F", "-e", "-w", "-R"]
+      },
+      "pr review": {
+        "flags": ["-a", "-b", "-F", "-c", "-r", "-R"]
+      }
+    }
+  }
+}

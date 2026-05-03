@@ -303,6 +303,15 @@ class TestIssueView:
         assert json_data["labels"] == "bug"
         assert json_data["milestone"] == "v1.0"
 
+    def test_editor_fails_before_prompting_for_title(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "create", "--editor"], input="Should not be consumed\n")
+        assert result.exit_code != 0
+        assert (
+            "gh-compatible command/flag 'issue create --editor' is recognized but not implemented yet." in result.output
+        )
+        assert "Title" not in result.output
+        mock_client.post.assert_not_called()
+
 
 class TestIssueClose:
     def test_default(self, runner, mock_client, mock_repo):

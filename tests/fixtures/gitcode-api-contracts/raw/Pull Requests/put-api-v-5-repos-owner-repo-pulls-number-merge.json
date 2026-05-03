@@ -1,0 +1,95 @@
+{
+  "category": "Pull Requests",
+  "name": "合并Pull Request",
+  "slug": "put-api-v-5-repos-owner-repo-pulls-number-merge",
+  "docUrl": "https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge",
+  "summary": "",
+  "method": "PUT",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/merge",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "required": true,
+      "description": "第几个PR，即本仓库PR的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [
+    {
+      "name": "merge_method",
+      "type": "string",
+      "required": false,
+      "description": "可选。合并PR的方法，merge（合并所有提交）、squash（扁平化分支合并）和rebase（变基并合并）。默认为merge。"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "可选。合并标题"
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false,
+      "description": "可选。合并描述"
+    },
+    {
+      "name": "force_merge",
+      "type": "boolean",
+      "required": false,
+      "description": "是否强制合并（需开启“允许管理员强制合入”设置，并且需管理员权限）"
+    }
+  ],
+  "responseFields": [
+    {
+      "name": "sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "message",
+      "type": "string",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "sha": "c20ac9624d2811a9313af29769dcf581b60c3044",
+    "merged": true,
+    "message": "Pull Request已成功合并"
+  },
+  "curlExample": "curl -X PUT \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/merge?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n  \"merge_method\": \"value\"\n}'",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/merge\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"merge_method\": \"value\"\n}\n\nresponse = requests.put(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/1474b9ff.313556a8.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "category": "Pull Requests",
+  "name": "处理 Pull Request审查",
+  "slug": "post-api-v-5-repos-owner-repo-pulls-number-review",
+  "docUrl": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-review",
+  "summary": "",
+  "method": "POST",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/review",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "required": true,
+      "description": "第几个PR，即本仓库PR的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [
+    {
+      "name": "force",
+      "type": "boolean",
+      "required": false,
+      "description": "是否强制测试通过（默认否），只对管理员生效"
+    }
+  ],
+  "responseFields": [],
+  "responseExample": {},
+  "curlExample": "curl -X POST \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/review?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n  \"force\": true\n}'",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/review\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"force\": true\n}\n\nresponse = requests.post(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "responseFields omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/346dab88.5d05b628.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

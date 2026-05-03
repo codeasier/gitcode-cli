@@ -1,0 +1,2082 @@
+{
+  "category": "Pull Requests",
+  "name": "创建Pull Request",
+  "slug": "post-api-v-5-repos-owner-repo-pulls",
+  "docUrl": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls",
+  "summary": "",
+  "method": "POST",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "description": "必填。Pull Request标题"
+    },
+    {
+      "name": "head",
+      "type": "string",
+      "required": true,
+      "description": "必填。Pull Request提交的源分支。格式：branch 如果跨仓PR传：username:branch"
+    },
+    {
+      "name": "base",
+      "type": "string",
+      "required": true,
+      "description": "必填。Pull Request提交目标分支的名称"
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request内容"
+    },
+    {
+      "name": "milestone_number",
+      "type": "integer",
+      "required": false,
+      "description": "可选。里程碑序号(id)"
+    },
+    {
+      "name": "labels",
+      "type": "string",
+      "required": false,
+      "description": "用逗号分开的标签，名称要求长度在 2-20 之间且非特殊字符。如: bug,performance"
+    },
+    {
+      "name": "issue",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request的标题和内容可以根据指定的Issue Id自动填充"
+    },
+    {
+      "name": "assignees",
+      "type": "string",
+      "required": false,
+      "description": "可选。审查人员username，可多个，半角逗号分隔，如：(username1,username2), 注意: 当仓库代码审查设置中已设置【指派审查人员】则此选项无效"
+    },
+    {
+      "name": "testers",
+      "type": "string",
+      "required": false,
+      "description": "可选。测试人员username，可多个，半角逗号分隔，如：(username1,username2), 注意: 当仓库代码审查设置中已设置【指派测试人员】则此选项无效"
+    },
+    {
+      "name": "prune_source_branch",
+      "type": "boolean",
+      "required": false,
+      "description": "可选。合并PR后是否删除源分支，默认false（不删除）"
+    },
+    {
+      "name": "draft",
+      "type": "boolean",
+      "required": false,
+      "description": "是否设置为草稿 默认false"
+    },
+    {
+      "name": "squash",
+      "type": "boolean",
+      "required": false,
+      "description": "接受 Pull Request时使用扁平化（Squash）合并, 默认false"
+    },
+    {
+      "name": "squash_commit_message",
+      "type": "string",
+      "required": false,
+      "description": "squash提交信息"
+    },
+    {
+      "name": "fork_path",
+      "type": "string",
+      "required": false,
+      "description": "fork项目路径【owner/repo】，跨仓PR 必填。"
+    },
+    {
+      "name": "close_related_issue",
+      "type": "boolean",
+      "required": false,
+      "description": "可选，合并后是否关闭关联的 Issue，默认根据仓库配置设置"
+    }
+  ],
+  "responseFields": [
+    {
+      "name": "id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "diff_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "patch_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "issue_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "commits_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "review_comments_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "review_comment_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "comments_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merged_by",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "merged_at",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "closed_by",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "closed_at",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "title_html",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "description_html",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "squash_commit_message",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user_notes_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "upvotes",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "downvotes",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "author.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "author.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.iam_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.nick_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.avatar_path",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "author.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "author.tenant_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "author.is_member",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "labels[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "labels[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].color",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].updated_at",
+      "type": "string",
+      "description": "label添加时间"
+    },
+    {
+      "name": "work_in_progress",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "milestone",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "merge_when_pipeline_succeeds",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "merge_status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merge_commit_sha",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "discussion_locked",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "should_remove_source_branch",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "force_remove_source_branch",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "allow_collaboration",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "allow_maintainer_to_push",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "time_stats.time_estimate",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "time_stats.total_time_spent",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "time_stats.human_time_estimate",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "time_stats.human_total_time_spent",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "squash",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "merge_request_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "has_pre_merge_ref",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "review_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "is_source_branch_exist",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].nick_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].email",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].is_codeowner",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_reviewers[].avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].nick_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].email",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].is_codeowner",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_approvers[].avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].nick_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].email",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].is_codeowner",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "approval_merge_request_testers[].avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.name_with_namespace",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.path_with_namespace",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.develop_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.archived",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.is_kia",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.ssh_url_to_repo",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.http_url_to_repo",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.readme_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.product_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.product_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.member_mgnt_mode",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.default_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.tag_list[]",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "source_project.license_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.license.key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.license.name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.license.nickname",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.license.html_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.license.source_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.avatar_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.star_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.forks_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.open_issues_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.open_merge_requests_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.open_change_requests_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.watch_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.last_activity_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.develop_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.region",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.cell",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.kind",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.full_path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.parent_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.visibility_level",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.enable_file_control",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.namespace.owner_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.empty_repo",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.starred",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.visibility",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.security",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.has_updated_kia",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.network_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.owner",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.iam_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.nick_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.avatar_path",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.tenant_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator.is_member",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.creator_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.forked_from_project",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.item_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "source_project.main_repository_language[]",
+      "type": "array<string>",
+      "description": ""
+    },
+    {
+      "name": "source_project.mirror_project_data",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.statistics",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.branch_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.tag_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.member_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.repo_replica_urls",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_project.open_external_wiki",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "source_project.release_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.name_with_namespace",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.path_with_namespace",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.develop_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.archived",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.is_kia",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.ssh_url_to_repo",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.http_url_to_repo",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.readme_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.product_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.product_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.member_mgnt_mode",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.default_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.tag_list[]",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "target_project.license_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.license.key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.license.name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.license.nickname",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.license.html_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.license.source_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.avatar_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.star_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.forks_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.open_issues_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.open_merge_requests_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.open_change_requests_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.watch_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.last_activity_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.develop_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.region",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.cell",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.kind",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.full_path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.parent_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.visibility_level",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.enable_file_control",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.namespace.owner_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.empty_repo",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.starred",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.visibility",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.security",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.has_updated_kia",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.network_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.owner",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.iam_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.nick_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.avatar_path",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.tenant_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator.is_member",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.creator_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.forked_from_project",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.item_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "target_project.main_repository_language[]",
+      "type": "array<string>",
+      "description": ""
+    },
+    {
+      "name": "target_project.mirror_project_data",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.statistics",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.branch_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.tag_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.member_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.repo_replica_urls",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "target_project.open_external_wiki",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "target_project.release_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "added_lines",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "removed_lines",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "subscribed",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "changes_count",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "latest_build_started_at",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "latest_build_finished_at",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "first_deployed_to_production_at",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "pipeline",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "diff_refs.base_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "diff_refs.head_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "diff_refs.start_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "merge_error",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "json_merge_error",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "rebase_in_progress",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "diverged_commits_count",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "merge_request_assignee_list[]",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "merge_request_reviewer_list[]",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "user.can_merge",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "merge_request_review_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "merge_request_reviewers_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "notes",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "unresolved_discussions_count",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].issue_type",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].linked_issue_type",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].issue_num",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].commit_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].merge_request_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].check_fail_reason",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].check_result",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].issue_link",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].mks_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].pbi_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].pbi_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].source",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].issue_project_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].issue_project",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "e2e_issues[].auto_c_when_mr_merged",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "gate_check",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "head_pipeline_id",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "pipeline_status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "codequality_status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "pipeline_status_with_code_quality",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "from_forked_project",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "forked_project_name",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "can_delete_source_branch",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "required_reviewers[]",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "omega_mode",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "root_mr_locked_detail",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "source_git_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "auto_merge",
+      "type": "null",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "id": 11264998,
+    "url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/6",
+    "html_url": "https://gitcode.com/zzero/demo/pulls/6",
+    "diff_url": "https://gitcode.com/zzero/demo/pulls/6.diff",
+    "patch_url": "https://gitcode.com/zzero/demo/pulls/6.patch",
+    "issue_url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/6/issues",
+    "commits_url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/6/commits",
+    "review_comments_url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/comments/{/number}",
+    "review_comment_url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/comments",
+    "comments_url": "https://gitcode.com/api/v5/repos/zzero/demo/pulls/6/comments",
+    "number": 6,
+    "title": "测试创建PR",
+    "description": "update: 更新文件 dev_001.txt \nupdate: 更新文件 dev_001.txt ",
+    "state": "opened",
+    "created_at": "2024-04-14T20:53:13.185+08:00",
+    "updated_at": "2024-04-14T20:53:22.634+08:00",
+    "merged_by": null,
+    "merged_at": null,
+    "closed_by": null,
+    "closed_at": null,
+    "title_html": null,
+    "description_html": null,
+    "target_branch": "test_b5",
+    "source_branch": "dev",
+    "squash_commit_message": null,
+    "user_notes_count": 0,
+    "upvotes": 0,
+    "downvotes": 0,
+    "author": {
+      "id": 494,
+      "name": "csdntest13",
+      "username": "csdntest13",
+      "iam_id": "d8b3e018b2364546b946886a669d50fc",
+      "nick_name": "csdntest13_gitcode",
+      "state": "active",
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/ec/ba/4e7c4661b6154a7dd088d9fe64b4893383a2e318bf362350ce18d44df6ac7e37.png?time=1711533165876",
+      "avatar_path": null,
+      "email": "csdntest13@noreply.gitcode.com",
+      "name_cn": "csdntest13",
+      "web_url": "https://gitcode.com/csdntest13",
+      "tenant_name": null,
+      "is_member": null
+    },
+    "assignee": null,
+    "source_project_id": 243377,
+    "target_project_id": 243377,
+    "labels": [
+      {
+        "color": "#008672",
+        "name": "help wanted",
+        "id": 381445,
+        "title": "help wanted",
+        "type": null,
+        "textColor": "#FFFFFF"
+      },
+      {
+        "color": "#CFD240",
+        "name": "invalid",
+        "id": 381446,
+        "title": "invalid",
+        "type": null,
+        "textColor": "#FFFFFF"
+      },
+      {
+        "color": "#D876E3",
+        "name": "question",
+        "id": 381447,
+        "title": "question",
+        "type": null,
+        "textColor": "#333333"
+      }
+    ],
+    "work_in_progress": false,
+    "milestone": null,
+    "merge_when_pipeline_succeeds": false,
+    "merge_status": "unchecked",
+    "sha": "8da7a5c35e71deeb0bf1d9ecae70449c574749f2",
+    "merge_commit_sha": null,
+    "discussion_locked": null,
+    "should_remove_source_branch": false,
+    "force_remove_source_branch": false,
+    "allow_collaboration": null,
+    "allow_maintainer_to_push": null,
+    "web_url": "https://gitcode.com/One/One/merge_requests/53",
+    "time_stats": {
+      "time_estimate": null,
+      "total_time_spent": 0,
+      "human_time_estimate": null,
+      "human_total_time_spent": null
+    },
+    "squash": false,
+    "merge_request_type": "MergeRequest",
+    "has_pre_merge_ref": false,
+    "review_mode": "approval",
+    "is_source_branch_exist": true,
+    "approval_merge_request_reviewers": [
+      {
+        "id": 43,
+        "username": "green",
+        "name": "green",
+        "nick_name": null,
+        "name_cn": "green",
+        "email": null,
+        "state": "optional",
+        "is_codeowner": false,
+        "updated_at": "2024-04-14T20:53:23.021+08:00",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/be/fb/7b9e393fbd80ca315dec249f2be6e6a7378f591609b6525798bc6d95abedc992.png?time=1712128581171"
+      }
+    ],
+    "approval_merge_request_approvers": [
+      {
+        "id": 277,
+        "username": "renww",
+        "name": "renww",
+        "nick_name": null,
+        "name_cn": "renww",
+        "email": null,
+        "state": "optional",
+        "is_codeowner": false,
+        "updated_at": "2024-04-14T20:53:23.751+08:00",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/ee/dc/7602704ee7dcf13f4383a72d492b1813823afba729ae6e9115877a4a0128d990.jpg?time=1711447395118"
+      }
+    ],
+    "approval_merge_request_testers": [
+      {
+        "id": 43,
+        "username": "green",
+        "name": "green",
+        "nick_name": null,
+        "name_cn": "green",
+        "email": null,
+        "state": "optional",
+        "is_codeowner": false,
+        "updated_at": "2024-04-14T20:53:23.755+08:00",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/be/fb/7b9e393fbd80ca315dec249f2be6e6a7378f591609b6525798bc6d95abedc992.png?time=1712128581171"
+      },
+      {
+        "id": 277,
+        "username": "renww",
+        "name": "renww",
+        "nick_name": null,
+        "name_cn": "renww",
+        "email": null,
+        "state": "optional",
+        "is_codeowner": false,
+        "updated_at": "2024-04-14T20:53:23.755+08:00",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/ee/dc/7602704ee7dcf13f4383a72d492b1813823afba729ae6e9115877a4a0128d990.jpg?time=1711447395118"
+      }
+    ],
+    "source_project": {
+      "id": 243377,
+      "description": "csdntest13的第一个项目(公开)",
+      "name": "One",
+      "name_with_namespace": "One / One",
+      "path": "One",
+      "path_with_namespace": "One/One",
+      "develop_mode": "normal",
+      "created_at": "2024-03-19T16:24:01.197+08:00",
+      "updated_at": "2024-03-19T16:42:34.834+08:00",
+      "archived": false,
+      "is_kia": false,
+      "ssh_url_to_repo": "ssh://git@gitcode.com:2222/One/One.git",
+      "http_url_to_repo": "https://gitcode.com/One/One.git",
+      "web_url": "https://gitcode.com/One/One",
+      "readme_url": "https://gitcode.com/One/One/blob/main/README.md",
+      "product_id": "28f96caf52004e81ab0bc38d60d11940",
+      "product_name": null,
+      "member_mgnt_mode": 3,
+      "default_branch": "main",
+      "tag_list": [],
+      "license_url": null,
+      "license": {
+        "key": "Apache_License_v2.0",
+        "name": null,
+        "nickname": null,
+        "html_url": null,
+        "source_url": null
+      },
+      "avatar_url": null,
+      "star_count": 1,
+      "forks_count": 0,
+      "open_issues_count": 108,
+      "open_merge_requests_count": 32,
+      "open_change_requests_count": null,
+      "watch_count": 1,
+      "last_activity_at": "2024-04-14T20:43:58.602+08:00",
+      "namespace": {
+        "id": 136909,
+        "name": "One",
+        "path": "One",
+        "develop_mode": "normal",
+        "region": null,
+        "cell": "default",
+        "kind": "group",
+        "full_path": "One",
+        "full_name": "One ",
+        "parent_id": null,
+        "visibility_level": 20,
+        "enable_file_control": null,
+        "owner_id": null
+      },
+      "empty_repo": false,
+      "starred": false,
+      "visibility": "public",
+      "security": "internal",
+      "has_updated_kia": false,
+      "network_type": "green",
+      "owner": null,
+      "creator": {
+        "id": 494,
+        "name": "csdntest13",
+        "username": "csdntest13",
+        "iam_id": "d8b3e018b2364546b946886a669d50fc",
+        "nick_name": "csdntest13_gitcode",
+        "state": "active",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/ec/ba/4e7c4661b6154a7dd088d9fe64b4893383a2e318bf362350ce18d44df6ac7e37.png?time=1711533165876",
+        "avatar_path": null,
+        "email": "csdntest13@noreply.gitcode.com",
+        "name_cn": "csdntest13",
+        "web_url": "https://gitcode.com/csdntest13",
+        "tenant_name": null,
+        "is_member": null
+      },
+      "creator_id": 494,
+      "forked_from_project": null,
+      "item_type": "Project",
+      "main_repository_language": [
+        "Text",
+        "#cccccc"
+      ],
+      "mirror_project_data": null,
+      "statistics": null,
+      "branch_count": null,
+      "tag_count": null,
+      "member_count": null,
+      "repo_replica_urls": null,
+      "open_external_wiki": true,
+      "release_count": null
+    },
+    "target_project": {
+      "id": 243377,
+      "description": "csdntest13的第一个项目(公开)",
+      "name": "One",
+      "name_with_namespace": "One / One",
+      "path": "One",
+      "path_with_namespace": "One/One",
+      "develop_mode": "normal",
+      "created_at": "2024-03-19T16:24:01.197+08:00",
+      "updated_at": "2024-03-19T16:42:34.834+08:00",
+      "archived": false,
+      "is_kia": false,
+      "ssh_url_to_repo": "ssh://git@gitcode.com:2222/One/One.git",
+      "http_url_to_repo": "https://gitcode.com/One/One.git",
+      "web_url": "https://gitcode.com/One/One",
+      "readme_url": "https://gitcode.com/One/One/blob/main/README.md",
+      "product_id": "28f96caf52004e81ab0bc38d60d11940",
+      "product_name": null,
+      "member_mgnt_mode": 3,
+      "default_branch": "main",
+      "tag_list": [],
+      "license_url": null,
+      "license": {
+        "key": "Apache_License_v2.0",
+        "name": null,
+        "nickname": null,
+        "html_url": null,
+        "source_url": null
+      },
+      "avatar_url": null,
+      "star_count": 1,
+      "forks_count": 0,
+      "open_issues_count": 108,
+      "open_merge_requests_count": 32,
+      "open_change_requests_count": null,
+      "watch_count": 1,
+      "last_activity_at": "2024-04-14T20:43:58.602+08:00",
+      "namespace": {
+        "id": 136909,
+        "name": "One",
+        "path": "One",
+        "develop_mode": "normal",
+        "region": null,
+        "cell": "default",
+        "kind": "group",
+        "full_path": "One",
+        "full_name": "One ",
+        "parent_id": null,
+        "visibility_level": 20,
+        "enable_file_control": null,
+        "owner_id": null
+      },
+      "empty_repo": false,
+      "starred": false,
+      "visibility": "public",
+      "security": "internal",
+      "has_updated_kia": false,
+      "network_type": "green",
+      "owner": null,
+      "creator": {
+        "id": 494,
+        "name": "csdntest13",
+        "username": "csdntest13",
+        "iam_id": "d8b3e018b2364546b946886a669d50fc",
+        "nick_name": "csdntest13_gitcode",
+        "state": "active",
+        "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/ec/ba/4e7c4661b6154a7dd088d9fe64b4893383a2e318bf362350ce18d44df6ac7e37.png?time=1711533165876",
+        "avatar_path": null,
+        "email": "csdntest13@noreply.gitcode.com",
+        "name_cn": "csdntest13",
+        "web_url": "https://gitcode.com/csdntest13",
+        "tenant_name": null,
+        "is_member": null
+      },
+      "creator_id": 494,
+      "forked_from_project": null,
+      "item_type": "Project",
+      "main_repository_language": [
+        "Text",
+        "#cccccc"
+      ],
+      "mirror_project_data": null,
+      "statistics": null,
+      "branch_count": null,
+      "tag_count": null,
+      "member_count": null,
+      "repo_replica_urls": null,
+      "open_external_wiki": true,
+      "release_count": null
+    },
+    "added_lines": 19860,
+    "removed_lines": 1,
+    "subscribed": true,
+    "changes_count": "6",
+    "latest_build_started_at": null,
+    "latest_build_finished_at": null,
+    "first_deployed_to_production_at": null,
+    "pipeline": null,
+    "diff_refs": {
+      "base_sha": "0c02dd57f8945791460a141f155dd2f4bd5dea86",
+      "head_sha": "8da7a5c35e71deeb0bf1d9ecae70449c574749f2",
+      "start_sha": "fb6495834d1bf7a39dfdb44ad25e6f83c7136310"
+    },
+    "merge_error": null,
+    "json_merge_error": null,
+    "rebase_in_progress": null,
+    "diverged_commits_count": null,
+    "merge_request_assignee_list": [],
+    "merge_request_reviewer_list": [],
+    "user": {
+      "can_merge": true
+    },
+    "merge_request_review_count": 0,
+    "merge_request_reviewers_count": 0,
+    "notes": 0,
+    "unresolved_discussions_count": 0,
+    "e2e_issues": [
+      {
+        "id": 13588,
+        "issue_type": 7,
+        "linked_issue_type": null,
+        "issue_num": "issue100",
+        "commit_id": null,
+        "merge_request_id": 68253,
+        "check_fail_reason": "",
+        "check_result": true,
+        "issue_link": "https://gitcode.com/One/One/issues/100",
+        "created_at": "2024-04-14T20:53:23.772+08:00",
+        "mks_id": null,
+        "pbi_id": null,
+        "pbi_name": null,
+        "source": null,
+        "issue_project_id": 243377,
+        "title": "第boudoirripinings-45个issue",
+        "issue_project": null,
+        "auto_c_when_mr_merged": false
+      }
+    ],
+    "gate_check": true,
+    "head_pipeline_id": null,
+    "pipeline_status": "",
+    "codequality_status": "success",
+    "pipeline_status_with_code_quality": "",
+    "from_forked_project": false,
+    "forked_project_name": null,
+    "can_delete_source_branch": true,
+    "required_reviewers": [],
+    "omega_mode": false,
+    "root_mr_locked_detail": null,
+    "source_git_url": "ssh://git@gitcode.com:2222/One/One.git",
+    "auto_merge": null
+  },
+  "curlExample": "curl -X POST \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n  \"title\": \"value\"\n}'",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"title\": \"value\"\n}\n\nresponse = requests.post(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/e68328ef.c702df98.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

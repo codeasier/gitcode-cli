@@ -1,0 +1,503 @@
+{
+  "category": "Issues",
+  "name": "获取仓库所有 issues",
+  "slug": "get-api-v-5-repos-owner-repo-issues",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues",
+  "summary": "",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/issues",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": false,
+      "description": "Issue的状态: open（开启的）, closed（关闭的）， all (所有)。 默认: all"
+    },
+    {
+      "name": "labels",
+      "type": "string",
+      "required": false,
+      "description": "用逗号分开的标签。如: bug,performance"
+    },
+    {
+      "name": "sort",
+      "type": "string",
+      "required": false,
+      "description": "排序依据: 创建时间(created)，更新时间(updated)。默认: created"
+    },
+    {
+      "name": "direction",
+      "type": "string",
+      "required": false,
+      "description": "排序方式: 升序(asc)，降序(desc)。默认: desc"
+    },
+    {
+      "name": "since",
+      "type": "string",
+      "required": false,
+      "description": "起始的更新时间，要求时间格式为 2024-11-10T08:10:30.000+08:00（注意+号要url编码为%2B）"
+    },
+    {
+      "name": "page",
+      "type": "integer",
+      "required": false,
+      "description": "当前的页码"
+    },
+    {
+      "name": "per_page",
+      "type": "integer",
+      "required": false,
+      "description": "每页的数量，最大为 100，默认 20"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "required": false,
+      "description": "任务创建时间，例如：2024-11-20T13:00:21+08:00"
+    },
+    {
+      "name": "milestone",
+      "type": "string",
+      "required": false,
+      "description": "根据里程碑标题。none为没里程碑的"
+    },
+    {
+      "name": "assignee",
+      "type": "string",
+      "required": false,
+      "description": "Issue指派人ID"
+    },
+    {
+      "name": "creator",
+      "type": "string",
+      "required": false,
+      "description": "创建Issues的用户username"
+    },
+    {
+      "name": "created_after",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之后创建的问题，例如：2024-11-20T13:00:21+08:00"
+    },
+    {
+      "name": "created_before",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之前创建的问题，例如：2024-11-20T13:00:21+08:00"
+    },
+    {
+      "name": "updated_after",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之后更新的问题，例如：2024-11-20T13:00:21+08:00"
+    },
+    {
+      "name": "updated_before",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之前更新的问题，例如：2024-11-20T13:00:21+08:00"
+    },
+    {
+      "name": "search",
+      "type": "string",
+      "required": false,
+      "description": "通过关键字搜索issue标题或者内容"
+    }
+  ],
+  "requestBodyFields": [],
+  "responseFields": [
+    {
+      "name": "items[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].number",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.assigner",
+      "type": "object",
+      "description": ""
+    },
+    {
+      "name": "items[].repository.paas",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].finished_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].color",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].updated_at",
+      "type": "string",
+      "description": "label添加时间"
+    },
+    {
+      "name": "items[].issue_state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].comments",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].priority",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_state_detail.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_state_detail.serial",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_state_detail.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_type_detail.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_type_detail.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_type_detail.is_system",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_priority_detail.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].issue_priority_detail.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.due_on",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.repository_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].milestone.url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignee.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignee.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignee.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignee.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignee.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].visibility_reason",
+      "type": "string",
+      "description": "可见性，public：公开可见，confidential：私密，项目成员可见，other：其他原因导致的仅项目成员可见"
+    }
+  ],
+  "responseExample": {
+    "id": 152642,
+    "html_url": "https://test.gitcode.net/dengmengmian/test01/issues/15",
+    "number": "15",
+    "state": "opened",
+    "title": "半月据",
+    "body": "节油料被引系活力级少本化段维家住实。常气前步证时第样日所阶效温界到量。个导土机技亲布接增论始高世收圆流级集。此般区才听党机达两收文斗公加白。代军前分写第图美市与道及间。",
+    "user": {
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/fa/fe/f32a9fecc53e890afbd48fd098b0f6c5f20f062581400c76c85e5baab3f0d5b2.png",
+      "events_url": null,
+      "followers_url": null,
+      "following_url": null,
+      "gists_url": null,
+      "html_url": "https://test.gitcode.net/dengmengmian",
+      "id": "661ce4eab470b1430d456154",
+      "login": "dengmengmian",
+      "member_role": null,
+      "name": "麻凡_",
+      "organizations_url": null,
+      "received_events_url": null,
+      "remark": null,
+      "repos_url": null,
+      "starred_url": null,
+      "subscriptions_url": null,
+      "type": null,
+      "url": null
+    },
+    "assignee": {
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/fa/fe/f32a9fecc53e890afbd48fd098b0f6c5f20f062581400c76c85e5baab3f0d5b2.png",
+      "events_url": null,
+      "followers_url": null,
+      "following_url": null,
+      "gists_url": null,
+      "html_url": "https://test.gitcode.net/dengmengmian",
+      "id": "661ce4eab470b1430d456154",
+      "login": "dengmengmian",
+      "member_role": null,
+      "name": "麻凡_",
+      "organizations_url": null,
+      "received_events_url": null,
+      "remark": null,
+      "repos_url": null,
+      "starred_url": null,
+      "subscriptions_url": null,
+      "type": null,
+      "url": null
+    },
+    "repository": {
+      "id": 280713,
+      "full_name": "dengmengmian / test01",
+      "path": "test01",
+      "name": "test01",
+      "description": "",
+      "created_at": "2024-04-15T16:27:45.090+08:00",
+      "updated_at": "2024-04-15T16:27:45.090+08:00",
+      "assigner": null,
+      "pushed_at": null,
+      "paas": null,
+      "assignees_number": null,
+      "testers_number": null,
+      "assignee": null,
+      "testers": null
+    },
+    "created_at": "2024-04-18T14:35:15.479+08:00",
+    "updated_at": "2024-04-20T15:20:30.111+08:00",
+    "finished_at": null,
+    "labels": [
+      {
+        "id": 382379,
+        "name": "enim",
+        "color": "#428BCA"
+      },
+      {
+        "id": 382378,
+        "name": "proident",
+        "color": "#428BCA"
+      },
+      {
+        "id": 382377,
+        "name": "qui",
+        "color": "#428BCA"
+      }
+    ],
+    "priority": null,
+    "issue_type": null,
+    "issue_state": "opened",
+    "issue_state_detail": null
+  },
+  "curlExample": "curl -X GET \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/issues?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/issues\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {}\n\nresponse = requests.get(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "requestBody omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/45ed43b5.3662411b.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

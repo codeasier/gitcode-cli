@@ -1,0 +1,125 @@
+{
+  "category": "Pull Requests",
+  "name": "更新Pull Request信息",
+  "slug": "patch-api-v-5-repos-owner-repo-pulls-number",
+  "docUrl": "https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-number",
+  "summary": "",
+  "method": "PATCH",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "required": true,
+      "description": "第几个PR，即本仓库PR的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [
+    {
+      "name": "title",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request标题"
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request内容"
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request状态"
+    },
+    {
+      "name": "milestone_number",
+      "type": "integer",
+      "required": false,
+      "description": "可选。里程碑序号(id)"
+    },
+    {
+      "name": "labels",
+      "type": "string",
+      "required": false,
+      "description": "用逗号分开的标签，名称要求长度在 2-20 之间且非特殊字符。如: bug,performance"
+    },
+    {
+      "name": "draft",
+      "type": "boolean",
+      "required": false,
+      "description": "是否设置为草稿"
+    },
+    {
+      "name": "close_related_issue",
+      "type": "boolean",
+      "required": false,
+      "description": "可选，合并后是否关闭关联的 Issue，默认根据仓库配置设置"
+    }
+  ],
+  "responseFields": [
+    {
+      "name": "title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "title": "test_b3->dev",
+    "body": "new: 新增文件 test_b3 \n2223333444444",
+    "state": "opened",
+    "created_at": "2024-03-28T22:23:29.999+08:00",
+    "updated_at": "2024-04-14T21:06:52.499+08:00"
+  },
+  "curlExample": "curl -X PATCH \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n  \"title\": \"value\"\n}'",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"title\": \"value\"\n}\n\nresponse = requests.patch(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/240860d2.82838c2f.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

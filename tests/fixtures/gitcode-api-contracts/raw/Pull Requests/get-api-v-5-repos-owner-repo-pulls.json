@@ -1,0 +1,875 @@
+{
+  "category": "Pull Requests",
+  "name": "获取项目Pull Request列表",
+  "slug": "get-api-v-5-repos-owner-repo-pulls",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls",
+  "summary": "",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径(path)"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request状态: all、open、closed、locked、merged，默认：all"
+    },
+    {
+      "name": "base",
+      "type": "string",
+      "required": false,
+      "description": "可选。Pull Request提交目标分支的名称"
+    },
+    {
+      "name": "since",
+      "type": "string",
+      "required": false,
+      "description": "可选。起始的更新时间，要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "direction",
+      "type": "string",
+      "required": false,
+      "description": "可选。升序/降序 默认：desc(asc 或者 desc)"
+    },
+    {
+      "name": "sort",
+      "type": "string",
+      "required": false,
+      "description": "可选。排序字段: created、updated 默认：created"
+    },
+    {
+      "name": "milestone_number",
+      "type": "integer",
+      "required": false,
+      "description": "可选。里程碑序号(id)"
+    },
+    {
+      "name": "labels",
+      "type": "string",
+      "required": false,
+      "description": "以逗号分隔的标签名称列表"
+    },
+    {
+      "name": "page",
+      "type": "integer",
+      "required": false,
+      "description": "当前的页码:默认为 1"
+    },
+    {
+      "name": "per_page",
+      "type": "integer",
+      "required": false,
+      "description": "每页的数量，最大为 100，默认 20"
+    },
+    {
+      "name": "author",
+      "type": "string",
+      "required": false,
+      "description": "可选。PR 创建者用户名"
+    },
+    {
+      "name": "assignee",
+      "type": "string",
+      "required": false,
+      "description": "可选。PR 负责人用户名"
+    },
+    {
+      "name": "reviewer",
+      "type": "string",
+      "required": false,
+      "description": "可选。PR 评审人用户名"
+    },
+    {
+      "name": "merged_after",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之后合并的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "merged_before",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之前合并的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "only_count",
+      "type": "boolean",
+      "required": false,
+      "description": "如果为true，则仅返回合并请求的计数，默认为 false"
+    },
+    {
+      "name": "created_after",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之后创建的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "created_before",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之前创建的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "updated_before",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之前更新的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    },
+    {
+      "name": "updated_after",
+      "type": "string",
+      "required": false,
+      "description": "返回在指定时间之后更新的合并请求,要求时间格式为 ISO 8601 例如：`2024-11-20T13:00:21+08:00`"
+    }
+  ],
+  "requestBodyFields": [],
+  "responseFields": [
+    {
+      "name": "items[].number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].close_related_issue",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].prune_branch",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].draft",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].color",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].labels[].updated_at",
+      "type": "string",
+      "description": "label添加时间"
+    },
+    {
+      "name": "items[].user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.user_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.object_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignees[]",
+      "type": "array<string>",
+      "description": ""
+    },
+    {
+      "name": "items[].testers[]",
+      "type": "array<string>",
+      "description": ""
+    },
+    {
+      "name": "items[].head.label",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.ref",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.full_path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.human_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.owner.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.assigner.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.internal",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].head.repo.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.label",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.ref",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.full_path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.human_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.owner.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.assigner.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.internal",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].base.repo.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].iid",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].project_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].assignees_number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].testers_number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merged_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].target_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].source_branch",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].source_project_id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].force_remove_source_branch",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merge_request_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].review_mode",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].added_lines",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].removed_lines",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_refs.base_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_refs.head_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].diff_refs.start_sha",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].notes",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].pipeline_status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].pipeline_status_with_code_quality",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].source_git_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].can_merge_check",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].mergeable",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].locked",
+      "type": "boolean",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.username",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.iam_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.nick_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.email",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.name_cn",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].closed_by.web_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].visibility_reason",
+      "type": "string",
+      "description": "可见性，public：公开可见，other：仅项目成员可见"
+    },
+    {
+      "name": "items[].merged_by.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merged_by.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merged_by.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merged_by.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "items[].merged_by.html_url",
+      "type": "string",
+      "description": ""
+    }
+  ],
+  "responseExample": {
+    "all": 1,
+    "opened": 1,
+    "closed": 0,
+    "merged": 0,
+    "locked": 0
+  },
+  "curlExample": "curl -X GET \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {}\n\nresponse = requests.get(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "requestBody omitted in source",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/f6a19c81.88ac356a.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

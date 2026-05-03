@@ -1,0 +1,496 @@
+{
+  "category": "Issues",
+  "name": "更新Issue",
+  "slug": "patch-api-v-5-repos-owner-issues-number",
+  "docUrl": "https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number",
+  "summary": "",
+  "method": "PATCH",
+  "path": "/api/v5/repos/{owner}/issues/{number}",
+  "pathParams": [
+    {
+      "name": "owner",
+      "type": "string",
+      "required": true,
+      "description": "仓库所属空间地址(组织或个人的地址path)"
+    },
+    {
+      "name": "number",
+      "type": "string",
+      "required": true,
+      "description": "第几个 issue，即本仓库 issue 的序数"
+    }
+  ],
+  "queryParams": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "required": true,
+      "description": "用户授权码"
+    }
+  ],
+  "requestBodyFields": [
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true,
+      "description": "仓库路径"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "description": "Issue标题"
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "required": false,
+      "description": "Issue描述"
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "required": false,
+      "description": "Issue 状态，reopen（开启的）、close（关闭的）"
+    },
+    {
+      "name": "assignee",
+      "type": "string",
+      "required": false,
+      "description": "Issue负责人的username，多个用英文逗号隔开"
+    },
+    {
+      "name": "milestone",
+      "type": "integer",
+      "required": false,
+      "description": "里程碑序号"
+    },
+    {
+      "name": "labels",
+      "type": "string",
+      "required": false,
+      "description": "用逗号分开的标签，名称要求长度在 2-20 之间且非特殊字符。如: bug,performance"
+    },
+    {
+      "name": "security_hole",
+      "type": "string",
+      "required": false,
+      "description": "是否是私有issue(默认为false)"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": false,
+      "description": "issue状态（企业版支持）"
+    },
+    {
+      "name": "issue_severity",
+      "type": "string",
+      "required": true,
+      "description": "issue优先级（企业版支持）"
+    },
+    {
+      "name": "custom_fields[].field_name",
+      "type": "string",
+      "required": false,
+      "description": "字段名称"
+    },
+    {
+      "name": "custom_fields[].field_values[]",
+      "type": "array<string>",
+      "required": false,
+      "description": "字段的值数组"
+    }
+  ],
+  "responseFields": [
+    {
+      "name": "id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "number",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "state",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.followers_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.following_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.gists_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.member_role",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "user.organizations_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.received_events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.remark",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.repos_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.starred_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.subscriptions_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.type",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "user.url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.avatar_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignee.events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.followers_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.following_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.gists_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.html_url",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignee.id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignee.login",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignee.member_role",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "assignee.organizations_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.received_events_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.remark",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.repos_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.starred_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.subscriptions_url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.type",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "assignee.url",
+      "type": "null",
+      "description": ""
+    },
+    {
+      "name": "repository.id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "repository.full_name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "repository.path",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "repository.name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "repository.description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "repository.created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "repository.updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "finished_at",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].id",
+      "type": "integer",
+      "description": ""
+    },
+    {
+      "name": "labels[].name",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "labels[].color",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "stage",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "severity",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "custom_fields[].field_name",
+      "type": "string",
+      "description": "自定义字段名称"
+    },
+    {
+      "name": "custom_fields[].field_type",
+      "type": "string",
+      "description": "自定义字段的类型。text_single：单行文本，text_multi：多行文本，integer：整数，decimal：小数，date：日期，select_single：单选下拉，select_multi：多选下拉，member_single：单选成员，member_multi：多选成员"
+    },
+    {
+      "name": "custom_fields[].field_visibility",
+      "type": "string",
+      "description": "可见性。0：仅管理员可见，1：所有人可见"
+    },
+    {
+      "name": "custom_fields[].field_values[]",
+      "type": "array<string>",
+      "description": "自定义字段的值"
+    }
+  ],
+  "responseExample": {
+    "id": 152467,
+    "html_url": "https://test.gitcode.net/dengmengmian/test01/issues/14",
+    "number": 14,
+    "state": "closed",
+    "title": "取属且阶",
+    "body": "速军间问备题意自系建技至速。那照与受证们老则使六么信。联不格决白转数特先到接单备心样本及。比论受感此中成要则片会受争里领周局。",
+    "user": {
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/fa/fe/f32a9fecc53e890afbd48fd098b0f6c5f20f062581400c76c85e5baab3f0d5b2.png",
+      "events_url": null,
+      "followers_url": null,
+      "following_url": null,
+      "gists_url": null,
+      "html_url": "https://test.gitcode.net/dengmengmian",
+      "id": "661ce4eab470b1430d456154",
+      "login": "dengmengmian",
+      "member_role": null,
+      "name": "麻凡_",
+      "organizations_url": null,
+      "received_events_url": null,
+      "remark": null,
+      "repos_url": null,
+      "starred_url": null,
+      "subscriptions_url": null,
+      "type": null,
+      "url": null
+    },
+    "assignee": {
+      "avatar_url": "https://gitcode-img.obs.cn-south-1.myhuaweicloud.com:443/fa/fe/f32a9fecc53e890afbd48fd098b0f6c5f20f062581400c76c85e5baab3f0d5b2.png",
+      "events_url": null,
+      "followers_url": null,
+      "following_url": null,
+      "gists_url": null,
+      "html_url": "https://test.gitcode.net/dengmengmian",
+      "id": "661ce4eab470b1430d456154",
+      "login": "dengmengmian",
+      "member_role": null,
+      "name": "麻凡_",
+      "organizations_url": null,
+      "received_events_url": null,
+      "remark": null,
+      "repos_url": null,
+      "starred_url": null,
+      "subscriptions_url": null,
+      "type": null,
+      "url": null
+    },
+    "repository": {
+      "id": 152467,
+      "full_name": "dengmengmian/test01",
+      "path": "test01",
+      "name": "test01",
+      "description": "",
+      "created_at": "2024-04-16T14:38:43.464+08:00",
+      "updated_at": "2024-04-18T18:27:21.955+08:00"
+    },
+    "created_at": "2024-04-16T14:38:43.464+08:00",
+    "updated_at": "2024-04-18T18:27:21.955+08:00",
+    "finished_at": "2024-04-16T14:49:45.166+08:00",
+    "labels": [
+      {
+        "id": 382389,
+        "name": "ad",
+        "color": "#428BCA"
+      },
+      {
+        "id": 382388,
+        "name": "id",
+        "color": "#428BCA"
+      }
+    ],
+    "stage": "New",
+    "severity": "Major"
+  },
+  "curlExample": "curl -X PATCH \"https://api.gitcode.com/api/v5/repos/owner_value/issues/number_value?access_token=YOUR_TOKEN\" \\\\\n  -H \"Accept: application/json\"\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\n  \"repo\": \"value\"\n}'",
+  "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/issues/number_value\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"repo\": \"value\"\n}\n\nresponse = requests.patch(url, headers=headers, params=params, json=data)\nprint(response.json())",
+  "dataSource": "frontMatter.api",
+  "status": "done",
+  "notes": "",
+  "metadata": {
+    "chunkUrl": "https://docs.gitcode.com/assets/js/064cfa13.b74021e7.js",
+    "sourceType": "openapi",
+    "titleFrom": "metadata.title"
+  }
+}

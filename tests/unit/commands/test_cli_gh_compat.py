@@ -35,7 +35,8 @@ def _assert_subcommands(group: str) -> None:
 
 def _assert_command_flags(command_path: str) -> None:
     flags = _get_cli_flags(command_path)
-    for flag in GH_CLI_BASELINE[command_path.split()[0]]["commands"][command_path]["flags"]:
+    group = command_path.split(maxsplit=1)[0]
+    for flag in GH_CLI_BASELINE[group]["commands"][command_path]["flags"]:
         assert flag in flags, f"gh {command_path} flag {flag} missing from gc"
 
 

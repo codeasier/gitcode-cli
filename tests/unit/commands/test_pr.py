@@ -669,6 +669,42 @@ class TestPrCheckout:
             assert result.exit_code == 0
             assert "Checked out existing branch my-local-feature" in result.output
 
+    def test_pr_checkout_ignores_matching_tag_when_local_branch_does_not_exist(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=1),  # refs/heads/feature-branch does not exist
+                MagicMock(),  # checkout -b
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code == 0
+            mock_run.assert_any_call(
+                ["git", "rev-parse", "--verify", "refs/heads/feature-branch"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            mock_run.assert_any_call(
+                ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
+                check=True,
+            )
+
+    def test_pr_checkout_existing_branch_checkout_failure_is_wrapped(self, runner, mock_client, mock_repo):
+        import subprocess
+
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=0),  # rev-parse — branch exists
+                MagicMock(stdout="origin/feature-branch"),  # tracking matches
+                subprocess.CalledProcessError(1, ["git", "checkout", "feature-branch"]),
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code != 0
+            assert "Git checkout failed" in result.output
+
 
 class TestPrReady:
     def test_pr_ready(self, runner, mock_client, mock_repo):

@@ -554,7 +554,7 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
 
     # Check if a local branch with this name already exists
     existing = subprocess.run(
-        ["git", "rev-parse", "--verify", local_branch],
+        ["git", "rev-parse", "--verify", f"refs/heads/{local_branch}"],
         capture_output=True,
         text=True,
         check=False,
@@ -568,7 +568,10 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
             check=False,
         )
         if tracking.stdout.strip() == remote_tracking:
-            subprocess.run(["git", "checkout", local_branch], check=True)
+            try:
+                subprocess.run(["git", "checkout", local_branch], check=True)
+            except subprocess.CalledProcessError as exc:
+                raise click.ClickException(f"Git checkout failed: {exc}") from exc
             safe_echo(f"Checked out existing branch {local_branch} (tracking {remote_tracking})")
         else:
             raise click.ClickException(
@@ -576,7 +579,10 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
                 f"Use --branch to specify a different name, or rename/delete the existing branch."
             )
     else:
-        subprocess.run(["git", "checkout", "-b", local_branch, remote_tracking], check=True)
+        try:
+            subprocess.run(["git", "checkout", "-b", local_branch, remote_tracking], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Git checkout failed: {exc}") from exc
         safe_echo(f"Checked out branch {local_branch}")
 
 

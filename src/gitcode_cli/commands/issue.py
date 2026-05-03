@@ -356,6 +356,23 @@ def issue_edit(
     safe_echo(f"Edited issue #{safe_number(item, number)}")
 
 
+@issue_group.command("delete")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier")
+@click.pass_context
+def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+    app = ctx.obj["app"]
+    url_owner, url_repo, number = resolve_issue_arg(identifier)
+    if url_owner:
+        assert url_repo is not None
+        owner, repo = url_owner, url_repo
+    else:
+        owner, repo = resolve_repo(repo_name or app.repo)
+    service = IssueService(app.client())
+    adapter = IssueAdapter(service)
+    adapter.delete_issue(owner, repo, number)
+
+
 @issue_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.pass_context

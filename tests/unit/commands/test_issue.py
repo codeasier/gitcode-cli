@@ -494,6 +494,20 @@ class TestIssueEdit:
         assert "Edited issue #42" in result.output
 
 
+class TestIssueDelete:
+    def test_default_returns_clear_unsupported_error(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "delete", "42"])
+        assert result.exit_code != 0
+        assert "GitCode API does not support deleting issues." in result.output
+        mock_client.delete.assert_not_called()
+
+    def test_url_returns_clear_unsupported_error(self, runner, mock_client):
+        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42"])
+        assert result.exit_code != 0
+        assert "GitCode API does not support deleting issues." in result.output
+        mock_client.delete.assert_not_called()
+
+
 class TestIssueDevelop:
     def test_develop_opens_browser(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:

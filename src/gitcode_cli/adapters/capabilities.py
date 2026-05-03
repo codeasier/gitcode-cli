@@ -3,9 +3,6 @@ from __future__ import annotations
 import click
 
 CAPABILITY_MESSAGES = {
-    "PR_REVIEW_COMMENT": (
-        "GitCode review API does not support comment reviews; the pull request comment was posted instead."
-    ),
     "PR_REVIEW_REQUEST_CHANGES": (
         "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
     ),

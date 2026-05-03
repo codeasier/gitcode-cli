@@ -546,12 +546,38 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
     if not head_ref:
         raise click.ClickException("Unable to determine PR branch.")
     local_branch = branch or head_ref
+    remote_tracking = f"origin/{head_ref}"
     try:
         subprocess.run(["git", "fetch", "origin", head_ref], check=True)
-        subprocess.run(["git", "checkout", "-b", local_branch, f"origin/{head_ref}"], check=True)
-        safe_echo(f"Checked out branch {local_branch}")
     except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"Git checkout failed: {exc}") from exc
+        raise click.ClickException(f"Git fetch failed: {exc}") from exc
+
+    # Check if a local branch with this name already exists
+    existing = subprocess.run(
+        ["git", "rev-parse", "--verify", local_branch],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if existing.returncode == 0:
+        # Branch exists — check if it tracks the expected remote ref
+        tracking = subprocess.run(
+            ["git", "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{local_branch}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracking.stdout.strip() == remote_tracking:
+            subprocess.run(["git", "checkout", local_branch], check=True)
+            safe_echo(f"Checked out existing branch {local_branch} (tracking {remote_tracking})")
+        else:
+            raise click.ClickException(
+                f"A branch named '{local_branch}' already exists and does not track {remote_tracking}. "
+                f"Use --branch to specify a different name, or rename/delete the existing branch."
+            )
+    else:
+        subprocess.run(["git", "checkout", "-b", local_branch, remote_tracking], check=True)
+        safe_echo(f"Checked out branch {local_branch}")
 
 
 @pr_group.command("ready")

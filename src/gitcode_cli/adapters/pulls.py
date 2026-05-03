@@ -91,6 +91,8 @@ class PullRequestAdapter:
         request_changes: bool,
         force: bool,
     ) -> AdapterActionResult:
+        # GitCode's review endpoint is approval-only and does not accept a review body;
+        # comment-style reviews must go through the PR comments endpoint instead.
         if comment:
             item = self.service.comment(owner, repo, number, body=body or "")
             return AdapterActionResult(item=item)

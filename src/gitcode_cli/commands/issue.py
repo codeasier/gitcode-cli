@@ -23,6 +23,10 @@ def _echo_issue_summary(items: list[dict]) -> None:
         safe_echo(output)
 
 
+def _pending_gh_compat(name: str) -> None:
+    raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+
+
 @click.group("issue")
 def issue_group() -> None:
     pass
@@ -36,6 +40,7 @@ def issue_group() -> None:
 @click.option("-a", "--assignee")
 @click.option("--milestone")
 @click.option("--mention")
+@click.option("--app")
 @click.option("-S", "--search")
 @click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
 @click.option("-w", "--web", is_flag=True, help="Open the issue list in the web browser.")
@@ -52,6 +57,7 @@ def issue_list(
     assignee: str | None,
     milestone: str | None,
     mention: str | None,
+    app: str | None,
     search: str | None,
     limit: int | None,
     web: bool,
@@ -59,14 +65,16 @@ def issue_list(
     jq_query: str | None,
     template: str | None,
 ) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    app_ctx = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app_ctx.repo)
     if limit is not None and limit < 1:
         raise click.BadParameter("must be greater than 0", param_hint="--limit")
+    if app is not None:
+        _pending_gh_compat("issue list --app")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
-    service = IssueService(app.client())
+    service = IssueService(app_ctx.client())
     adapter = IssueAdapter(service)
     items = adapter.list_issues(
         owner,
@@ -156,6 +164,7 @@ def issue_view(
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-a", "--assignee")
+@click.option("-e", "--editor", is_flag=True)
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-m", "--milestone")
 @click.option("-F", "--body-file")
@@ -170,6 +179,7 @@ def issue_create(
     title: str | None,
     body: str | None,
     assignee: str | None,
+    editor: bool,
     labels: tuple[str, ...] | None,
     milestone: str | None,
     body_file: str | None,
@@ -184,6 +194,8 @@ def issue_create(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
     title = prompt_if_missing(title, "Title")
+    if editor:
+        _pending_gh_compat("issue create --editor")
     if len(title) > 255:
         raise click.ClickException("title must be 255 characters or fewer")
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
@@ -211,6 +223,7 @@ def issue_create(
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier")
 @click.option("-c", "--comment", help="Leave a closing comment.")
+@click.option("--duplicate-of")
 @click.option("-r", "--reason", type=click.Choice(["completed", "not_planned"]), help="Reason for closing.")
 @click.pass_context
 def issue_close(
@@ -218,6 +231,7 @@ def issue_close(
     repo_name: str | None,
     identifier: str,
     comment: str | None,
+    duplicate_of: str | None,
     reason: str | None,
 ) -> None:
     app = ctx.obj["app"]
@@ -227,6 +241,8 @@ def issue_close(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+    if duplicate_of is not None:
+        _pending_gh_compat("issue close --duplicate-of")
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
@@ -244,8 +260,12 @@ def issue_close(
 @click.argument("identifier")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
+@click.option("--create-if-none", is_flag=True)
+@click.option("--delete-last", is_flag=True)
+@click.option("--edit-last", is_flag=True)
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True)
+@click.option("--yes", is_flag=True)
 @click.pass_context
 def issue_comment(
     ctx: click.Context,
@@ -253,8 +273,12 @@ def issue_comment(
     identifier: str,
     body: str | None,
     body_file: str | None,
+    create_if_none: bool,
+    delete_last: bool,
+    edit_last: bool,
     editor: bool,
     web: bool,
+    yes: bool,
 ) -> None:
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
@@ -267,6 +291,8 @@ def issue_comment(
         target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
         open_in_browser(target_url)
         return
+    if create_if_none or delete_last or edit_last or yes:
+        _pending_gh_compat("issue comment history-management flags")
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     if editor and body is None:
         raise click.ClickException("Editor was closed without saving a comment.")

@@ -26,6 +26,10 @@ from ..utils import (
 )
 
 
+def _pending_gh_compat(name: str) -> None:
+    raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+
+
 @click.group("pr")
 def pr_group() -> None:
     pass
@@ -36,9 +40,9 @@ def pr_group() -> None:
 @click.option("-s", "--state")
 @click.option("-A", "--author")
 @click.option("-B", "--base")
-@click.option("--assignee")
-@click.option("--draft", is_flag=True, default=None)
-@click.option("--head")
+@click.option("-a", "--assignee")
+@click.option("-d", "--draft", is_flag=True, default=None)
+@click.option("-H", "--head")
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-S", "--search")
 @click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
@@ -162,15 +166,15 @@ def pr_view(
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
-@click.option("--editor", is_flag=True)
-@click.option("--fill", is_flag=True, help="Use commit info for title and body.")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-f", "--fill", is_flag=True, help="Use commit info for title and body.")
 @click.option("--fill-first", is_flag=True, help="Use first commit info for title and body.")
 @click.option("--fill-verbose", is_flag=True, help="Use all commits for body description.")
 @click.option("--dry-run", is_flag=True)
 @click.option("-B", "--base")
 @click.option("-H", "--head")
 @click.option("-d", "--draft", is_flag=True)
-@click.option("--milestone")
+@click.option("-m", "--milestone")
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-r", "--reviewer", "reviewers", multiple=True)
 @click.option("-a", "--assignee", "assignees", multiple=True)
@@ -204,6 +208,8 @@ def pr_create(
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if editor:
+        _pending_gh_compat("pr create --editor")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls/new")
         return
@@ -303,6 +309,12 @@ def pr_close(
 @click.option("-s", "--squash", is_flag=True, help="Squash the pull request.")
 @click.option("-r", "--rebase", is_flag=True, help="Rebase the pull request.")
 @click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after merge.")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-t", "--subject")
+@click.option("-A", "--author-email")
+@click.option("--auto", is_flag=True)
+@click.option("--admin", is_flag=True)
 @click.pass_context
 def pr_merge(
     ctx: click.Context,
@@ -312,9 +324,17 @@ def pr_merge(
     squash: bool,
     rebase: bool,
     delete_branch: bool,
+    body: str | None,
+    body_file: str | None,
+    subject: str | None,
+    author_email: str | None,
+    auto: bool,
+    admin: bool,
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
+    if any(value is not None for value in (body, body_file, subject, author_email)) or auto or admin:
+        _pending_gh_compat("pr merge advanced gh flags")
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -379,9 +399,10 @@ def pr_comment(
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.argument("identifier", required=False)
 @click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
-@click.option("--body")
-@click.option("--comment", is_flag=True, help="Leave a review comment.")
-@click.option("--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-c", "--comment", is_flag=True, help="Leave a review comment.")
+@click.option("-r", "--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
 @click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
 @click.pass_context
 def pr_review(
@@ -390,6 +411,7 @@ def pr_review(
     identifier: str | None,
     approve: bool,
     body: str | None,
+    body_file: str | None,
     comment: bool,
     request_changes: bool,
     force: bool,
@@ -400,6 +422,9 @@ def pr_review(
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
+
+    if body_file is not None:
+        _pending_gh_compat("pr review --body-file")
 
     selected_modes = [approve, comment, request_changes]
     if sum(1 for selected in selected_modes if selected) != 1:

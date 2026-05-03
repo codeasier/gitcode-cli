@@ -262,14 +262,15 @@ class TestPrCreate:
         assert mock_body.call_args == call(body=None, body_file=None, editor=False)
         assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
 
-    def test_pr_create_editor_uses_body_helper_with_editor(self, runner, mock_client, mock_repo):
+    def test_pr_create_editor_is_recognized_but_pending(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.get_body_from_options", return_value="resolved body") as mock_body:
             result = runner.invoke(
                 main, ["pr", "create", "--title", "Test", "--head", "feature", "--base", "main", "--editor"]
             )
-        assert result.exit_code == 0
-        assert mock_body.call_args == call(body=None, body_file=None, editor=True)
-        assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
+        assert result.exit_code != 0
+        assert "gh-compatible command/flag 'pr create --editor' is recognized but not implemented yet." in result.output
+        mock_body.assert_not_called()
+        mock_client.post.assert_not_called()
 
     def test_pr_create_dry_run_prints_normalized_payload_without_post(self, runner, mock_client, mock_repo):
         result = runner.invoke(

@@ -1,0 +1,18 @@
+{
+  "groups": {
+    "issue": ["list", "view", "create", "close", "comment"],
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review"]
+  },
+  "exclude_flags": {
+    "issue": {
+      "create": ["-p", "--recover", "-T"],
+      "list": ["-m"]
+    },
+    "pr": {
+      "comment": ["--create-if-none", "--delete-last", "--edit-last", "--yes"],
+      "create": ["--no-maintainer-edit", "-p", "--recover", "-T"],
+      "list": ["--app"],
+      "merge": ["--disable-auto", "--match-head-commit"]
+    }
+  }
+}

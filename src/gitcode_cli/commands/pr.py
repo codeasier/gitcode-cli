@@ -208,8 +208,6 @@ def pr_create(
 ) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
-    if editor:
-        _pending_gh_compat("pr create --editor")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls/new")
         return

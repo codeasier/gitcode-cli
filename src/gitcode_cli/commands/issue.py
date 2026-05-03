@@ -193,9 +193,9 @@ def issue_create(
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
-    title = prompt_if_missing(title, "Title")
     if editor:
         _pending_gh_compat("issue create --editor")
+    title = prompt_if_missing(title, "Title")
     if len(title) > 255:
         raise click.ClickException("title must be 255 characters or fewer")
     body = get_body_from_options(body=body, body_file=body_file, editor=False)

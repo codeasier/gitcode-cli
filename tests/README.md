@@ -7,7 +7,7 @@ This test suite mirrors the `gc` architecture so failures can be isolated by lay
 - `unit/test_cli.py` and `unit/commands/`: CLI and command behavior, including argument parsing, exit behavior, and command-to-adapter delegation.
 - `unit/adapters/`: translation from `gh`-style command semantics into GitCode-compatible service calls, including degraded or approximated behavior.
 - `unit/services/`: low-level GitCode API request construction, including HTTP method, path, and request payload filtering.
-- `contracts/`: contract checks against extracted GitCode API docs under `.claude/skills/gitcode-docs/output/gitcode-api/raw/`.
+- `contracts/`: contract checks against extracted GitCode API docs under `tests/fixtures/gitcode-api-contracts/raw/`.
 
 ## Why this split exists
 

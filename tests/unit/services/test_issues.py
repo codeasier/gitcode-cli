@@ -60,10 +60,3 @@ class TestIssueService:
 
         mock_client.post.assert_called_once_with("/repos/owner/repo/issues/42/comments", json={"body": "Nice issue!"})
         assert result == {"id": 1}
-
-    def test_delete(self, service, mock_client):
-        mock_client.delete.return_value = None
-        result = service.delete("owner", "repo", "42")
-
-        mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
-        assert result is None

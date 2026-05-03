@@ -84,7 +84,7 @@ gc issue edit 42 --milestone v1.0 --remove-milestone
 gc issue comment 42 -b "Thanks for the report!"
 gc issue comment 42 --editor    # Use system editor
 
-# Close / reopen / delete
+# Close / reopen
 gc issue close 42
 gc issue close 42 -c "Fixed in #50" --reason completed
 ```

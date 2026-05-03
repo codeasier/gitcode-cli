@@ -494,29 +494,6 @@ class TestIssueEdit:
         assert "Edited issue #42" in result.output
 
 
-class TestIssueDelete:
-    def test_default(self, runner, mock_client, mock_repo, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: True)
-        monkeypatch.setattr("gitcode_cli.commands.issue.click.confirm", lambda *args, **kwargs: True)
-        result = runner.invoke(main, ["issue", "delete", "42"])
-        assert result.exit_code == 0
-        assert "Deleted issue #42" in result.output
-        mock_client.delete.assert_called_once()
-
-    def test_url(self, runner, mock_client, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: True)
-        monkeypatch.setattr("gitcode_cli.commands.issue.click.confirm", lambda *args, **kwargs: True)
-        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42"])
-        assert result.exit_code == 0
-
-    def test_non_tty_stdin_returns_clear_error(self, runner, mock_client, mock_repo, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.issue._stdin_is_tty", lambda: False)
-        result = runner.invoke(main, ["issue", "delete", "42"])
-        assert result.exit_code != 0
-        assert "Cannot prompt for confirmation when stdin is not a TTY." in result.output
-        mock_client.delete.assert_not_called()
-
-
 class TestIssueDevelop:
     def test_develop_opens_browser(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:

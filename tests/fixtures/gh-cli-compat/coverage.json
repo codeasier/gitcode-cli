@@ -1,0 +1,39 @@
+{
+  "groups": {
+    "issue": ["list", "view", "create", "close", "comment"],
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review"]
+  },
+  "exclude_flags": {
+    "issue": {
+      "create": [
+        {"name": "-p", "reason": "git protocol selection is not implemented by gc issue create"},
+        {"name": "--recover", "reason": "draft recovery is not implemented by gc issue create"},
+        {"name": "-T", "reason": "template selection is not implemented by gc issue create"}
+      ],
+      "list": [
+        {"name": "-m", "reason": "gh short alias differs from gc, which only exposes --milestone"}
+      ]
+    },
+    "pr": {
+      "comment": [
+        {"name": "--create-if-none", "reason": "comment history management is not implemented by gc pr comment"},
+        {"name": "--delete-last", "reason": "comment history management is not implemented by gc pr comment"},
+        {"name": "--edit-last", "reason": "comment history management is not implemented by gc pr comment"},
+        {"name": "--yes", "reason": "confirmation bypass for history-management flows is not implemented by gc pr comment"}
+      ],
+      "create": [
+        {"name": "--no-maintainer-edit", "reason": "maintainer edit controls are not implemented by GitCode-backed PR creation"},
+        {"name": "-p", "reason": "project selection is not implemented by gc pr create"},
+        {"name": "--recover", "reason": "draft recovery is not implemented by gc pr create"},
+        {"name": "-T", "reason": "template selection is not implemented by gc pr create"}
+      ],
+      "list": [
+        {"name": "--app", "reason": "application filtering is not implemented by gc pr list"}
+      ],
+      "merge": [
+        {"name": "--disable-auto", "reason": "disabling an existing auto-merge request is not implemented by gc pr merge"},
+        {"name": "--match-head-commit", "reason": "head commit pinning is not implemented by gc pr merge"}
+      ]
+    }
+  }
+}

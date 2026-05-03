@@ -49,8 +49,10 @@ def _build_excluded_flags() -> dict[str, set[str]]:
     raw_excluded_flags = COVERAGE.get("exclude_flags", {})
     excluded_flags: dict[str, set[str]] = {}
     for group, commands in raw_excluded_flags.items():
-        for command_name, flags in commands.items():
-            excluded_flags[f"{group} {command_name}"] = set(flags)
+        for command_name, entries in commands.items():
+            excluded_flags[f"{group} {command_name}"] = {
+                entry["name"] if isinstance(entry, dict) else entry for entry in entries
+            }
     return excluded_flags
 
 
@@ -115,8 +117,10 @@ def _get_cli_flags(command_path: str) -> set[str]:
     for line in result.output.splitlines():
         stripped = line.strip()
         if stripped.startswith("-") or stripped.startswith("--"):
-            first_segment = stripped.split(",")[0].split()[0]
-            flags.add(first_segment)
+            for part in stripped.split(","):
+                token = part.strip().split()[0]
+                if token.startswith("-"):
+                    flags.add(token)
     if not flags:
         raise AssertionError(
             f"No flags parsed from help output for '{command_path}'. "
@@ -135,7 +139,8 @@ def _assert_subcommands(group: str, expected_subcommands: list[str]) -> None:
 def _assert_command_flags(command_path: str, expected_flags: list[tuple[str, ...]]) -> None:
     flags = _get_cli_flags(command_path)
     for aliases in expected_flags:
-        assert any(alias in flags for alias in aliases), f"gh {command_path} flag aliases {aliases} missing from gc"
+        missing = set(aliases).difference(flags)
+        assert not missing, f"gh {command_path} flags {sorted(missing)} missing from gc"
 
 
 EXPECTED_COMMANDS = _build_expected_commands()

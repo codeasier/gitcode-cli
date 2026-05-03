@@ -501,15 +501,14 @@ class TestPrReview:
         assert "Reviewed pull request #42" in result.output
         mock_resolver.assert_called_once_with(None)
 
-    def test_pr_review_comment_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
+    def test_pr_review_comment_uses_review_api(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
-        assert result.exit_code != 0
-        assert "Posted pull request comment 123" in result.output
-        assert "does not support comment reviews" in result.output
-        post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
-        assert len(post_calls) == 1
-        assert post_calls[0].kwargs["json"]["body"] == "Needs more tests"
+        assert result.exit_code == 0
+        assert "Reviewed pull request #42" in result.output
+        review_calls = [c for c in mock_client.post.call_args_list if "review" in c.args[0]]
+        assert len(review_calls) == 1
+        assert review_calls[0].kwargs["json"]["body"] == "Needs more tests"
 
     def test_pr_review_request_changes_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 456}
@@ -536,11 +535,11 @@ class TestPrReview:
         assert result.exit_code != 0
         assert "Body is required when using --comment or --request-changes." in result.output
 
-    def test_pr_review_comment_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
+    def test_pr_review_comment_returns_zero_on_success(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
-        assert result.exit_code != 0
-        assert "Posted pull request comment 123" in result.output
+        assert result.exit_code == 0
+        assert "Reviewed pull request #42" in result.output
 
     def test_pr_review_request_changes_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 456}

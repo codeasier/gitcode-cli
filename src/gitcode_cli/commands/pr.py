@@ -380,7 +380,7 @@ def pr_comment(
 @click.argument("identifier", required=False)
 @click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
 @click.option("--body")
-@click.option("--comment", is_flag=True, help="Leave a review comment. Downgrades to a PR comment on GitCode.")
+@click.option("--comment", is_flag=True, help="Leave a review comment.")
 @click.option("--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
 @click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
 @click.pass_context

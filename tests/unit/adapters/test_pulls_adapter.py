@@ -96,8 +96,8 @@ class TestPullRequestAdapter:
         assert result.degraded is False
         assert result.item == {"state": "APPROVED"}
 
-    def test_review_pr_comment_degrades_to_regular_comment(self, adapter, service):
-        service.comment.return_value = {"id": 7}
+    def test_review_pr_comment_uses_review_api(self, adapter, service):
+        service.review.return_value = {"id": 7}
 
         result = adapter.review_pr(
             "owner",
@@ -110,10 +110,28 @@ class TestPullRequestAdapter:
             force=False,
         )
 
-        service.comment.assert_called_once_with("owner", "repo", 42, body="needs tests")
-        assert result.degraded is True
+        service.review.assert_called_once_with("owner", "repo", 42, body="needs tests", force=False)
+        assert result.degraded is False
         assert result.item == {"id": 7}
-        assert "comment reviews" in result.message
+
+    def test_review_pr_request_changes_degrades_to_comment(self, adapter, service):
+        service.comment.return_value = {"id": 9}
+
+        result = adapter.review_pr(
+            "owner",
+            "repo",
+            42,
+            approve=False,
+            body="please fix",
+            comment=False,
+            request_changes=True,
+            force=False,
+        )
+
+        service.comment.assert_called_once_with("owner", "repo", 42, body="please fix")
+        service.review.assert_not_called()
+        assert result.degraded is True
+        assert "request-changes" in result.message
 
     def test_status_returns_approximation_message(self, adapter, service):
         service.list.return_value = [{"number": 1, "state": "open", "title": "Test"}]

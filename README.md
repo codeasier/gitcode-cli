@@ -198,7 +198,7 @@ gc pr view -w
 | `--web` (create/view in browser) | ✅ | ✅ |
 | `--remove-*` flags for edit commands | ✅ | ✅ |
 | `pr ready --undo` (convert to draft) | ✅ | ✅ |
-| `pr review --comment` / `--request-changes` | ✅ | ✅ (fallback) |
+| `pr review --request-changes` | ✅ | ✅ (fallback) |
 | `--json fields` | ✅ | ✅ |
 | `-q jq` filtering | ✅ | ✅ |
 | `-t template` formatting | ✅ | ✅ |
@@ -208,7 +208,7 @@ gc pr view -w
 ### Known Limitations (GitCode API differences)
 
 - **PR comment model**: GitCode uses `path + position`, not GitHub's `line/side/commit`
-- **PR review**: GitCode review API differs from GitHub; `--comment` and `--request-changes` fall back to PR comments
+- **PR review**: GitCode review API differs from GitHub; `--request-changes` falls back to PR comments
 - **Issue create/update API**: GitCode puts `repo` in request body, not URL path
 
 ## Development

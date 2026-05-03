@@ -6,6 +6,7 @@ CAPABILITY_MESSAGES = {
     "PR_REVIEW_REQUEST_CHANGES": (
         "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
     ),
+    "ISSUE_DELETE": "GitCode API does not support deleting issues.",
     "ISSUE_DEVELOP_BASE": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_DEVELOP_NAME": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_STATUS_GH_SEMANTICS": "GitCode-limited approximation of gh issue status",

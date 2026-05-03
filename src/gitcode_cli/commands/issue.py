@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import click
 
 from ..adapters import IssueAdapter
@@ -23,10 +21,6 @@ def _echo_issue_summary(items: list[dict]) -> None:
     output = format_issue_list(items)
     if output:
         safe_echo(output)
-
-
-def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
 
 
 @click.group("issue")
@@ -374,12 +368,9 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
-    if not _stdin_is_tty():
-        raise click.ClickException("Cannot prompt for confirmation when stdin is not a TTY.")
-    click.confirm("Are you sure you want to delete this issue?", abort=True)
     service = IssueService(app.client())
-    service.delete(owner, repo, number)
-    safe_echo(f"Deleted issue #{number}")
+    adapter = IssueAdapter(service)
+    adapter.delete_issue(owner, repo, number)
 
 
 @issue_group.command("status")

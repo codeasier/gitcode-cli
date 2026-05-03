@@ -119,6 +119,9 @@ class IssueAdapter:
         item = self.service.update(owner, repo, number, state="reopen")
         return AdapterActionResult(item=item, message="reopened")
 
+    def delete_issue(self, owner: str, repo: str, number: str) -> AdapterActionResult:  # noqa: ARG002
+        raise unsupported("ISSUE_DELETE")
+
     def edit_issue(
         self,
         owner: str,

@@ -92,12 +92,12 @@ class TestPullRequestAdapter:
             force=False,
         )
 
-        service.review.assert_called_once_with("owner", "repo", 42, body="LGTM", force=False)
+        service.review.assert_called_once_with("owner", "repo", 42, force=False)
         assert result.degraded is False
         assert result.item == {"state": "APPROVED"}
 
-    def test_review_pr_comment_uses_review_api(self, adapter, service):
-        service.review.return_value = {"id": 7}
+    def test_review_pr_comment_uses_comment_api(self, adapter, service):
+        service.comment.return_value = {"id": 7}
 
         result = adapter.review_pr(
             "owner",
@@ -110,7 +110,8 @@ class TestPullRequestAdapter:
             force=False,
         )
 
-        service.review.assert_called_once_with("owner", "repo", 42, body="needs tests", force=False)
+        service.comment.assert_called_once_with("owner", "repo", 42, body="needs tests")
+        service.review.assert_not_called()
         assert result.degraded is False
         assert result.item == {"id": 7}
 

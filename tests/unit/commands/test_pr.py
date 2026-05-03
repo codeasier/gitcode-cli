@@ -618,7 +618,8 @@ class TestPrCheckout:
             result = runner.invoke(main, ["pr", "checkout", "42"])
             assert result.exit_code == 0
             assert "Checked out branch feature-branch" in result.output
-            assert mock_run.call_count == 2
+            # fetch, rev-parse (branch doesn't exist), checkout -b
+            assert mock_run.call_count == 3
             mock_run.assert_any_call(
                 ["git", "fetch", "origin", "feature-branch"],
                 check=True,
@@ -627,6 +628,82 @@ class TestPrCheckout:
                 ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
                 check=True,
             )
+
+    def test_pr_checkout_existing_branch_with_correct_tracking(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            # rev-parse succeeds (branch exists), for-each-ref shows correct tracking
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=0),  # rev-parse — branch exists
+                MagicMock(stdout="origin/feature-branch"),  # for-each-ref — correct tracking
+                MagicMock(),  # checkout
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code == 0
+            assert "Checked out existing branch feature-branch (tracking origin/feature-branch)" in result.output
+
+    def test_pr_checkout_existing_branch_with_wrong_tracking(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=0),  # rev-parse — branch exists
+                MagicMock(stdout="origin/other-branch"),  # for-each-ref — wrong tracking
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code != 0
+            assert "already exists" in result.output
+            assert "does not track" in result.output
+
+    def test_pr_checkout_custom_branch_existing_with_correct_tracking(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=0),  # rev-parse — custom branch exists
+                MagicMock(stdout="origin/feature-branch"),  # for-each-ref — correct tracking
+                MagicMock(),  # checkout
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42", "-b", "my-local-feature"])
+            assert result.exit_code == 0
+            assert "Checked out existing branch my-local-feature" in result.output
+
+    def test_pr_checkout_ignores_matching_tag_when_local_branch_does_not_exist(self, runner, mock_client, mock_repo):
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=1),  # refs/heads/feature-branch does not exist
+                MagicMock(),  # checkout -b
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code == 0
+            mock_run.assert_any_call(
+                ["git", "rev-parse", "--verify", "refs/heads/feature-branch"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            mock_run.assert_any_call(
+                ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
+                check=True,
+            )
+
+    def test_pr_checkout_existing_branch_checkout_failure_is_wrapped(self, runner, mock_client, mock_repo):
+        import subprocess
+
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
+            mock_run.side_effect = [
+                MagicMock(),  # fetch
+                MagicMock(returncode=0),  # rev-parse — branch exists
+                MagicMock(stdout="origin/feature-branch"),  # tracking matches
+                subprocess.CalledProcessError(1, ["git", "checkout", "feature-branch"]),
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42"])
+            assert result.exit_code != 0
+            assert "Git checkout failed" in result.output
 
 
 class TestPrReady:
@@ -741,13 +818,10 @@ class TestPrCheckoutEdgeCases:
 
         mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_run.side_effect = [
-                MagicMock(),
-                subprocess.CalledProcessError(1, ["git", "checkout"]),
-            ]
+            mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "fetch"])
             result = runner.invoke(main, ["pr", "checkout", "42"])
             assert result.exit_code != 0
-            assert "Git checkout failed" in result.output
+            assert "Git fetch failed" in result.output
 
 
 class TestPrCreateMissingHtmlUrl:

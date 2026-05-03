@@ -87,10 +87,13 @@ class PullRequestAdapter:
         *,
         approve: bool,  # noqa: ARG002
         body: str | None,
-        comment: bool,  # noqa: ARG002
+        comment: bool,
         request_changes: bool,
         force: bool,
     ) -> AdapterActionResult:
+        if comment:
+            item = self.service.comment(owner, repo, number, body=body or "")
+            return AdapterActionResult(item=item)
         if request_changes:
             item = self.service.comment(owner, repo, number, body=body or "")
             return AdapterActionResult(
@@ -98,7 +101,7 @@ class PullRequestAdapter:
                 message=capability_message("PR_REVIEW_REQUEST_CHANGES"),
                 degraded=True,
             )
-        item = self.service.review(owner, repo, number, body=body, force=force)
+        item = self.service.review(owner, repo, number, force=force)
         return AdapterActionResult(item=item)
 
     def edit_pr(

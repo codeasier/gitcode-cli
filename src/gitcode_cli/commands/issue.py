@@ -80,7 +80,7 @@ def _handle_issue_comment_history(
     if result.message == "created":
         safe_echo(result.item.get("html_url") or f"Commented on issue #{number}")
         return
-    safe_echo(result.item.get("html_url") or f"Edited last comment on issue #{number}")
+    safe_echo((result.item or {}).get("html_url") or f"Edited last comment on issue #{number}")
 
 
 @click.group("issue")

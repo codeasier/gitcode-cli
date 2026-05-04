@@ -35,6 +35,249 @@ def pr_group() -> None:
     pass
 
 
+@pr_group.command("merge")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier", required=False)
+@click.option("-m", "--merge", is_flag=True, help="Merge the pull request.")
+@click.option("-s", "--squash", is_flag=True, help="Squash the pull request.")
+@click.option("-r", "--rebase", is_flag=True, help="Rebase the pull request.")
+@click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after merge.")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-t", "--subject")
+@click.option("-A", "--author-email")
+@click.option("--auto", is_flag=True)
+@click.option("--admin", is_flag=True)
+@click.pass_context
+def pr_merge(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    merge: bool,
+    squash: bool,
+    rebase: bool,
+    delete_branch: bool,
+    body: str | None,
+    body_file: str | None,
+    subject: str | None,
+    author_email: str | None,
+    auto: bool,
+    admin: bool,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    if author_email is not None:
+        raise click.ClickException("GitCode merge API does not support --author-email.")
+    if auto:
+        raise click.ClickException("GitCode merge API does not support --auto.")
+    service = PullRequestService(app.client())
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    number = int(number)
+    selected = [merge, squash, rebase]
+    if sum(selected) > 1:
+        raise click.UsageError("-m, -s, and -r are mutually exclusive. Specify only one merge method.")
+    merge_method = ["merge", "squash", "rebase"][selected.index(True)] if any(selected) else "merge"
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    pr_item = service.get(owner, repo, number)
+    adapter = PullRequestAdapter(service)
+    item = adapter.merge_pr(owner, repo, number, merge_method=merge_method, body=body, subject=subject, admin=admin)
+    safe_echo(item["message"])
+    if delete_branch:
+        try:
+            branch = pr_item.get("head", {}).get("ref")
+            if branch:
+                subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
+                safe_echo(f"Deleted remote branch {branch}")
+            else:
+                safe_echo("Warning: could not determine branch to delete.", err=True)
+        except Exception as exc:
+            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
+
+
+@pr_group.command("comment")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier", required=False)
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-e", "--editor", is_flag=True)
+@click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
+@click.option("--path")
+@click.option("--position", type=int)
+@click.pass_context
+def pr_comment(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    body: str | None,
+    body_file: str | None,
+    editor: bool,
+    web: bool,
+    path: str | None,
+    position: int | None,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    number = int(number)
+    if web:
+        pr_item = service.get(owner, repo, number)
+        open_in_browser(pr_item["html_url"])
+        return
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    body = prompt_if_missing(body, "Body")
+    item = service.comment(owner, repo, number, body=body, path=path, position=position)
+    safe_echo(str(item["id"]))
+
+
+@pr_group.command("review")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier", required=False)
+@click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-c", "--comment", is_flag=True, help="Leave a review comment.")
+@click.option("-r", "--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
+@click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
+@click.pass_context
+def pr_review(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    approve: bool,
+    body: str | None,
+    body_file: str | None,
+    comment: bool,
+    request_changes: bool,
+    force: bool,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    number = int(number)
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    selected_modes = [approve, comment, request_changes]
+    if sum(1 for selected in selected_modes if selected) != 1:
+        raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
+    if (comment or request_changes) and not body:
+        raise click.ClickException("Body is required when using --comment or --request-changes.")
+
+    adapter = PullRequestAdapter(service)
+    result = adapter.review_pr(
+        owner,
+        repo,
+        number,
+        approve=approve,
+        body=body,
+        comment=comment,
+        request_changes=request_changes,
+        force=force,
+    )
+    if result.degraded:
+        safe_echo(f"Posted pull request comment {result.item['id']}")
+        raise click.ClickException(result.message or "degraded review operation")
+    if comment:
+        safe_echo(f"Posted pull request comment {result.item['id']}")
+        return
+    safe_echo(f"Reviewed pull request #{number}")
+
+
+@pr_group.command("reopen")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier", required=False)
+@click.pass_context
+def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    number = int(number)
+    item = service.update(owner, repo, number, state="open")
+    safe_echo(f"Reopened pull request #{safe_number(item, number)}")
+
+
+@pr_group.command("edit")
+@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.argument("identifier", required=False)
+@click.option("-t", "--title")
+@click.option("-b", "--body")
+@click.option("-F", "--body-file")
+@click.option("-B", "--base")
+@click.option("-a", "--add-assignee")
+@click.option("-l", "--add-label")
+@click.option("-r", "--add-reviewer")
+@click.option("--remove-assignee")
+@click.option("--remove-label")
+@click.option("--remove-reviewer")
+@click.option("-m", "--milestone")
+@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the pull request.")
+@click.pass_context
+def pr_edit(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    title: str | None,
+    body: str | None,
+    body_file: str | None,
+    base: str | None,
+    add_assignee: str | None,
+    add_label: str | None,
+    add_reviewer: str | None,
+    remove_assignee: str | None,
+    remove_label: str | None,
+    remove_reviewer: str | None,
+    milestone: str | None,
+    remove_milestone: bool,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    number = int(number)
+    if body_file:
+        body = read_body_file(body_file)
+    if not any(
+        [
+            title is not None,
+            body is not None,
+            base is not None,
+            add_assignee is not None,
+            add_label is not None,
+            add_reviewer is not None,
+            remove_assignee is not None,
+            remove_label is not None,
+            remove_reviewer is not None,
+            milestone is not None,
+            remove_milestone,
+        ]
+    ):
+        raise click.UsageError("must specify at least one field to edit")
+    adapter = PullRequestAdapter(service)
+    item = adapter.edit_pr(
+        owner,
+        repo,
+        number,
+        title=title,
+        body=body,
+        base=base,
+        add_assignee=add_assignee,
+        add_label=add_label,
+        add_reviewer=add_reviewer,
+        remove_assignee=remove_assignee,
+        remove_label=remove_label,
+        remove_reviewer=remove_reviewer,
+        milestone=milestone,
+        remove_milestone=remove_milestone,
+    )
+    safe_echo(f"Edited pull request #{safe_number(item, number)}")
+
+
 @pr_group.command("list")
 @click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
 @click.option("-s", "--state")
@@ -298,248 +541,6 @@ def pr_close(
         except Exception as exc:
             safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
     safe_echo(f"Closed pull request #{safe_number(item, number)}")
-
-
-@pr_group.command("merge")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier", required=False)
-@click.option("-m", "--merge", is_flag=True, help="Merge the pull request.")
-@click.option("-s", "--squash", is_flag=True, help="Squash the pull request.")
-@click.option("-r", "--rebase", is_flag=True, help="Rebase the pull request.")
-@click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after merge.")
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-t", "--subject")
-@click.option("-A", "--author-email")
-@click.option("--auto", is_flag=True)
-@click.option("--admin", is_flag=True)
-@click.pass_context
-def pr_merge(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str | None,
-    merge: bool,
-    squash: bool,
-    rebase: bool,
-    delete_branch: bool,
-    body: str | None,
-    body_file: str | None,
-    subject: str | None,
-    author_email: str | None,
-    auto: bool,
-    admin: bool,
-) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    if any(value is not None for value in (body, body_file, subject, author_email)) or auto or admin:
-        _pending_gh_compat("pr merge advanced gh flags")
-    service = PullRequestService(app.client())
-    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
-    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    number = int(number)
-    selected = [merge, squash, rebase]
-    if sum(selected) > 1:
-        raise click.UsageError("-m, -s, and -r are mutually exclusive. Specify only one merge method.")
-    merge_method = ["merge", "squash", "rebase"][selected.index(True)] if any(selected) else "merge"
-    pr_item = service.get(owner, repo, number)
-    item = service.merge(owner, repo, number, merge_method=merge_method)
-    safe_echo(item["message"])
-    if delete_branch:
-        try:
-            branch = pr_item.get("head", {}).get("ref")
-            if branch:
-                subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                safe_echo(f"Deleted remote branch {branch}")
-            else:
-                safe_echo("Warning: could not determine branch to delete.", err=True)
-        except Exception as exc:
-            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
-
-
-@pr_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier", required=False)
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-e", "--editor", is_flag=True)
-@click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
-@click.option("--path")
-@click.option("--position", type=int)
-@click.pass_context
-def pr_comment(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str | None,
-    body: str | None,
-    body_file: str | None,
-    editor: bool,
-    web: bool,
-    path: str | None,
-    position: int | None,
-) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    service = PullRequestService(app.client())
-    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
-    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    number = int(number)
-    if web:
-        pr_item = service.get(owner, repo, number)
-        open_in_browser(pr_item["html_url"])
-        return
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
-    body = prompt_if_missing(body, "Body")
-    item = service.comment(owner, repo, number, body=body, path=path, position=position)
-    safe_echo(str(item["id"]))
-
-
-@pr_group.command("review")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier", required=False)
-@click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-c", "--comment", is_flag=True, help="Leave a review comment.")
-@click.option("-r", "--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
-@click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
-@click.pass_context
-def pr_review(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str | None,
-    approve: bool,
-    body: str | None,
-    body_file: str | None,
-    comment: bool,
-    request_changes: bool,
-    force: bool,
-) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    service = PullRequestService(app.client())
-    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
-    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    number = int(number)
-
-    if body_file is not None:
-        _pending_gh_compat("pr review --body-file")
-
-    selected_modes = [approve, comment, request_changes]
-    if sum(1 for selected in selected_modes if selected) != 1:
-        raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
-    if (comment or request_changes) and not body:
-        raise click.ClickException("Body is required when using --comment or --request-changes.")
-
-    adapter = PullRequestAdapter(service)
-    result = adapter.review_pr(
-        owner,
-        repo,
-        number,
-        approve=approve,
-        body=body,
-        comment=comment,
-        request_changes=request_changes,
-        force=force,
-    )
-    if result.degraded:
-        safe_echo(f"Posted pull request comment {result.item['id']}")
-        raise click.ClickException(result.message or "degraded review operation")
-    if comment:
-        safe_echo(f"Posted pull request comment {result.item['id']}")
-        return
-    safe_echo(f"Reviewed pull request #{number}")
-
-
-@pr_group.command("reopen")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier", required=False)
-@click.pass_context
-def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    service = PullRequestService(app.client())
-    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
-    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    number = int(number)
-    item = service.update(owner, repo, number, state="open")
-    safe_echo(f"Reopened pull request #{safe_number(item, number)}")
-
-
-@pr_group.command("edit")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
-@click.argument("identifier", required=False)
-@click.option("-t", "--title")
-@click.option("-b", "--body")
-@click.option("-F", "--body-file")
-@click.option("-B", "--base")
-@click.option("-a", "--add-assignee")
-@click.option("-l", "--add-label")
-@click.option("-r", "--add-reviewer")
-@click.option("--remove-assignee")
-@click.option("--remove-label")
-@click.option("--remove-reviewer")
-@click.option("-m", "--milestone")
-@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the pull request.")
-@click.pass_context
-def pr_edit(
-    ctx: click.Context,
-    repo_name: str | None,
-    identifier: str | None,
-    title: str | None,
-    body: str | None,
-    body_file: str | None,
-    base: str | None,
-    add_assignee: str | None,
-    add_label: str | None,
-    add_reviewer: str | None,
-    remove_assignee: str | None,
-    remove_label: str | None,
-    remove_reviewer: str | None,
-    milestone: str | None,
-    remove_milestone: bool,
-) -> None:
-    app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    service = PullRequestService(app.client())
-    resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
-    owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    number = int(number)
-    if body_file:
-        body = read_body_file(body_file)
-    if not any(
-        [
-            title is not None,
-            body is not None,
-            base is not None,
-            add_assignee is not None,
-            add_label is not None,
-            add_reviewer is not None,
-            remove_assignee is not None,
-            remove_label is not None,
-            remove_reviewer is not None,
-            milestone is not None,
-            remove_milestone,
-        ]
-    ):
-        raise click.UsageError("must specify at least one field to edit")
-    adapter = PullRequestAdapter(service)
-    item = adapter.edit_pr(
-        owner,
-        repo,
-        number,
-        title=title,
-        body=body,
-        base=base,
-        add_assignee=add_assignee,
-        add_label=add_label,
-        add_reviewer=add_reviewer,
-        remove_assignee=remove_assignee,
-        remove_label=remove_label,
-        remove_reviewer=remove_reviewer,
-        milestone=milestone,
-        remove_milestone=remove_milestone,
-    )
-    safe_echo(f"Edited pull request #{safe_number(item, number)}")
 
 
 @pr_group.command("diff")

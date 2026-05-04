@@ -79,6 +79,25 @@ class PullRequestAdapter:
             return AdapterActionResult(item={k: v for k, v in payload.items() if v is not None})
         return AdapterActionResult(item=self.service.create(owner, repo, **payload))
 
+    def merge_pr(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        *,
+        merge_method: str,
+        body: str | None,
+        subject: str | None,
+        admin: bool,
+    ) -> dict[str, Any] | None:
+        payload = {
+            "merge_method": merge_method,
+            "description": body,
+            "title": subject,
+            "force_merge": True if admin else None,
+        }
+        return self.service.merge(owner, repo, number, **payload)
+
     def review_pr(
         self,
         owner: str,
@@ -91,8 +110,6 @@ class PullRequestAdapter:
         request_changes: bool,
         force: bool,
     ) -> AdapterActionResult:
-        # GitCode's review endpoint is approval-only and does not accept a review body;
-        # comment-style reviews must go through the PR comments endpoint instead.
         if comment:
             item = self.service.comment(owner, repo, number, body=body or "")
             return AdapterActionResult(item=item)

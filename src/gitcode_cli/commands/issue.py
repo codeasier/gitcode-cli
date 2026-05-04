@@ -3,10 +3,11 @@ from __future__ import annotations
 import click
 
 from ..adapters import IssueAdapter
+from ..adapters.capabilities import capability_message
 from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..repo import resolve_repo
-from ..services import IssueService
+from ..services import IssueService, UserService
 from ..utils import (
     open_in_browser,
     prompt_if_missing,
@@ -25,6 +26,61 @@ def _echo_issue_summary(items: list[dict]) -> None:
 
 def _pending_gh_compat(name: str) -> None:
     raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+
+
+def _resolve_issue_target(app, repo_name: str | None, identifier: str) -> tuple[str, str, str, str | None]:
+    url_owner, url_repo, number = resolve_issue_arg(identifier)
+    if url_owner:
+        assert url_repo is not None
+        return url_owner, url_repo, number, identifier
+    owner, repo = resolve_repo(repo_name or app.repo)
+    return owner, repo, require_issue_number(identifier), None
+
+
+def _validate_issue_comment_history_flags(
+    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool
+) -> None:
+    if create_if_none and not edit_last:
+        raise click.UsageError(capability_message("ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST"))
+    if create_if_none and delete_last:
+        raise click.UsageError(capability_message("ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST"))
+    if yes and not delete_last:
+        raise click.UsageError("--yes can only be used together with --delete-last.")
+    if edit_last and delete_last:
+        raise click.UsageError("Specify only one of --edit-last or --delete-last.")
+
+
+def _handle_issue_comment_history(
+    *,
+    adapter: IssueAdapter,
+    owner: str,
+    repo: str,
+    number: str,
+    body: str | None,
+    edit_last: bool,
+    delete_last: bool,
+    create_if_none: bool,
+    yes: bool,
+) -> None:
+    if edit_last:
+        body = prompt_if_missing(body, "Comment")
+    if delete_last and not yes and not click.confirm("Delete your last issue comment?", default=False):
+        raise click.ClickException("Aborted.")
+    result = adapter.manage_comment_history(
+        owner,
+        repo,
+        number,
+        body=body,
+        delete_last=delete_last,
+        create_if_none=create_if_none,
+    )
+    if result.message == "deleted":
+        safe_echo(f"Deleted last comment on issue #{number}")
+        return
+    if result.message == "created":
+        safe_echo(result.item.get("html_url") or f"Commented on issue #{number}")
+        return
+    safe_echo(result.item.get("html_url") or f"Edited last comment on issue #{number}")
 
 
 @click.group("issue")
@@ -193,12 +249,12 @@ def issue_create(
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
-    if editor:
-        _pending_gh_compat("issue create --editor")
     title = prompt_if_missing(title, "Title")
     if len(title) > 255:
         raise click.ClickException("title must be 255 characters or fewer")
-    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    if editor and body is None:
+        raise click.ClickException("Editor was closed without saving an issue body.")
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     item = adapter.create_issue(
@@ -241,6 +297,7 @@ def issue_close(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     if duplicate_of is not None:
         _pending_gh_compat("issue close --duplicate-of")
     service = IssueService(app.client())
@@ -281,24 +338,40 @@ def issue_comment(
     yes: bool,
 ) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo, number, target_url = _resolve_issue_target(app, repo_name, identifier)
     if web:
-        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
-        open_in_browser(target_url)
+        open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
         return
-    if create_if_none or delete_last or edit_last or yes:
-        _pending_gh_compat("issue comment history-management flags")
+
+    _validate_issue_comment_history_flags(
+        create_if_none=create_if_none,
+        delete_last=delete_last,
+        edit_last=edit_last,
+        yes=yes,
+    )
+    history_mode = edit_last or delete_last
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     if editor and body is None:
         raise click.ClickException("Editor was closed without saving a comment.")
-    body = prompt_if_missing(body, "Comment")
+
     service = IssueService(app.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(app.client()))
+
+    if history_mode:
+        _handle_issue_comment_history(
+            adapter=adapter,
+            owner=owner,
+            repo=repo,
+            number=number,
+            body=body,
+            edit_last=edit_last,
+            delete_last=delete_last,
+            create_if_none=create_if_none,
+            yes=yes,
+        )
+        return
+
+    body = prompt_if_missing(body, "Comment")
     item = adapter.comment_issue(owner, repo, number, body=body)
     safe_echo(item.get("html_url") or f"Commented on issue #{number}")
 
@@ -315,6 +388,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     result = adapter.reopen_issue(owner, repo, number)
@@ -354,6 +428,7 @@ def issue_edit(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
     if not any(
         [
@@ -394,6 +469,7 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     adapter.delete_issue(owner, repo, number)
@@ -434,6 +510,7 @@ def issue_develop(
         owner, repo = url_owner, url_repo
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
+        number = require_issue_number(identifier)
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     result = adapter.develop(owner, repo, number, base=base, name=name)

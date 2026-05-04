@@ -78,6 +78,29 @@ class TestPullRequestAdapter:
             "milestone": "v1",
         }
 
+    def test_merge_pr_maps_supported_gh_flags_to_gitcode_payload(self, adapter, service):
+        service.merge.return_value = {"message": "Merged"}
+
+        adapter.merge_pr(
+            "owner",
+            "repo",
+            42,
+            merge_method="squash",
+            body="Merge body",
+            subject="Merge subject",
+            admin=True,
+        )
+
+        service.merge.assert_called_once_with(
+            "owner",
+            "repo",
+            42,
+            merge_method="squash",
+            description="Merge body",
+            title="Merge subject",
+            force_merge=True,
+        )
+
     def test_review_pr_approve_calls_review_api(self, adapter, service):
         service.review.return_value = {"state": "APPROVED"}
 

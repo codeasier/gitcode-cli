@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..services import IssueService
+import click
+
+from ..errors import APIError
+from ..services import IssueService, UserService
 from .base import AdapterActionResult
 from .capabilities import capability_message, unsupported
 
@@ -32,9 +35,26 @@ def _extract_label_names(issue: dict[str, Any] | None) -> list[str]:
     return names
 
 
+def _extract_login(data: dict[str, Any] | None) -> str | None:
+    if not isinstance(data, dict):
+        return None
+    for key in ("login", "username", "name"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    user = data.get("user")
+    if isinstance(user, dict):
+        return _extract_login(user)
+    author = data.get("author")
+    if isinstance(author, dict):
+        return _extract_login(author)
+    return None
+
+
 class IssueAdapter:
-    def __init__(self, service: IssueService):
+    def __init__(self, service: IssueService, user_service: UserService | None = None):
         self.service = service
+        self.user_service = user_service
 
     def list_issues(
         self,
@@ -111,6 +131,48 @@ class IssueAdapter:
 
     def comment_issue(self, owner: str, repo: str, number: str, *, body: str) -> dict[str, Any] | None:
         return self.service.comment(owner, repo, number, body)
+
+    def manage_comment_history(
+        self,
+        owner: str,
+        repo: str,
+        number: str,
+        *,
+        body: str | None,
+        delete_last: bool,
+        create_if_none: bool,
+    ) -> AdapterActionResult:
+        comment = self._find_last_owned_comment(owner, repo, number)
+        if delete_last:
+            if comment is None:
+                raise click.ClickException(capability_message("ISSUE_COMMENT_LAST_NOT_FOUND"))
+            self.service.delete_comment(owner, repo, comment["id"])
+            return AdapterActionResult(item=comment, message="deleted")
+        if comment is None:
+            if create_if_none:
+                item = self.service.comment(owner, repo, number, body or "")
+                return AdapterActionResult(item=item, message="created")
+            raise click.ClickException(capability_message("ISSUE_COMMENT_LAST_NOT_FOUND"))
+        item = self.service.update_comment(owner, repo, comment["id"], body or "")
+        return AdapterActionResult(item=item, message="edited")
+
+    def _find_last_owned_comment(self, owner: str, repo: str, number: str) -> dict[str, Any] | None:
+        if self.user_service is None:
+            raise click.ClickException(capability_message("ISSUE_COMMENT_OWNERSHIP_UNVERIFIABLE"))
+        try:
+            current_user = self.user_service.current()
+        except APIError as exc:
+            raise click.ClickException(capability_message("ISSUE_COMMENT_OWNERSHIP_UNVERIFIABLE")) from exc
+        current_login = _extract_login(current_user)
+        if not current_login:
+            raise click.ClickException(capability_message("ISSUE_COMMENT_OWNERSHIP_UNVERIFIABLE"))
+        comments = self.service.list_comments(owner, repo, number) or []
+        for comment in reversed(comments):
+            if not isinstance(comment, dict):
+                continue
+            if _extract_login(comment) == current_login:
+                return comment
+        return None
 
     def reopen_issue(self, owner: str, repo: str, number: str) -> AdapterActionResult:
         current = self.service.get(owner, repo, number)

@@ -124,6 +124,29 @@ class TestIssueServiceContracts:
         request_fields = {field["name"] for field in contract["requestBodyFields"]}
         assert "body" in request_fields
 
+    def test_update_comment_matches_issue_comment_update_contract(
+        self, issue_service: tuple[IssueService, MagicMock]
+    ) -> None:
+        service, client = issue_service
+
+        service.update_comment("owner", "repo", "7", "Updated body")
+
+        client.patch.assert_called_once_with(
+            "/repos/owner/repo/issues/comments/7",
+            json={"body": "Updated body"},
+        )
+
+    def test_delete_comment_matches_issue_comment_delete_contract(
+        self, issue_service: tuple[IssueService, MagicMock]
+    ) -> None:
+        service, client = issue_service
+
+        service.delete_comment("owner", "repo", "7")
+
+        client.delete.assert_called_once_with(
+            "/repos/owner/repo/issues/comments/7",
+        )
+
 
 class TestPullRequestServiceContracts:
     def test_list_matches_pr_list_contract(self, pull_service: tuple[PullRequestService, MagicMock]) -> None:

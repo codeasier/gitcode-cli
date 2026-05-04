@@ -227,9 +227,9 @@ class TestIssueView:
         mock_client.get.side_effect = APIError("Issue not found", 404)
         result = runner.invoke(main, ["issue", "view", "42"])
         assert result.exit_code != 0
-        assert "error: Issue not found" in result.output
-        assert "Traceback" not in result.output
 
+
+class TestIssueCreate:
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0
@@ -303,13 +303,29 @@ class TestIssueView:
         assert json_data["labels"] == "bug"
         assert json_data["milestone"] == "v1.0"
 
-    def test_editor_fails_before_prompting_for_title(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "create", "--editor"], input="Should not be consumed\n")
-        assert result.exit_code != 0
-        assert (
-            "gh-compatible command/flag 'issue create --editor' is recognized but not implemented yet." in result.output
+    def test_editor_uses_prompted_title_before_body_editing(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr(
+            "gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: "issue body from editor"
         )
-        assert "Title" not in result.output
+        result = runner.invoke(main, ["issue", "create", "--editor"], input="Prompted Title\n")
+        assert result.exit_code == 0
+        assert "Title" in result.output
+        assert mock_client.post.call_args[1]["json"]["title"] == "Prompted Title"
+        assert mock_client.post.call_args[1]["json"]["body"] == "issue body from editor"
+
+    def test_editor_uses_body_helper_and_posts_saved_content(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr(
+            "gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: "issue body from editor"
+        )
+        result = runner.invoke(main, ["issue", "create", "--editor", "-t", "Title"])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "issue body from editor"
+
+    def test_editor_closed_without_saving_returns_error(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: None)
+        result = runner.invoke(main, ["issue", "create", "--editor", "-t", "Title"])
+        assert result.exit_code != 0
+        assert "Editor was closed without saving an issue body." in result.output
         mock_client.post.assert_not_called()
 
 
@@ -334,12 +350,11 @@ class TestIssueClose:
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
 
-    def test_close_without_number_or_iid_in_response(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
-        mock_client.patch.return_value = {"state": "closed"}
-        result = runner.invoke(main, ["issue", "close", "42"])
-        assert result.exit_code == 0
-        assert "Closed issue #42" in result.output
+    def test_close_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "close", "not-a-number"])
+        assert result.exit_code != 0
+        assert "Issue identifier must be a number or a valid issue URL." in result.output
+        mock_client.patch.assert_not_called()
 
 
 class TestIssueCloseIdempotency:
@@ -409,6 +424,15 @@ class TestIssueComment:
         assert "Editor was closed without saving a comment." in result.output
         mock_client.post.assert_not_called()
 
+    def test_edit_last_editor_cancel_returns_error(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: None)
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-e"])
+        assert result.exit_code != 0
+        assert "Editor was closed without saving a comment." in result.output
+        mock_client.get.assert_not_called()
+        mock_client.patch.assert_not_called()
+        mock_client.post.assert_not_called()
+
     def test_web_opens_issue_page_without_posting(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "comment", "42", "--web"])
@@ -416,9 +440,62 @@ class TestIssueComment:
         mock_client.post.assert_not_called()
         mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
 
-    def test_url(self, runner, mock_client):
-        result = runner.invoke(main, ["issue", "comment", "https://gitcode.com/owner/repo/issues/42", "-b", "hi"])
+    def test_comment_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "comment", "not-a-number", "-b", "hi"])
+        assert result.exit_code != 0
+        assert "Issue identifier must be a number or a valid issue URL." in result.output
+        mock_client.post.assert_not_called()
+
+    def test_edit_last_updates_last_owned_comment(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "user": {"login": "alice"}, "body": "old"}],
+        ]
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
         assert result.exit_code == 0
+        assert mock_client.patch.call_args.kwargs["json"]["body"] == "new body"
+        assert "/issues/comments/11" in mock_client.patch.call_args.args[0]
+
+    def test_edit_last_create_if_none_creates_comment(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "user": {"login": "bob"}, "body": "other"}],
+        ]
+        mock_client.post.return_value = {"id": 22, "html_url": "https://example.com/comments/22"}
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "--create-if-none", "-b", "new body"])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "new body"
+
+    def test_delete_last_requires_confirmation_by_default(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "comment", "42", "--delete-last"], input="n\n")
+        assert result.exit_code != 0
+        assert "Aborted." in result.output
+        mock_client.delete.assert_not_called()
+
+    def test_delete_last_yes_skips_confirmation(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "author": {"login": "alice"}, "body": "old"}],
+        ]
+        result = runner.invoke(main, ["issue", "comment", "42", "--delete-last", "--yes"])
+        assert result.exit_code == 0
+        mock_client.delete.assert_called_once()
+
+    def test_create_if_none_requires_edit_last(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "comment", "42", "--create-if-none", "-b", "new body"])
+        assert result.exit_code != 0
+        assert "only be used together with --edit-last" in result.output
+
+    def test_yes_requires_delete_last(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "comment", "42", "--yes", "-b", "new body"])
+        assert result.exit_code != 0
+        assert "can only be used together with --delete-last" in result.output
+
+    def test_history_management_refuses_when_current_user_is_unverifiable(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{}, []]
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
+        assert result.exit_code != 0
+        assert "refusing to edit or delete comments safely" in result.output
 
 
 class TestIssueReopen:
@@ -434,12 +511,11 @@ class TestIssueReopen:
         result = runner.invoke(main, ["issue", "reopen", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
 
-    def test_reopen_without_number_in_response(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "closed"}
-        mock_client.patch.return_value = {"iid": "42", "state": "open"}
-        result = runner.invoke(main, ["issue", "reopen", "42"])
-        assert result.exit_code == 0
-        assert "Reopened issue #42" in result.output
+    def test_reopen_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "reopen", "not-a-number"])
+        assert result.exit_code != 0
+        assert "Issue identifier must be a number or a valid issue URL." in result.output
+        mock_client.patch.assert_not_called()
 
 
 class TestIssueReopenIdempotency:

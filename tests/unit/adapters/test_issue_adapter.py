@@ -13,8 +13,13 @@ def service():
 
 
 @pytest.fixture
-def adapter(service):
-    return IssueAdapter(service)
+def user_service():
+    return MagicMock()
+
+
+@pytest.fixture
+def adapter(service, user_service):
+    return IssueAdapter(service, user_service)
 
 
 class TestIssueAdapter:
@@ -67,6 +72,74 @@ class TestIssueAdapter:
             labels="bug,docs",
             milestone="v1",
         )
+
+    def test_manage_comment_history_edits_last_owned_comment(self, adapter, service, user_service):
+        user_service.current.return_value = {"login": "alice"}
+        service.list_comments.return_value = [
+            {"id": 1, "user": {"login": "bob"}},
+            {"id": 2, "user": {"login": "alice"}},
+        ]
+        service.update_comment.return_value = {"id": 2, "body": "updated"}
+
+        result = adapter.manage_comment_history(
+            "owner",
+            "repo",
+            "42",
+            body="updated",
+            delete_last=False,
+            create_if_none=False,
+        )
+
+        service.update_comment.assert_called_once_with("owner", "repo", 2, "updated")
+        assert result.message == "edited"
+
+    def test_manage_comment_history_creates_when_none_and_allowed(self, adapter, service, user_service):
+        user_service.current.return_value = {"login": "alice"}
+        service.list_comments.return_value = [{"id": 1, "user": {"login": "bob"}}]
+        service.comment.return_value = {"id": 3, "html_url": "https://example.com/comments/3"}
+
+        result = adapter.manage_comment_history(
+            "owner",
+            "repo",
+            "42",
+            body="new comment",
+            delete_last=False,
+            create_if_none=True,
+        )
+
+        service.comment.assert_called_once_with("owner", "repo", "42", "new comment")
+        assert result.message == "created"
+
+    def test_manage_comment_history_deletes_last_owned_comment(self, adapter, service, user_service):
+        user_service.current.return_value = {"login": "alice"}
+        service.list_comments.return_value = [{"id": 2, "author": {"login": "alice"}}]
+
+        result = adapter.manage_comment_history(
+            "owner",
+            "repo",
+            "42",
+            body=None,
+            delete_last=True,
+            create_if_none=False,
+        )
+
+        service.delete_comment.assert_called_once_with("owner", "repo", 2)
+        assert result.message == "deleted"
+
+    def test_manage_comment_history_refuses_when_current_user_cannot_be_verified(self, service):
+        adapter = IssueAdapter(service, None)
+
+        with pytest.raises(Exception) as exc:
+            adapter.manage_comment_history(
+                "owner",
+                "repo",
+                "42",
+                body="updated",
+                delete_last=False,
+                create_if_none=False,
+            )
+
+        assert "refusing to edit or delete comments safely" in str(exc.value)
 
     def test_edit_issue_merges_existing_labels(self, adapter, service):
         service.get.return_value = {"labels": [{"name": "existing"}, {"name": "bug"}]}

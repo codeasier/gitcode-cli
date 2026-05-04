@@ -28,3 +28,9 @@ class IssueService:
 
     def comment(self, owner: str, repo: str, number: str, body: str) -> Any | None:
         return self.client.post(f"/repos/{owner}/{repo}/issues/{number}/comments", json={"body": body})
+
+    def update_comment(self, owner: str, repo: str, comment_id: int | str, body: str) -> Any | None:
+        return self.client.patch(f"/repos/{owner}/{repo}/issues/comments/{comment_id}", json={"body": body})
+
+    def delete_comment(self, owner: str, repo: str, comment_id: int | str) -> Any | None:
+        return self.client.delete(f"/repos/{owner}/{repo}/issues/comments/{comment_id}")

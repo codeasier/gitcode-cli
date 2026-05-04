@@ -463,8 +463,38 @@ class TestPrMerge:
         assert "this patch has already been applied" in result.output
         assert "Traceback" not in result.output
 
+    def test_pr_merge_body_subject_and_admin_map_to_merge_payload(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            ["pr", "merge", "42", "--body", "Merge body", "--subject", "Merge subject", "--admin"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.put.call_args.kwargs["json"] == {
+            "merge_method": "merge",
+            "description": "Merge body",
+            "title": "Merge subject",
+            "force_merge": True,
+        }
 
-class TestPrComment:
+    def test_pr_merge_body_file_maps_to_description(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "merge-body.txt"
+        body_file.write_text("file merge body")
+        result = runner.invoke(main, ["pr", "merge", "42", "-F", str(body_file)])
+        assert result.exit_code == 0
+        assert mock_client.put.call_args.kwargs["json"]["description"] == "file merge body"
+
+    def test_pr_merge_author_email_remains_unsupported(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "--author-email", "a@example.com"])
+        assert result.exit_code != 0
+        assert "does not support --author-email" in result.output
+        mock_client.put.assert_not_called()
+
+    def test_pr_merge_auto_remains_unsupported(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "merge", "42", "--auto"])
+        assert result.exit_code != 0
+        assert "does not support --auto" in result.output
+        mock_client.put.assert_not_called()
+
     def test_pr_comment(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "comment", "42", "--body", "hi"])
@@ -548,6 +578,24 @@ class TestPrReview:
         result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
         assert result.exit_code != 0
         assert "Posted pull request comment 456" in result.output
+
+    def test_pr_review_comment_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "review.txt"
+        body_file.write_text("Needs more tests from file")
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(main, ["pr", "review", "42", "--comment", "-F", str(body_file)])
+        assert result.exit_code == 0
+        comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
+        assert comment_calls[0].kwargs["json"]["body"] == "Needs more tests from file"
+
+    def test_pr_review_request_changes_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "review.txt"
+        body_file.write_text("Please address feedback from file")
+        mock_client.post.return_value = {"id": 456}
+        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "-F", str(body_file)])
+        assert result.exit_code != 0
+        comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
+        assert comment_calls[0].kwargs["json"]["body"] == "Please address feedback from file"
 
 
 class TestPrReopen:

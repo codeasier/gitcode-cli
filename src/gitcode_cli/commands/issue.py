@@ -544,6 +544,8 @@ set_gc_help(
     ],
 )
 
+issue_list.short_help = "List issues in a repository"
+issue_list.help = "List issues in a repository. By default, this only lists open issues."
 set_gc_help(
     issue_list,
     gc_usage="gc issue list [flags]",

@@ -156,17 +156,18 @@ def _inherited_flag_rows(command: click.Command, ctx: click.Context) -> list[tup
     rows: list[tuple[str, str]] = []
     if ctx.parent is None:
         return rows
-    for param in ctx.parent.command.get_params(ctx.parent):
-        if not isinstance(param, click.Option) or param.hidden:
-            continue
-        if "--help" in param.opts or "-h" in param.opts:
-            continue
-        if "--version" in param.opts:
-            continue
-        record = param.get_help_record(ctx.parent)
-        if record is None:
-            continue
-        rows.append(record)
+    if not isinstance(command, click.Group):
+        for param in ctx.parent.command.get_params(ctx.parent):
+            if not isinstance(param, click.Option) or param.hidden:
+                continue
+            if "--help" in param.opts or "-h" in param.opts:
+                continue
+            if "--version" in param.opts:
+                continue
+            record = param.get_help_record(ctx.parent)
+            if record is None:
+                continue
+            rows.append(record)
     if not rows or isinstance(command, click.Group):
         rows.append(("--help", "Show help for command"))
     return rows

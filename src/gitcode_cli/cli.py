@@ -14,6 +14,7 @@ from .commands.pr import pr_group
 from .config import get_token
 from .context import AppContext
 from .errors import GCError
+from .helptext import GCSectionGroup, set_gc_help
 from .utils import safe_echo
 
 
@@ -33,7 +34,7 @@ def _get_version() -> str:
         return __version__
 
 
-class _GCMainGroup(click.Group):
+class _GCMainGroup(GCSectionGroup):
     def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
@@ -42,9 +43,13 @@ class _GCMainGroup(click.Group):
             ctx.exit(1)
 
 
-@click.group(cls=_GCMainGroup, context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(
+    cls=_GCMainGroup,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Work seamlessly with GitCode from the command line.",
+)
 @click.version_option(version=_get_version(), prog_name="gitcode")
-@click.option("--repo", "repo_name", "-R", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("--repo", "repo_name", "-R", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("--token", hidden=True, help="Override authentication token.")
 @click.pass_context
 def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:
@@ -57,12 +62,35 @@ def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:
     ctx.obj["app"] = AppContext(token=resolved_token or "", repo=repo_name)
 
 
-@main.command("version")
+set_gc_help(
+    main,
+    gc_usage="gc <command> <subcommand> [flags]",
+    gc_command_sections=[
+        ("CORE COMMANDS", ["auth", "issue", "pr"]),
+        ("ADDITIONAL COMMANDS", ["completion", "version"]),
+    ],
+    gc_examples=[
+        "gc issue create",
+        "gc pr list -R owner/repo",
+        "gc auth login",
+    ],
+    gc_learn_more=[
+        "Use `gc <command> <subcommand> --help` for more information about a command.",
+    ],
+)
+
+
+auth_group.short_help = "Authenticate gc with GitCode"
+issue_group.short_help = "Manage issues"
+pr_group.short_help = "Manage pull requests"
+
+
+@main.command("version", short_help="Show gc version", help="Show gc version.")
 def version_command() -> None:
     safe_echo(f"gitcode version {_get_version()}")
 
 
-@main.command("completion")
+@main.command("completion", short_help="Generate shell completion scripts", help="Generate shell completion scripts.")
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completion_command(shell: str) -> None:
     comp_class = get_completion_class(shell)

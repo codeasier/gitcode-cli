@@ -23,24 +23,28 @@ class TestCli:
     def test_cli_help(self, runner):
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "Usage:" in result.output
+        assert "USAGE" in result.output
+        assert "CORE COMMANDS" in result.output
 
     def test_cli_issue_group(self, runner):
         result = runner.invoke(main, ["issue", "--help"])
         assert result.exit_code == 0
-        assert "Usage:" in result.output
+        assert "USAGE" in result.output
+        assert "GENERAL COMMANDS" in result.output
         assert "list" in result.output
 
     def test_cli_pr_group(self, runner):
         result = runner.invoke(main, ["pr", "--help"])
         assert result.exit_code == 0
-        assert "Usage:" in result.output
+        assert "USAGE" in result.output
+        assert "GENERAL COMMANDS" in result.output
         assert "list" in result.output
 
     def test_cli_auth_group(self, runner):
         result = runner.invoke(main, ["auth", "--help"])
         assert result.exit_code == 0
-        assert "Usage:" in result.output
+        assert "USAGE" in result.output
+        assert "COMMANDS" in result.output
         assert "login" in result.output
 
     def test_cli_with_token(self, runner, monkeypatch):

@@ -13,6 +13,7 @@ from ..cli_compat import (
     resolve_pr_identifier_or_current_branch,
 )
 from ..formatters import format_pr_detail, format_pr_list, output_result
+from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services import PullRequestService
 from ..utils import (
@@ -30,13 +31,13 @@ def _pending_gh_compat(name: str) -> None:
     raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
 
 
-@click.group("pr")
+@click.group("pr", cls=GCSectionGroup, help="Work with GitCode pull requests.")
 def pr_group() -> None:
     pass
 
 
 @pr_group.command("merge")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-m", "--merge", is_flag=True, help="Merge the pull request.")
 @click.option("-s", "--squash", is_flag=True, help="Squash the pull request.")
@@ -96,7 +97,7 @@ def pr_merge(
 
 
 @pr_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
@@ -133,7 +134,7 @@ def pr_comment(
 
 
 @pr_group.command("review")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-a", "--approve", is_flag=True, help="Approve the pull request. GitCode maps this to its review API.")
 @click.option("-b", "--body")
@@ -187,7 +188,7 @@ def pr_review(
 
 
 @pr_group.command("reopen")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.pass_context
 def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
@@ -202,7 +203,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None)
 
 
 @pr_group.command("edit")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-t", "--title")
 @click.option("-b", "--body")
@@ -279,7 +280,7 @@ def pr_edit(
 
 
 @pr_group.command("list")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-s", "--state")
 @click.option("-A", "--author")
 @click.option("-B", "--base")
@@ -347,7 +348,7 @@ def pr_list(
 
 
 @pr_group.command("view")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("-c", "--comments", is_flag=True, help="View pull request comments.")
@@ -405,7 +406,7 @@ def pr_view(
 
 
 @pr_group.command("create")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
@@ -512,7 +513,7 @@ def pr_create(
 
 
 @pr_group.command("close")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-c", "--comment")
 @click.option("-d", "--delete-branch", is_flag=True, help="Delete the remote branch after closing.")
@@ -544,7 +545,7 @@ def pr_close(
 
 
 @pr_group.command("diff")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.pass_context
 def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
@@ -558,7 +559,7 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -
 
 
 @pr_group.command("checkout")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
 @click.pass_context
@@ -579,7 +580,6 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
     except subprocess.CalledProcessError as exc:
         raise click.ClickException(f"Git fetch failed: {exc}") from exc
 
-    # Check if a local branch with this name already exists
     existing = subprocess.run(
         ["git", "rev-parse", "--verify", f"refs/heads/{local_branch}"],
         capture_output=True,
@@ -587,7 +587,6 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
         check=False,
     )
     if existing.returncode == 0:
-        # Branch exists — check if it tracks the expected remote ref
         tracking = subprocess.run(
             ["git", "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{local_branch}"],
             capture_output=True,
@@ -614,7 +613,7 @@ def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | Non
 
 
 @pr_group.command("ready")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("--undo", is_flag=True, help="Convert a pull request to draft.")
 @click.pass_context
@@ -632,7 +631,7 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
 
 
 @pr_group.command("status")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.pass_context
 def pr_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]
@@ -650,3 +649,77 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
 
 pr_group.add_command(pr_list, name="ls")
 pr_group.add_command(pr_create, name="new")
+
+set_gc_help(
+    pr_group,
+    gc_usage="gc pr <command> [flags]",
+    gc_command_sections=[
+        ("GENERAL COMMANDS", ["create", "list", "status"]),
+        (
+            "TARGETED COMMANDS",
+            ["checkout", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
+        ),
+    ],
+    gc_examples=[
+        "gc pr list",
+        "gc pr create --fill",
+        "gc pr view 123 --web",
+    ],
+    gc_arguments_help=[
+        "A pull request can be supplied as argument by number or by URL.",
+        "If omitted on commands that support it, the current branch is used when possible.",
+    ],
+)
+
+pr_merge.short_help = "Merge a pull request"
+pr_merge.help = "Merge a pull request."
+pr_comment.short_help = "Add a comment to a pull request"
+pr_comment.help = "Add a comment to a pull request."
+pr_review.short_help = "Add a review to a pull request"
+pr_review.help = "Add a review to a pull request."
+pr_reopen.short_help = "Reopen pull request"
+pr_reopen.help = "Reopen pull request."
+pr_edit.short_help = "Edit pull requests"
+pr_edit.help = "Edit pull requests."
+pr_list.short_help = "List pull requests in a repository"
+pr_list.help = "List pull requests in a repository."
+set_gc_help(
+    pr_list,
+    gc_usage="gc pr list [flags]",
+    gc_aliases=["ls"],
+    gc_json_fields=[
+        "author",
+        "assignees",
+        "baseRefName",
+        "body",
+        "createdAt",
+        "headRefName",
+        "labels",
+        "number",
+        "state",
+        "title",
+        "updatedAt",
+        "url",
+    ],
+    gc_examples=[
+        'gc pr list --label "bug"',
+        "gc pr list --author monalisa",
+        'gc pr list --search "is:open review-requested:@me"',
+        "gc pr list --state all",
+    ],
+)
+pr_view.short_help = "View a pull request"
+pr_view.help = "View a pull request."
+pr_create.short_help = "Create a pull request"
+pr_create.help = "Create a pull request."
+set_gc_help(pr_create, gc_aliases=["new"])
+pr_close.short_help = "Close pull request"
+pr_close.help = "Close pull request."
+pr_diff.short_help = "View changes in a pull request"
+pr_diff.help = "View changes in a pull request."
+pr_checkout.short_help = "Check out a pull request locally"
+pr_checkout.help = "Check out a pull request locally."
+pr_ready.short_help = "Mark a pull request as ready for review"
+pr_ready.help = "Mark a pull request as ready for review."
+pr_status.short_help = "Show status of relevant pull requests"
+pr_status.help = "Show status of relevant pull requests."

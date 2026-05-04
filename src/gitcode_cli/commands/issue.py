@@ -6,6 +6,7 @@ from ..adapters import IssueAdapter
 from ..adapters.capabilities import capability_message
 from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
+from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services import IssueService, UserService
 from ..utils import (
@@ -83,13 +84,13 @@ def _handle_issue_comment_history(
     safe_echo((result.item or {}).get("html_url") or f"Edited last comment on issue #{number}")
 
 
-@click.group("issue")
+@click.group("issue", cls=GCSectionGroup, help="Work with GitCode issues.")
 def issue_group() -> None:
     pass
 
 
 @issue_group.command("list")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-s", "--state")
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-A", "--author")
@@ -154,7 +155,7 @@ def issue_list(
 
 
 @issue_group.command("view")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.option("-c", "--comments", is_flag=True, help="View issue comments.")
@@ -216,7 +217,7 @@ def issue_view(
 
 
 @issue_group.command("create")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-a", "--assignee")
@@ -276,7 +277,7 @@ def issue_create(
 
 
 @issue_group.command("close")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-c", "--comment", help="Leave a closing comment.")
 @click.option("--duplicate-of")
@@ -313,7 +314,7 @@ def issue_close(
 
 
 @issue_group.command("comment")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
@@ -377,7 +378,7 @@ def issue_comment(
 
 
 @issue_group.command("reopen")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.pass_context
 def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
@@ -399,7 +400,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 
 
 @issue_group.command("edit")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-t", "--title")
 @click.option("-b", "--body")
@@ -458,7 +459,7 @@ def issue_edit(
 
 
 @issue_group.command("delete")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.pass_context
 def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
@@ -476,7 +477,7 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 
 
 @issue_group.command("status")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.pass_context
 def issue_status(ctx: click.Context, repo_name: str | None) -> None:
     app = ctx.obj["app"]
@@ -491,7 +492,7 @@ def issue_status(ctx: click.Context, repo_name: str | None) -> None:
 
 
 @issue_group.command("develop")
-@click.option("-R", "--repo", "repo_name", help="Repository in OWNER/REPO format (default: gitcode.com).")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-b", "--base", help="Base branch for the develop branch.")
 @click.option("-n", "--name", help="Name for the local branch.")
@@ -523,3 +524,70 @@ def issue_develop(
 
 issue_group.add_command(issue_list, name="ls")
 issue_group.add_command(issue_create, name="new")
+
+set_gc_help(
+    issue_group,
+    gc_usage="gc issue <command> [flags]",
+    gc_command_sections=[
+        ("GENERAL COMMANDS", ["create", "list", "status"]),
+        ("TARGETED COMMANDS", ["close", "comment", "delete", "develop", "edit", "reopen", "view"]),
+    ],
+    gc_examples=[
+        "gc issue list",
+        "gc issue create --label bug",
+        "gc issue view 123 --web",
+    ],
+    gc_arguments_help=[
+        "An issue can be supplied as argument in any of the following formats:",
+        '- by number, e.g. "123"; or',
+        '- by URL, e.g. "https://gitcode.com/OWNER/REPO/issues/123".',
+    ],
+)
+
+set_gc_help(
+    issue_list,
+    gc_usage="gc issue list [flags]",
+    gc_aliases=["ls"],
+    gc_json_fields=[
+        "author",
+        "assignees",
+        "body",
+        "comments",
+        "createdAt",
+        "labels",
+        "milestone",
+        "number",
+        "state",
+        "title",
+        "updatedAt",
+        "url",
+    ],
+    gc_examples=[
+        'gc issue list --label "bug" --label "help wanted"',
+        "gc issue list --author monalisa",
+        "gc issue list --assignee @me",
+        'gc issue list --milestone "The big 1.0"',
+        'gc issue list --search "error no:assignee sort:created-asc"',
+        "gc issue list --state all",
+    ],
+)
+
+issue_view.short_help = "View an issue"
+issue_view.help = "View an issue."
+issue_create.short_help = "Create a new issue"
+issue_create.help = "Create a new issue."
+set_gc_help(issue_create, gc_aliases=["new"])
+issue_close.short_help = "Close issue"
+issue_close.help = "Close issue."
+issue_comment.short_help = "Add a comment to an issue"
+issue_comment.help = "Add a comment to an issue."
+issue_reopen.short_help = "Reopen issue"
+issue_reopen.help = "Reopen issue."
+issue_edit.short_help = "Edit issues"
+issue_edit.help = "Edit issues."
+issue_delete.short_help = "Delete issue"
+issue_delete.help = "Delete issue."
+issue_status.short_help = "Show status of relevant issues"
+issue_status.help = "Show status of relevant issues."
+issue_develop.short_help = "Manage linked branches for an issue"
+issue_develop.help = "Manage linked branches for an issue."

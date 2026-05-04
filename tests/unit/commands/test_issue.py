@@ -456,6 +456,16 @@ class TestIssueComment:
         assert mock_client.patch.call_args.kwargs["json"]["body"] == "new body"
         assert "/issues/comments/11" in mock_client.patch.call_args.args[0]
 
+    def test_edit_last_succeeds_when_update_returns_none(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "user": {"login": "alice"}, "body": "old"}],
+        ]
+        mock_client.patch.return_value = None
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
+        assert result.exit_code == 0
+        assert "Edited last comment on issue #42" in result.output
+
     def test_edit_last_create_if_none_creates_comment(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
             {"login": "alice"},

@@ -424,6 +424,15 @@ class TestIssueComment:
         assert "Editor was closed without saving a comment." in result.output
         mock_client.post.assert_not_called()
 
+    def test_edit_last_editor_cancel_returns_error(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: None)
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-e"])
+        assert result.exit_code != 0
+        assert "Editor was closed without saving a comment." in result.output
+        mock_client.get.assert_not_called()
+        mock_client.patch.assert_not_called()
+        mock_client.post.assert_not_called()
+
     def test_web_opens_issue_page_without_posting(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
             result = runner.invoke(main, ["issue", "comment", "42", "--web"])

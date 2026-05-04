@@ -85,7 +85,7 @@ def _usage_line(command: click.Command, ctx: click.Context) -> str:
     else:
         for param in command.get_params(ctx):
             if isinstance(param, click.Argument):
-                pieces.append(param.make_metavar(ctx))
+                pieces.append(_argument_metavar(param, ctx))
     if any(isinstance(param, click.Option) and not param.hidden for param in command.get_params(ctx)):
         pieces.append("[flags]")
     return " ".join(piece for piece in pieces if piece)
@@ -97,6 +97,14 @@ def _display_command_path(ctx: click.Context) -> str:
         return "gc"
     parts[0] = "gc"
     return " ".join(parts)
+
+
+def _argument_metavar(param: click.Argument, ctx: click.Context) -> str:
+    make_metavar = param.make_metavar
+    try:
+        return make_metavar(ctx)
+    except TypeError:
+        return str(getattr(param, "metavar", None) or param.name or "")
 
 
 def _command_sections(command: click.Group) -> list[tuple[str, list[tuple[str, str]]]]:

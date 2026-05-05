@@ -214,10 +214,11 @@ class TestPrList:
 
 
 class TestPrCreate:
-    def test_pr_create_help_documents_template_semantic_drift(self, runner):
+    def test_pr_create_help_documents_template_selection(self, runner):
         result = runner.invoke(main, ["pr", "create", "--help"])
         assert result.exit_code == 0
-        assert "not gh PR template selection" in result.output
+        assert "-T, --template" in result.output
+        assert "Template file to use as the pull request body" in result.output
 
     def test_pr_create(self, runner, mock_client, mock_repo):
         result = runner.invoke(
@@ -259,6 +260,71 @@ class TestPrCreate:
         )
         assert result.exit_code == 0
         assert mock_client.post.call_args.kwargs["json"]["body"] == "file body content"
+
+    def test_pr_create_template_file_sets_body(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "pull_request.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--template",
+                str(template_file),
+                "--base",
+                "master",
+                "--head",
+                "feature",
+            ],
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "template body content"
+
+    def test_pr_create_template_short_flag_sets_body(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "pull_request.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "-T", str(template_file), "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"]["body"] == "template body content"
+
+    def test_pr_create_template_rejects_other_body_sources(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "pull_request.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(
+            main,
+            [
+                "pr",
+                "create",
+                "--title",
+                "Test",
+                "--template",
+                str(template_file),
+                "--body",
+                "inline",
+                "--base",
+                "master",
+                "--head",
+                "feature",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--template cannot be used with --body" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_pr_create_missing_template_file_returns_click_error(self, runner, mock_client, mock_repo, tmp_path):
+        missing = tmp_path / "missing.md"
+        result = runner.invoke(
+            main,
+            ["pr", "create", "--title", "Test", "--template", str(missing), "--base", "master", "--head", "feature"],
+        )
+        assert result.exit_code != 0
+        assert "Template file not found" in result.output
+        mock_client.post.assert_not_called()
 
     def test_pr_create_uses_cli_compat_body_helper(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.get_body_from_options", return_value="resolved body") as mock_body:
@@ -602,14 +668,19 @@ class TestPrReview:
         comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert comment_calls[0].kwargs["json"]["body"] == "Please address feedback from file"
 
-    def test_pr_review_approve_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
+    def test_pr_review_approve_rejects_body(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "review", "42", "--approve", "--body", "LGTM"])
+        assert result.exit_code != 0
+        assert "does not support gh-style approval review body" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_pr_review_approve_rejects_body_file(self, runner, mock_client, mock_repo, tmp_path):
         body_file = tmp_path / "review.txt"
         body_file.write_text("LGTM from file")
-        mock_client.post.return_value = {"id": 987, "body": "approved"}
         result = runner.invoke(main, ["pr", "review", "42", "--approve", "-F", str(body_file)])
-        assert result.exit_code == 0
-        review_calls = [c for c in mock_client.post.call_args_list if c.args[0].endswith("/review")]
-        assert review_calls[0].kwargs["json"]["body"] == "LGTM from file"
+        assert result.exit_code != 0
+        assert "does not support gh-style approval review body" in result.output
+        mock_client.post.assert_not_called()
 
 
 class TestPrReopen:

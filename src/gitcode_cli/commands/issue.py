@@ -12,6 +12,7 @@ from ..services import IssueService, UserService
 from ..utils import (
     open_in_browser,
     prompt_if_missing,
+    read_template_file,
     require_issue_number,
     resolve_issue_arg,
     safe_echo,
@@ -228,7 +229,7 @@ def issue_view(
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
-@click.option("--template", help="Format output using a Go template string; not gh issue template selection.")
+@click.option("-T", "--template", help="Template file to use as the issue body.")
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -253,7 +254,13 @@ def issue_create(
     title = prompt_if_missing(title, "Title")
     if len(title) > 255:
         raise click.ClickException("title must be 255 characters or fewer")
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    if template and (body is not None or body_file is not None or editor):
+        raise click.UsageError("--template cannot be used with --body, --body-file, or --editor.")
+    body = (
+        read_template_file(template)
+        if template
+        else get_body_from_options(body=body, body_file=body_file, editor=editor)
+    )
     if editor and body is None:
         raise click.ClickException("Editor was closed without saving an issue body.")
     service = IssueService(app.client())
@@ -271,7 +278,7 @@ def issue_create(
         item,
         json_fields,
         jq_query,
-        template,
+        None,
         default_formatter=lambda data: safe_echo(data["html_url"]),
     )
 

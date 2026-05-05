@@ -21,6 +21,7 @@ from ..utils import (
     open_in_browser,
     prompt_if_missing,
     read_body_file,
+    read_template_file,
     resolve_pr_arg,
     safe_echo,
     safe_number,
@@ -166,6 +167,8 @@ def pr_review(
         raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
     if (comment or request_changes) and not body:
         raise click.ClickException("Body is required when using --comment or --request-changes.")
+    if approve and body:
+        raise click.ClickException("GitCode review API does not support gh-style approval review body.")
 
     adapter = PullRequestAdapter(service)
     result = adapter.review_pr(
@@ -425,7 +428,7 @@ def pr_view(
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
-@click.option("--template", help="Format output using a Go template string; not gh PR template selection.")
+@click.option("-T", "--template", help="Template file to use as the pull request body.")
 @click.pass_context
 def pr_create(
     ctx: click.Context,
@@ -477,8 +480,15 @@ def pr_create(
         if body is None:
             body = fill_body
 
+    if template and (body is not None or body_file is not None or editor):
+        raise click.UsageError("--template cannot be used with --body, --body-file, --editor, or fill body content.")
+
     title = prompt_if_missing(title, "Title")
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    body = (
+        read_template_file(template)
+        if template
+        else get_body_from_options(body=body, body_file=body_file, editor=editor)
+    )
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
     result = adapter.create_pr(
@@ -503,7 +513,7 @@ def pr_create(
         item,
         json_fields,
         jq_query,
-        template,
+        None,
         default_formatter=lambda data: safe_echo(
             data.get("html_url")
             or data.get("url")

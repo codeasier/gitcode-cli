@@ -115,7 +115,7 @@ class TestPullRequestAdapter:
             force=False,
         )
 
-        service.review.assert_called_once_with("owner", "repo", 42, body="LGTM", force=False)
+        service.review.assert_called_once_with("owner", "repo", 42, force=False)
         assert result.degraded is False
         assert result.item == {"state": "APPROVED"}
 

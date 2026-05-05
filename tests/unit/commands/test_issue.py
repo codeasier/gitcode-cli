@@ -590,17 +590,23 @@ class TestIssueEdit:
 
 
 class TestIssueDelete:
-    def test_default_returns_clear_unsupported_error(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "delete", "42"])
+    def test_delete_requires_confirmation_by_default(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "delete", "42"], input="n\n")
         assert result.exit_code != 0
-        assert "GitCode API does not support deleting issues." in result.output
+        assert "Aborted." in result.output
         mock_client.delete.assert_not_called()
 
-    def test_url_returns_clear_unsupported_error(self, runner, mock_client):
-        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42"])
-        assert result.exit_code != 0
-        assert "GitCode API does not support deleting issues." in result.output
-        mock_client.delete.assert_not_called()
+    def test_delete_yes_skips_confirmation(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "delete", "42", "--yes"])
+        assert result.exit_code == 0
+        assert "Deleted issue #42" in result.output
+        mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
+
+    def test_delete_url_yes_skips_confirmation(self, runner, mock_client):
+        result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42", "--yes"])
+        assert result.exit_code == 0
+        assert "Deleted issue #42" in result.output
+        mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
 
 
 class TestIssueDevelop:

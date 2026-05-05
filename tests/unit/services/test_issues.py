@@ -54,6 +54,13 @@ class TestIssueService:
         )
         assert result == {"number": "42"}
 
+    def test_delete(self, service, mock_client):
+        mock_client.delete.return_value = {"success": True}
+        result = service.delete("owner", "repo", "42")
+
+        mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
+        assert result == {"success": True}
+
     def test_comment(self, service, mock_client):
         mock_client.post.return_value = {"id": 1}
         result = service.comment("owner", "repo", "42", "Nice issue!")

@@ -31,7 +31,7 @@ jobs:
 
           version = "${{ steps.version.outputs.VERSION }}"
           lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
-          pattern = re.compile(rf"^## \[{re.escape(version)}\]\b")
+          pattern = re.compile(rf"^## \[{re.escape(version)}\](?:\s|$)")
 
           start = None
           for i, line in enumerate(lines):
@@ -97,7 +97,7 @@ jobs:
 
           version = "${{ steps.version.outputs.VERSION }}"
           lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
-          pattern = re.compile(rf"^## \[{re.escape(version)}\]\b")
+          pattern = re.compile(rf"^## \[{re.escape(version)}\](?:\s|$)")
 
           start = None
           for i, line in enumerate(lines):

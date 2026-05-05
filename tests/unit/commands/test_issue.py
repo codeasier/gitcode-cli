@@ -593,19 +593,20 @@ class TestIssueDelete:
     def test_delete_requires_confirmation_by_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "delete", "42"], input="n\n")
         assert result.exit_code != 0
+        assert "Delete issue owner/repo#42?" in result.output
         assert "Aborted." in result.output
         mock_client.delete.assert_not_called()
 
     def test_delete_yes_skips_confirmation(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "delete", "42", "--yes"])
         assert result.exit_code == 0
-        assert "Deleted issue #42" in result.output
+        assert "Deleted issue owner/repo#42" in result.output
         mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
 
     def test_delete_url_yes_skips_confirmation(self, runner, mock_client):
         result = runner.invoke(main, ["issue", "delete", "https://gitcode.com/owner/repo/issues/42", "--yes"])
         assert result.exit_code == 0
-        assert "Deleted issue #42" in result.output
+        assert "Deleted issue owner/repo#42" in result.output
         mock_client.delete.assert_called_once_with("/repos/owner/repo/issues/42")
 
 

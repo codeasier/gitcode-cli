@@ -465,19 +465,14 @@ def issue_edit(
 @click.pass_context
 def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str, yes: bool) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
-    if not yes and not click.confirm(f"Delete issue #{number}?", default=False):
+    owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
+    target = f"{owner}/{repo}#{number}"
+    if not yes and not click.confirm(f"Delete issue {target}?", default=False):
         raise click.ClickException("Aborted.")
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     adapter.delete_issue(owner, repo, number)
-    safe_echo(f"Deleted issue #{number}")
+    safe_echo(f"Deleted issue {target}")
 
 
 @issue_group.command("status")

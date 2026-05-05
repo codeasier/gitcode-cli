@@ -4,7 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/pygitcode)](https://pypi.org/project/pygitcode/)
 [![Python](https://img.shields.io/pypi/pyversions/pygitcode)](https://pypi.org/project/pygitcode/)
-[![License](https://img.shields.io/pypi/l/pygitcode)](https://github.com/yourusername/pygitcode/blob/main/LICENSE)
+[![License](https://img.shields.io/pypi/l/pygitcode)](https://github.com/codeasier/gitcode-cli/blob/main/LICENSE)
 
 ## Installation
 
@@ -84,7 +84,7 @@ gc issue edit 42 --milestone v1.0 --remove-milestone
 gc issue comment 42 -b "Thanks for the report!"
 gc issue comment 42 --editor    # Use system editor
 
-gc issue delete 42              # Unsupported by GitCode API
+gc issue delete 42              # Exposed for gh parity; GitCode API may reject deletion
 
 # Close / reopen
 gc issue close 42
@@ -187,6 +187,11 @@ gc issue view 42 -w
 gc pr view -w
 ```
 
+## Documentation
+
+- [Documentation index](docs/index.md)
+- [Development guide](docs/development.md)
+
 ## Alignment with `gh` CLI
 
 `pygitcode` aims to be as familiar as possible to `gh` users:
@@ -213,33 +218,6 @@ gc pr view -w
 - **PR review**: GitCode review API differs from GitHub; `--request-changes` falls back to PR comments
 - **Issue deletion**: `gc issue delete` is exposed for CLI parity, but GitCode API does not support deleting issues
 - **Issue create/update API**: GitCode puts `repo` in request body, not URL path
-
-## Development
-
-```bash
-# Clone
-git clone https://github.com/yourusername/pygitcode.git
-cd pygitcode
-
-# Install in editable mode with dev dependencies
-pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run all checks manually
-pre-commit run --all-files
-
-# Or run individually
-python -m pytest tests/unit/ --cov=gitcode_cli
-python -m ruff check src/ tests/
-python -m ruff format src/ tests/
-python -m basedpyright src/
-```
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned features and current gaps.
 
 ## License
 

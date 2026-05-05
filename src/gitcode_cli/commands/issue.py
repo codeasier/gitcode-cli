@@ -280,7 +280,7 @@ def issue_create(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
 @click.option("-c", "--comment", help="Leave a closing comment.")
-@click.option("--duplicate-of")
+@click.option("--duplicate-of", help="Close as a GitCode-limited duplicate approximation by posting a comment first.")
 @click.option("-r", "--reason", type=click.Choice(["completed", "not_planned"]), help="Reason for closing.")
 @click.pass_context
 def issue_close(
@@ -299,18 +299,27 @@ def issue_close(
     else:
         owner, repo = resolve_repo(repo_name or app.repo)
         number = require_issue_number(identifier)
+    approximated = duplicate_of is not None
     if duplicate_of is not None:
-        _pending_gh_compat("issue close --duplicate-of")
+        duplicate_comment = f"This issue is considered a duplicate of {duplicate_of}."
+        comment = f"{comment}\n\n{duplicate_comment}" if comment else duplicate_comment
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
+    approximation_note = (
+        "Note: --duplicate-of is a GitCode-limited approximation; " "no native duplicate relationship was created."
+    )
     if result.message == "already_closed_commented":
         safe_echo(f"Issue #{safe_number(result.item, number)} is already closed; posted comment")
+        if approximated:
+            safe_echo(approximation_note)
         return
     if result.message == "already_closed":
         safe_echo(f"Issue #{safe_number(result.item, number)} is already closed")
         return
     safe_echo(f"Closed issue #{safe_number(result.item, number)}")
+    if approximated:
+        safe_echo(approximation_note)
 
 
 @issue_group.command("comment")

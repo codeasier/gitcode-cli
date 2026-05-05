@@ -1,0 +1,84 @@
+name: Publish dev build to TestPyPI
+
+on:
+  push:
+    tags:
+      - "dev*"
+
+jobs:
+  build-and-publish:
+    name: Build and publish dev build to TestPyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/pygitcode
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine dev version
+        id: version
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          import os
+          import re
+          import subprocess
+
+          tag = "${{ github.ref_name }}"
+          commit_hash = tag.removeprefix("dev")
+          if not commit_hash:
+              raise SystemExit("Tag must be in the form dev<commit-hash>")
+          if not re.fullmatch(r"[0-9a-fA-F]+", commit_hash):
+              raise SystemExit("Commit hash in tag must be hexadecimal")
+
+          latest_tag = subprocess.check_output(
+              ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+              text=True,
+          ).splitlines()
+          if not latest_tag:
+              raise SystemExit("No version tags matching v* found")
+
+          latest_version = latest_tag[0].removeprefix("v")
+          match = re.match(r"^(\d+(?:\.\d+)*)", latest_version)
+          if match is None:
+              raise SystemExit(f"Could not extract numeric version from tag {latest_tag[0]}")
+
+          base_version = match.group(1)
+          daily = datetime.now(timezone.utc).strftime("%Y%m%d")
+          version = f"{base_version}.dev{daily}+{commit_hash.lower()}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"VERSION={version}\n")
+              fh.write(f"BASE_VERSION={base_version}\n")
+              fh.write(f"COMMIT_HASH={commit_hash.lower()}\n")
+          PY
+
+      - name: Write version to __init__.py
+        run: |
+          sed -i 's/^__version__ = .*/__version__ = "'"${{ steps.version.outputs.VERSION }}"'"/' src/gitcode_cli/__init__.py
+          echo "Updated __init__.py:"
+          cat src/gitcode_cli/__init__.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

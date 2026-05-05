@@ -3,7 +3,7 @@ from __future__ import annotations
 import click
 
 from ..adapters import IssueAdapter
-from ..adapters.capabilities import capability_message
+from ..adapters.capabilities import capability_message, unsupported
 from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
@@ -127,7 +127,7 @@ def issue_list(
     if limit is not None and limit < 1:
         raise click.BadParameter("must be greater than 0", param_hint="--limit")
     if app is not None:
-        _pending_gh_compat("issue list --app")
+        raise unsupported("ISSUE_LIST_APP")
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return

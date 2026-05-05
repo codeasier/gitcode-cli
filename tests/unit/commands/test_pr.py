@@ -486,13 +486,13 @@ class TestPrMerge:
     def test_pr_merge_author_email_remains_unsupported(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42", "--author-email", "a@example.com"])
         assert result.exit_code != 0
-        assert "does not support --author-email" in result.output
+        assert "GitCode merge API does not support --author-email." in result.output
         mock_client.put.assert_not_called()
 
     def test_pr_merge_auto_remains_unsupported(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42", "--auto"])
         assert result.exit_code != 0
-        assert "does not support --auto" in result.output
+        assert "GitCode merge API does not support --auto." in result.output
         mock_client.put.assert_not_called()
 
     def test_pr_comment(self, runner, mock_client, mock_repo):

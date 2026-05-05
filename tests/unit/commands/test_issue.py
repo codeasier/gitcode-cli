@@ -130,6 +130,13 @@ class TestIssueList:
         assert "Maximum number of items to fetch." in result.output
         assert "[default:" in result.output
 
+    def test_list_app_remains_unsupported(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "list", "--app", "github-actions"])
+        assert result.exit_code != 0
+        assert "GitCode issue API does not support --app filtering." in result.output
+        assert "recognized but not implemented" not in result.output
+        mock_client.get.assert_not_called()
+
     def test_rejects_zero_limit(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "list", "-L", "0"])
         assert result.exit_code != 0

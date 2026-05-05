@@ -46,10 +46,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/pygitcode"
-Documentation = "https://github.com/yourusername/pygitcode#readme"
-Repository = "https://github.com/yourusername/pygitcode.git"
-Issues = "https://github.com/yourusername/pygitcode/issues"
+Homepage = "https://github.com/codeasier/gitcode-cli"
+Documentation = "https://github.com/codeasier/gitcode-cli#readme"
+Repository = "https://github.com/codeasier/gitcode-cli.git"
+Issues = "https://github.com/codeasier/gitcode-cli/issues"
 
 [project.scripts]
 gc = "gitcode_cli.cli:main"

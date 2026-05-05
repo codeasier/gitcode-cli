@@ -214,6 +214,11 @@ class TestPrList:
 
 
 class TestPrCreate:
+    def test_pr_create_help_documents_template_semantic_drift(self, runner):
+        result = runner.invoke(main, ["pr", "create", "--help"])
+        assert result.exit_code == 0
+        assert "not gh PR template selection" in result.output
+
     def test_pr_create(self, runner, mock_client, mock_repo):
         result = runner.invoke(
             main,
@@ -596,6 +601,15 @@ class TestPrReview:
         assert result.exit_code != 0
         comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert comment_calls[0].kwargs["json"]["body"] == "Please address feedback from file"
+
+    def test_pr_review_approve_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
+        body_file = tmp_path / "review.txt"
+        body_file.write_text("LGTM from file")
+        mock_client.post.return_value = {"id": 987, "body": "approved"}
+        result = runner.invoke(main, ["pr", "review", "42", "--approve", "-F", str(body_file)])
+        assert result.exit_code == 0
+        review_calls = [c for c in mock_client.post.call_args_list if c.args[0].endswith("/review")]
+        assert review_calls[0].kwargs["json"]["body"] == "LGTM from file"
 
 
 class TestPrReopen:

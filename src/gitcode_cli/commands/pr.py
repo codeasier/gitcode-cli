@@ -425,7 +425,7 @@ def pr_view(
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
-@click.option("--template", help="Format output using a Go template string.")
+@click.option("--template", help="Format output using a Go template string; not gh PR template selection.")
 @click.pass_context
 def pr_create(
     ctx: click.Context,

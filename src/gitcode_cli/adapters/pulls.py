@@ -120,7 +120,7 @@ class PullRequestAdapter:
                 message=capability_message("PR_REVIEW_REQUEST_CHANGES"),
                 degraded=True,
             )
-        item = self.service.review(owner, repo, number, force=force)
+        item = self.service.review(owner, repo, number, body=body, force=force)
         return AdapterActionResult(item=item)
 
     def edit_pr(

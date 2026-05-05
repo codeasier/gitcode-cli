@@ -230,6 +230,11 @@ class TestIssueView:
 
 
 class TestIssueCreate:
+    def test_create_help_documents_template_semantic_drift(self, runner):
+        result = runner.invoke(main, ["issue", "create", "--help"])
+        assert result.exit_code == 0
+        assert "not gh issue template selection" in result.output
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0

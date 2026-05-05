@@ -8,7 +8,6 @@ CAPABILITY_MESSAGES = {
         "Unable to verify the current user's issue comments on GitCode; refusing to edit or delete comments safely."
     ),
     "ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST": "--create-if-none can only be used together with --edit-last.",
-    "ISSUE_DELETE": "GitCode API does not support deleting issues.",
     "ISSUE_DEVELOP_BASE": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_DEVELOP_NAME": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_STATUS_GH_SEMANTICS": "GitCode-limited approximation of gh issue status",

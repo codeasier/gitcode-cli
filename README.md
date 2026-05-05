@@ -84,7 +84,8 @@ gc issue edit 42 --milestone v1.0 --remove-milestone
 gc issue comment 42 -b "Thanks for the report!"
 gc issue comment 42 --editor    # Use system editor
 
-gc issue delete 42              # Exposed for gh parity; GitCode API may reject deletion
+gc issue delete 42              # Delete an issue (prompts by default)
+gc issue delete 42 --yes        # Skip confirmation
 
 # Close / reopen
 gc issue close 42
@@ -216,7 +217,7 @@ gc pr view -w
 
 - **PR comment model**: GitCode uses `path + position`, not GitHub's `line/side/commit`
 - **PR review**: GitCode review API differs from GitHub; `--request-changes` falls back to PR comments
-- **Issue deletion**: `gc issue delete` is exposed for CLI parity, but GitCode API does not support deleting issues
+- **Issue deletion**: `gc issue delete` relies on GitCode issue deletion support that is not currently documented in the public API; behavior may change if GitCode adjusts this endpoint
 - **Issue create/update API**: GitCode puts `repo` in request body, not URL path
 
 ## License

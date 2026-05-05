@@ -73,6 +73,15 @@ class TestIssueAdapter:
             milestone="v1",
         )
 
+    def test_delete_issue_calls_service_delete(self, adapter, service):
+        service.delete.return_value = {"success": True}
+
+        result = adapter.delete_issue("owner", "repo", "42")
+
+        service.delete.assert_called_once_with("owner", "repo", "42")
+        assert result.item == {"success": True}
+        assert result.message == "deleted"
+
     def test_manage_comment_history_edits_last_owned_comment(self, adapter, service, user_service):
         user_service.current.return_value = {"login": "alice"}
         service.list_comments.return_value = [

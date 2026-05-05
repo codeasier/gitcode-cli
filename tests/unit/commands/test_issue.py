@@ -230,6 +230,12 @@ class TestIssueView:
 
 
 class TestIssueCreate:
+    def test_create_help_documents_template_selection(self, runner):
+        result = runner.invoke(main, ["issue", "create", "--help"])
+        assert result.exit_code == 0
+        assert "-T, --template" in result.output
+        assert "Template file to use as the issue body" in result.output
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "Test Title", "-b", "Body"])
         assert result.exit_code == 0
@@ -249,6 +255,37 @@ class TestIssueCreate:
         result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", str(body_file)])
         assert result.exit_code == 0
         assert mock_client.post.call_args[1]["json"]["body"] == "file body content"
+
+    def test_template_file_sets_body(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "bug.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "--template", str(template_file)])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "template body content"
+
+    def test_template_short_flag_sets_body(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "bug.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-T", str(template_file)])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["body"] == "template body content"
+
+    def test_template_rejects_other_body_sources(self, runner, mock_client, mock_repo, tmp_path):
+        template_file = tmp_path / "bug.md"
+        template_file.write_text("template body content")
+        result = runner.invoke(
+            main, ["issue", "create", "-t", "T", "--template", str(template_file), "--body", "inline"]
+        )
+        assert result.exit_code != 0
+        assert "--template cannot be used with --body" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_missing_template_file_returns_click_error(self, runner, mock_client, mock_repo, tmp_path):
+        missing = tmp_path / "missing.md"
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "--template", str(missing)])
+        assert result.exit_code != 0
+        assert "Template file not found" in result.output
+        mock_client.post.assert_not_called()
 
     def test_reads_body_from_stdin_when_body_file_is_dash(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "create", "-t", "T", "-F", "-"], input="stdin body")

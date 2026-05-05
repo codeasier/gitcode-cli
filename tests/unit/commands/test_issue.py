@@ -350,6 +350,53 @@ class TestIssueClose:
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
 
+    def test_close_duplicate_of_posts_comment_then_closes_with_approximation_note(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.patch.return_value = {"number": "42", "state": "closed"}
+
+        result = runner.invoke(main, ["issue", "close", "42", "--duplicate-of", "12"])
+
+        assert result.exit_code == 0
+        assert "Closed issue #42" in result.output
+        assert "GitCode-limited approximation" in result.output
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/issues/42/comments",
+            json={"body": "This issue is considered a duplicate of 12."},
+        )
+        mock_client.patch.assert_called_once()
+        assert mock_client.method_calls == [
+            call.get("/repos/owner/repo/issues/42"),
+            call.post(
+                "/repos/owner/repo/issues/42/comments",
+                json={"body": "This issue is considered a duplicate of 12."},
+            ),
+            call.patch("/repos/owner/issues/42", json={"repo": "repo", "state": "close"}),
+        ]
+
+    def test_close_duplicate_of_preserves_comment_and_reason(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.patch.return_value = {"number": "42", "state": "closed"}
+
+        result = runner.invoke(
+            main,
+            ["issue", "close", "42", "--duplicate-of", "12", "--comment", "Superseded", "--reason", "not_planned"],
+        )
+
+        assert result.exit_code == 0
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/issues/42/comments",
+            json={"body": "Superseded\n\nThis issue is considered a duplicate of 12."},
+        )
+        patch_kwargs = mock_client.patch.call_args.kwargs
+        assert patch_kwargs["json"]["state_reason"] == "not_planned"
+
+    def test_close_duplicate_of_help_describes_approximation(self, runner):
+        result = runner.invoke(main, ["issue", "close", "--help"])
+
+        assert result.exit_code == 0
+        assert "GitCode-limited duplicate approximation" in result.output
+        assert "native duplicate" not in result.output.lower()
+
     def test_close_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "close", "not-a-number"])
         assert result.exit_code != 0

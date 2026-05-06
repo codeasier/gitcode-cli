@@ -307,7 +307,7 @@ def issue_close(
     adapter = IssueAdapter(service)
     result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
     approximation_note = (
-        "Note: --duplicate-of is a GitCode-limited approximation; " "no native duplicate relationship was created."
+        "Note: --duplicate-of is a GitCode-limited approximation; no native duplicate relationship was created."
     )
     if result.message == "already_closed_commented":
         safe_echo(f"Issue #{safe_number(result.item, number)} is already closed; posted comment")

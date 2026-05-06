@@ -380,8 +380,11 @@ def issue_comment(
 @issue_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
+@click.option("-c", "--comment")
 @click.pass_context
-def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> None:
+def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str, comment: str | None) -> None:
+    if comment is not None:
+        _pending_gh_compat("issue reopen --comment")
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -408,6 +411,8 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str) -> 
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label", "add_labels", multiple=True)
 @click.option("-m", "--milestone")
+@click.option("--remove-assignee")
+@click.option("--remove-label", "remove_labels", multiple=True)
 @click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
 @click.pass_context
 def issue_edit(
@@ -420,8 +425,14 @@ def issue_edit(
     add_assignee: str | None,
     add_labels: tuple[str, ...] | None,
     milestone: str | None,
+    remove_assignee: str | None,
+    remove_labels: tuple[str, ...] | None,
     remove_milestone: bool,
 ) -> None:
+    if remove_assignee is not None:
+        _pending_gh_compat("issue edit --remove-assignee")
+    if remove_labels:
+        _pending_gh_compat("issue edit --remove-label")
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -438,6 +449,8 @@ def issue_edit(
             add_assignee is not None,
             add_labels,
             milestone is not None,
+            remove_assignee is not None,
+            remove_labels,
             remove_milestone,
         ]
     ):

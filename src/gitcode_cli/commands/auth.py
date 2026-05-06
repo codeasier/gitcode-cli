@@ -7,6 +7,10 @@ from ..helptext import GCSectionGroup
 from ..utils import safe_echo
 
 
+def _pending_gh_compat(name: str) -> None:
+    raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+
+
 @click.group("auth", cls=GCSectionGroup, help="Authenticate gc with GitCode.")
 def auth_group() -> None:
     pass
@@ -36,7 +40,16 @@ def auth_logout() -> None:
 
 
 @auth_group.command("status", short_help="Show authentication status", help="Show authentication status.")
-def auth_status() -> None:
+@click.option("--json", "json_fields")
+@click.option("-q", "--jq", "jq_query")
+@click.option("-t", "--template")
+def auth_status(json_fields: str | None, jq_query: str | None, template: str | None) -> None:
+    if json_fields is not None:
+        _pending_gh_compat("auth status --json")
+    if jq_query is not None:
+        _pending_gh_compat("auth status --jq")
+    if template is not None:
+        _pending_gh_compat("auth status --template")
     try:
         token = get_token()
     except Exception:

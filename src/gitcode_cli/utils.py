@@ -59,6 +59,13 @@ def read_body_file(path: str) -> str:
         raise click.ClickException(f"Body file not found: {path}") from exc
 
 
+def read_template_file(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise click.ClickException(f"Template file not found: {path}") from exc
+
+
 def open_in_browser(url: str) -> None:
     """Open URL in default browser."""
     webbrowser.open(url)

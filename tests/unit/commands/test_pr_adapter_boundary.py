@@ -125,7 +125,7 @@ class TestPrCommandAdapterBoundary:
             mp.setattr("gitcode_cli.commands.pr.PullRequestAdapter", pull_adapter_ctor)
             result = runner.invoke(
                 main,
-                ["pr", "review", "42", "--approve", "--body", "LGTM"],
+                ["pr", "review", "42", "--approve"],
             )
 
         assert result.exit_code == 0
@@ -136,7 +136,7 @@ class TestPrCommandAdapterBoundary:
             "repo",
             42,
             approve=True,
-            body="LGTM",
+            body=None,
             comment=False,
             request_changes=False,
             force=False,

@@ -22,6 +22,7 @@ from ..utils import (
     open_in_browser,
     prompt_if_missing,
     read_body_file,
+    read_template_file,
     resolve_pr_arg,
     safe_echo,
     safe_number,
@@ -102,10 +103,14 @@ def pr_merge(
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
+@click.option("--create-if-none", is_flag=True)
+@click.option("--delete-last", is_flag=True)
+@click.option("--edit-last", is_flag=True)
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--path")
 @click.option("--position", type=int)
+@click.option("--yes", is_flag=True)
 @click.pass_context
 def pr_comment(
     ctx: click.Context,
@@ -113,11 +118,23 @@ def pr_comment(
     identifier: str | None,
     body: str | None,
     body_file: str | None,
+    create_if_none: bool,
+    delete_last: bool,
+    edit_last: bool,
     editor: bool,
     web: bool,
     path: str | None,
     position: int | None,
+    yes: bool,
 ) -> None:
+    if create_if_none:
+        _pending_gh_compat("pr comment --create-if-none")
+    if delete_last:
+        _pending_gh_compat("pr comment --delete-last")
+    if edit_last:
+        _pending_gh_compat("pr comment --edit-last")
+    if yes:
+        _pending_gh_compat("pr comment --yes")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -167,6 +184,8 @@ def pr_review(
         raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
     if (comment or request_changes) and not body:
         raise click.ClickException("Body is required when using --comment or --request-changes.")
+    if approve and body:
+        raise click.ClickException("GitCode review API does not support gh-style approval review body.")
 
     adapter = PullRequestAdapter(service)
     result = adapter.review_pr(
@@ -191,8 +210,11 @@ def pr_review(
 @pr_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
+@click.option("-c", "--comment")
 @click.pass_context
-def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
+def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None) -> None:
+    if comment is not None:
+        _pending_gh_compat("pr reopen --comment")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -426,7 +448,7 @@ def pr_view(
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
-@click.option("--template", help="Format output using a Go template string.")
+@click.option("-T", "--template", help="Template file to use as the pull request body.")
 @click.pass_context
 def pr_create(
     ctx: click.Context,
@@ -478,8 +500,15 @@ def pr_create(
         if body is None:
             body = fill_body
 
+    if template and (body is not None or body_file is not None or editor):
+        raise click.UsageError("--template cannot be used with --body, --body-file, --editor, or fill body content.")
+
     title = prompt_if_missing(title, "Title")
-    body = get_body_from_options(body=body, body_file=body_file, editor=editor)
+    body = (
+        read_template_file(template)
+        if template
+        else get_body_from_options(body=body, body_file=body_file, editor=editor)
+    )
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
     result = adapter.create_pr(
@@ -504,7 +533,7 @@ def pr_create(
         item,
         json_fields,
         jq_query,
-        template,
+        None,
         default_formatter=lambda data: safe_echo(
             data.get("html_url")
             or data.get("url")
@@ -548,8 +577,14 @@ def pr_close(
 @pr_group.command("diff")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
+@click.option("--name-only", is_flag=True)
+@click.option("--patch", is_flag=True)
 @click.pass_context
-def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
+def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
+    if name_only:
+        _pending_gh_compat("pr diff --name-only")
+    if patch:
+        _pending_gh_compat("pr diff --patch")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -563,8 +598,21 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
+@click.option("--detach", is_flag=True)
+@click.option("-f", "--force", is_flag=True)
 @click.pass_context
-def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | None, branch: str | None) -> None:
+def pr_checkout(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    branch: str | None,
+    detach: bool,
+    force: bool,
+) -> None:
+    if detach:
+        _pending_gh_compat("pr checkout --detach")
+    if force:
+        _pending_gh_compat("pr checkout --force")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())

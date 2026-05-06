@@ -6,6 +6,7 @@ import subprocess
 import click
 
 from ..adapters import PullRequestAdapter
+from ..adapters.capabilities import unsupported
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
@@ -68,9 +69,9 @@ def pr_merge(
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     if author_email is not None:
-        raise click.ClickException("GitCode merge API does not support --author-email.")
+        raise unsupported("PR_MERGE_AUTHOR_EMAIL")
     if auto:
-        raise click.ClickException("GitCode merge API does not support --auto.")
+        raise unsupported("PR_MERGE_AUTO")
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)

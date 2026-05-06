@@ -6,6 +6,7 @@ import subprocess
 import click
 
 from ..adapters import PullRequestAdapter
+from ..adapters.capabilities import unsupported
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
@@ -69,9 +70,9 @@ def pr_merge(
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     if author_email is not None:
-        raise click.ClickException("GitCode merge API does not support --author-email.")
+        raise unsupported("PR_MERGE_AUTHOR_EMAIL")
     if auto:
-        raise click.ClickException("GitCode merge API does not support --auto.")
+        raise unsupported("PR_MERGE_AUTO")
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -102,10 +103,14 @@ def pr_merge(
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
+@click.option("--create-if-none", is_flag=True)
+@click.option("--delete-last", is_flag=True)
+@click.option("--edit-last", is_flag=True)
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--path")
 @click.option("--position", type=int)
+@click.option("--yes", is_flag=True)
 @click.pass_context
 def pr_comment(
     ctx: click.Context,
@@ -113,11 +118,23 @@ def pr_comment(
     identifier: str | None,
     body: str | None,
     body_file: str | None,
+    create_if_none: bool,
+    delete_last: bool,
+    edit_last: bool,
     editor: bool,
     web: bool,
     path: str | None,
     position: int | None,
+    yes: bool,
 ) -> None:
+    if create_if_none:
+        _pending_gh_compat("pr comment --create-if-none")
+    if delete_last:
+        _pending_gh_compat("pr comment --delete-last")
+    if edit_last:
+        _pending_gh_compat("pr comment --edit-last")
+    if yes:
+        _pending_gh_compat("pr comment --yes")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -193,8 +210,11 @@ def pr_review(
 @pr_group.command("reopen")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
+@click.option("-c", "--comment")
 @click.pass_context
-def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
+def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None) -> None:
+    if comment is not None:
+        _pending_gh_compat("pr reopen --comment")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -557,8 +577,14 @@ def pr_close(
 @pr_group.command("diff")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
+@click.option("--name-only", is_flag=True)
+@click.option("--patch", is_flag=True)
 @click.pass_context
-def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -> None:
+def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
+    if name_only:
+        _pending_gh_compat("pr diff --name-only")
+    if patch:
+        _pending_gh_compat("pr diff --patch")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -572,8 +598,21 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None) -
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
+@click.option("--detach", is_flag=True)
+@click.option("-f", "--force", is_flag=True)
 @click.pass_context
-def pr_checkout(ctx: click.Context, repo_name: str | None, identifier: str | None, branch: str | None) -> None:
+def pr_checkout(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    branch: str | None,
+    detach: bool,
+    force: bool,
+) -> None:
+    if detach:
+        _pending_gh_compat("pr checkout --detach")
+    if force:
+        _pending_gh_compat("pr checkout --force")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())

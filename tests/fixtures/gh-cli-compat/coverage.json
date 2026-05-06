@@ -1,31 +1,47 @@
 {
   "groups": {
-    "issue": ["list", "view", "create", "close", "comment"],
-    "pr": ["list", "view", "create", "close", "merge", "comment", "review"]
+    "auth": ["status"],
+    "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"]
   },
   "exclude_flags": {
+    "auth": {
+      "status": [
+        {"name": "--active", "reason": "active account selection is outside the selected #86 placeholder set"},
+        {"name": "-a", "reason": "active account selection is outside the selected #86 placeholder set"},
+        {"name": "--hostname", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
+        {"name": "-h", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
+        {"name": "--show-token", "reason": "token reveal is outside the selected #86 placeholder set"}
+      ]
+    },
     "issue": {
       "create": [
         {"name": "-p", "reason": "git protocol selection is not implemented by gc issue create"},
         {"name": "--recover", "reason": "draft recovery is not implemented by gc issue create"},
         {"name": "-T", "reason": "template selection is not implemented by gc issue create"}
       ],
+      "edit": [
+        {"name": "--add-project", "reason": "project association is outside the selected #86 placeholder set"},
+        {"name": "--remove-project", "reason": "project association is outside the selected #86 placeholder set"}
+      ],
       "list": [
         {"name": "-m", "reason": "gh short alias differs from gc, which only exposes --milestone"}
       ]
     },
     "pr": {
-      "comment": [
-        {"name": "--create-if-none", "reason": "comment history management is not implemented by gc pr comment"},
-        {"name": "--delete-last", "reason": "comment history management is not implemented by gc pr comment"},
-        {"name": "--edit-last", "reason": "comment history management is not implemented by gc pr comment"},
-        {"name": "--yes", "reason": "confirmation bypass for history-management flows is not implemented by gc pr comment"}
+      "checkout": [
+        {"name": "--recurse-submodules", "reason": "submodule checkout behavior is outside the selected #86 placeholder set"}
       ],
       "create": [
         {"name": "--no-maintainer-edit", "reason": "maintainer edit controls are not implemented by GitCode-backed PR creation"},
         {"name": "-p", "reason": "project selection is not implemented by gc pr create"},
         {"name": "--recover", "reason": "draft recovery is not implemented by gc pr create"},
         {"name": "-T", "reason": "template selection is not implemented by gc pr create"}
+      ],
+      "diff": [
+        {"name": "--color", "reason": "diff color rendering is outside the selected #86 placeholder set"},
+        {"name": "-e", "reason": "diff exclude filtering is outside the selected #86 placeholder set"},
+        {"name": "--web", "reason": "opening PR diff in browser is outside the selected #86 placeholder set"}
       ],
       "list": [
         {"name": "--app", "reason": "application filtering is not implemented by gc pr list"}

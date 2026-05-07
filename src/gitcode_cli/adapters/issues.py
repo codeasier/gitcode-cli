@@ -7,7 +7,7 @@ import click
 from ..errors import APIError
 from ..services import IssueService, UserService
 from .base import AdapterActionResult
-from .capabilities import capability_message, unsupported
+from .capabilities import capability_message
 
 
 def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
@@ -237,10 +237,6 @@ class IssueAdapter:
         )
 
     def develop(self, owner: str, repo: str, number: str, *, base: str | None, name: str | None) -> AdapterActionResult:  # noqa: ARG002
-        if base is not None:
-            raise unsupported("ISSUE_DEVELOP_BASE")
-        if name is not None:
-            raise unsupported("ISSUE_DEVELOP_NAME")
         return AdapterActionResult(
             message=f"Opening issue #{number} in the browser instead.",
             warning="Note: 'issue develop' does not create a local branch on GitCode.",

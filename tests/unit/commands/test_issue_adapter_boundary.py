@@ -120,3 +120,35 @@ class TestIssueCommandAdapterBoundary:
             comment="done",
             reason="completed",
         )
+
+    def test_issue_develop_rejects_unsupported_base_before_adapter(
+        self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock
+    ) -> None:
+        issue_service_ctor = MagicMock()
+        issue_adapter_ctor = MagicMock()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("gitcode_cli.commands.issue.IssueService", issue_service_ctor)
+            mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
+            result = runner.invoke(main, ["issue", "develop", "42", "--base", "main"])
+
+        assert result.exit_code != 0
+        assert "--base" in result.output
+        issue_service_ctor.assert_not_called()
+        issue_adapter_ctor.assert_not_called()
+
+    def test_issue_develop_rejects_unsupported_name_before_adapter(
+        self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock
+    ) -> None:
+        issue_service_ctor = MagicMock()
+        issue_adapter_ctor = MagicMock()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("gitcode_cli.commands.issue.IssueService", issue_service_ctor)
+            mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
+            result = runner.invoke(main, ["issue", "develop", "42", "--name", "feature"])
+
+        assert result.exit_code != 0
+        assert "--name" in result.output
+        issue_service_ctor.assert_not_called()
+        issue_adapter_ctor.assert_not_called()

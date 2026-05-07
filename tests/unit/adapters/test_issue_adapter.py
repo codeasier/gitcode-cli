@@ -168,14 +168,11 @@ class TestIssueAdapter:
 
         service.update.assert_called_once_with("owner", "repo", "42", labels="existing,bug,docs")
 
-    def test_develop_rejects_base_and_name_through_capability_policy(self, adapter):
-        with pytest.raises(Exception) as base_exc:
-            adapter.develop("owner", "repo", "42", base="main", name=None)
-        assert "--base" in str(base_exc.value)
+    def test_develop_returns_browser_fallback_message(self, adapter):
+        result = adapter.develop("owner", "repo", "42", base="main", name="feature")
 
-        with pytest.raises(Exception) as name_exc:
-            adapter.develop("owner", "repo", "42", base=None, name="feature")
-        assert "--name" in str(name_exc.value)
+        assert result.message == "Opening issue #42 in the browser instead."
+        assert result.warning == "Note: 'issue develop' does not create a local branch on GitCode."
 
     def test_status_returns_approximation_message(self, adapter, service):
         service.list.return_value = [{"number": "1", "state": "open", "title": "Test"}]

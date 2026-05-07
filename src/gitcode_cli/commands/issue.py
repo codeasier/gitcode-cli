@@ -533,6 +533,10 @@ def issue_develop(
     name: str | None,
 ) -> None:
     app = ctx.obj["app"]
+    if base is not None:
+        raise unsupported("ISSUE_DEVELOP_BASE")
+    if name is not None:
+        raise unsupported("ISSUE_DEVELOP_NAME")
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
         assert url_repo is not None

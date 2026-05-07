@@ -70,6 +70,13 @@ class IssueAdapter:
         search: str | None,
         limit: int | None,
     ) -> Any:
+        if author == "@me":
+            if self.user_service is None:
+                raise click.ClickException("failed to resolve @me: current user lookup is unavailable")
+            current_login = _extract_login(self.user_service.current())
+            if not current_login:
+                raise click.ClickException("failed to resolve @me: current user has no login")
+            author = current_login
         items = self.service.list(
             owner,
             repo,

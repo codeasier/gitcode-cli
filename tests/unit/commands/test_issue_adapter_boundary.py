@@ -47,7 +47,9 @@ class TestIssueCommandAdapterBoundary:
 
         assert result.exit_code == 0
         issue_service_ctor.assert_called_once_with(mock_app_client)
-        issue_adapter_ctor.assert_called_once_with(issue_service_ctor.return_value)
+        issue_adapter_ctor.assert_called_once()
+        assert issue_adapter_ctor.call_args.args[0] is issue_service_ctor.return_value
+        assert issue_adapter_ctor.call_args.args[1].__class__.__name__ == "UserService"
         adapter.list_issues.assert_called_once_with(
             "owner",
             "repo",

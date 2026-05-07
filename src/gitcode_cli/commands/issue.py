@@ -133,7 +133,7 @@ def issue_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
     service = IssueService(app_ctx.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(app_ctx.client()))
     items = adapter.list_issues(
         owner,
         repo,

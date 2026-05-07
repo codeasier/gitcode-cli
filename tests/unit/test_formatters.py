@@ -229,6 +229,22 @@ class TestApplyJq:
         result = apply_jq({"id": 1}, ".id")
         assert result == [{"id": 1}]
 
+    def test_jq_cli_multiple_json_lines(self, mocker):
+        mocker.patch.dict("sys.modules", {"jq": None})
+        mock_run = mocker.patch("gitcode_cli.formatters.subprocess.run")
+        mock_run.return_value = MagicMock(stdout='{"id":1}\n{"id":2}\n')
+        mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
+        result = apply_jq([{"id": 1}, {"id": 2}], ".[]")
+        assert result == [{"id": 1}, {"id": 2}]
+
+    def test_jq_cli_empty_output_returns_empty_list(self, mocker):
+        mocker.patch.dict("sys.modules", {"jq": None})
+        mock_run = mocker.patch("gitcode_cli.formatters.subprocess.run")
+        mock_run.return_value = MagicMock(stdout="\n")
+        mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
+        result = apply_jq({"id": 1}, "empty")
+        assert result == []
+
     def test_jq_not_available_raises_click_exception(self, mocker):
         mocker.patch.dict("sys.modules", {"jq": None})
         mocker.patch("gitcode_cli.formatters.shutil.which", return_value=None)

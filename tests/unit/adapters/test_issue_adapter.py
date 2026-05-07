@@ -52,6 +52,36 @@ class TestIssueAdapter:
         )
         assert result == [{"number": "1"}]
 
+    def test_list_issues_resolves_author_me_to_current_login(self, adapter, service, user_service):
+        user_service.current.return_value = {"login": "alice"}
+        service.list.return_value = [{"number": "1"}]
+
+        adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=None,
+            author="@me",
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=None,
+        )
+
+        user_service.current.assert_called_once_with()
+        service.list.assert_called_once_with(
+            "owner",
+            "repo",
+            state="open",
+            labels=None,
+            creator="alice",
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+        )
+
     def test_create_issue_normalizes_labels(self, adapter, service):
         adapter.create_issue(
             "owner",

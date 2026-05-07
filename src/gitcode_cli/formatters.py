@@ -107,6 +107,15 @@ def format_pr_detail(item: dict) -> str:
     return _format_detail(item, author_keys=("user", "author", "creator"), branch=branch)
 
 
+def _parse_jq_output(stdout: str):
+    output = stdout.strip()
+    if not output:
+        return []
+    if output[0] == "[":
+        return json.loads(output)
+    return [json.loads(line) for line in output.splitlines()]
+
+
 def apply_jq(data, query: str):
     try:
         import jq  # noqa: PLC0415
@@ -123,7 +132,7 @@ def apply_jq(data, query: str):
             text=True,
             check=True,
         )
-        return json.loads(proc.stdout)
+        return _parse_jq_output(proc.stdout)
     raise click.ClickException("jq is required for --jq. Install with: pip install pyjq or install jq CLI.")
 
 

@@ -126,7 +126,7 @@ def apply_jq(data, query: str):
     jq_bin = shutil.which("jq")
     if jq_bin:
         proc = subprocess.run(
-            [jq_bin, query],
+            [jq_bin, "-c", query],
             input=json.dumps(data),
             capture_output=True,
             text=True,

@@ -228,6 +228,13 @@ class TestApplyJq:
         mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
         result = apply_jq({"id": 1}, ".id")
         assert result == [{"id": 1}]
+        mock_run.assert_called_once_with(
+            ["/usr/bin/jq", "-c", ".id"],
+            input='{"id": 1}',
+            capture_output=True,
+            text=True,
+            check=True,
+        )
 
     def test_jq_cli_multiple_json_lines(self, mocker):
         mocker.patch.dict("sys.modules", {"jq": None})
@@ -236,6 +243,7 @@ class TestApplyJq:
         mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
         result = apply_jq([{"id": 1}, {"id": 2}], ".[]")
         assert result == [{"id": 1}, {"id": 2}]
+        assert mock_run.call_args.args[0] == ["/usr/bin/jq", "-c", ".[]"]
 
     def test_jq_cli_empty_output_returns_empty_list(self, mocker):
         mocker.patch.dict("sys.modules", {"jq": None})

@@ -100,6 +100,31 @@ class TestIssueList:
         mock_client.get.assert_not_called()
         mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues")
 
+    def test_author_me_resolves_to_current_login(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"number": "1", "state": "open", "title": "First", "author": {"login": "alice"}}],
+        ]
+
+        result = runner.invoke(main, ["issue", "list", "--author", "@me"])
+
+        assert result.exit_code == 0
+        assert mock_client.get.call_args_list == [
+            call("/user"),
+            call(
+                "/repos/owner/repo/issues",
+                params={
+                    "state": None,
+                    "labels": None,
+                    "creator": "alice",
+                    "assignee": None,
+                    "milestone": None,
+                    "mention": None,
+                    "search": None,
+                },
+            ),
+        ]
+
     def test_json_fields(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "title": "T", "state": "open"}]
         result = runner.invoke(main, ["issue", "list", "--json", "number,title"])

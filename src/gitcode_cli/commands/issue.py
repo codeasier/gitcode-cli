@@ -133,7 +133,7 @@ def issue_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
     service = IssueService(app_ctx.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(app_ctx.client()))
     items = adapter.list_issues(
         owner,
         repo,
@@ -533,6 +533,10 @@ def issue_develop(
     name: str | None,
 ) -> None:
     app = ctx.obj["app"]
+    if base is not None:
+        raise unsupported("ISSUE_DEVELOP_BASE")
+    if name is not None:
+        raise unsupported("ISSUE_DEVELOP_NAME")
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
         assert url_repo is not None

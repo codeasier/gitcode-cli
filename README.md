@@ -8,6 +8,8 @@
 
 English | [中文](README.zh-CN.md)
 
+For agent-assisted setup, usage, upgrades, or troubleshooting, read [docs/en/USING_WITH_AGENT.md](docs/en/USING_WITH_AGENT.md) first.
+
 ## Installation
 
 ```bash

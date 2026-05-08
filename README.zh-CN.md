@@ -8,6 +8,8 @@
 
 [English](README.md) | 中文
 
+如果你正在借助 agent 安装、使用、升级或排障，请先阅读 [docs/zh-CN/USING_WITH_AGENT.md](docs/zh-CN/USING_WITH_AGENT.md)。
+
 ## 安装
 
 ```bash

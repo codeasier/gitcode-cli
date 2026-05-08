@@ -1,6 +1,8 @@
-# Development
+# 开发指南
 
-## Setup
+中文 | [English](../en/development.md)
+
+## 环境准备
 
 ```bash
 git clone https://github.com/codeasier/gitcode-cli.git
@@ -8,15 +10,15 @@ cd gitcode-cli
 pip install -e ".[dev]"
 ```
 
-## Run tests
+## 运行测试
 
-Run the full suite:
+完整执行：
 
 ```bash
 conda run -n gitcode-cli python -m pytest tests
 ```
 
-Run one layer:
+按层执行：
 
 ```bash
 conda run -n gitcode-cli python -m pytest tests/unit/commands
@@ -25,9 +27,9 @@ conda run -n gitcode-cli python -m pytest tests/unit/services
 conda run -n gitcode-cli python -m pytest tests/contracts
 ```
 
-For test layout and intent, see [tests/README.md](../tests/README.md).
+测试布局与设计意图见 [tests/README.md](../../tests/README.md)。
 
-## Static checks
+## 静态检查
 
 ```bash
 python -m ruff check src/ tests/

@@ -16,6 +16,13 @@ def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
     return ",".join(values)
 
 
+def _normalize_labels(labels: tuple[str, ...] | None) -> tuple[str, ...] | None:
+    if not labels:
+        return None
+    normalized = tuple(label.strip() for label in labels if label.strip())
+    return normalized or None
+
+
 def _extract_label_names(issue: dict[str, Any] | None) -> list[str]:
     labels = issue.get("labels") if isinstance(issue, dict) else None
     if not labels:
@@ -58,10 +65,72 @@ def _extract_login(data: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _as_list(items: Any) -> list[Any]:
+    return items if isinstance(items, list) else []
+
+
+def _extract_label_options(items: list[Any]) -> set[str]:
+    names: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if isinstance(name, str) and name.strip():
+            names.add(name.strip())
+    return names
+
+
+def _resolve_milestone_number(items: list[Any], milestone: str | None) -> int | None:
+    if milestone is None:
+        return None
+    value = milestone.strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return int(value)
+    matches: list[int] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title")
+        number = item.get("number")
+        if title != value:
+            continue
+        if isinstance(number, int):
+            matches.append(number)
+        elif isinstance(number, str) and number.isdigit():
+            matches.append(int(number))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise click.ClickException(f"could not resolve milestone: '{value}' matched multiple milestones")
+    raise click.ClickException(f"could not resolve milestone: '{value}' not found")
+
+
 class IssueAdapter:
     def __init__(self, service: IssueService, user_service: UserService | None = None):
         self.service = service
         self.user_service = user_service
+
+    def _list_all_labels(self, owner: str, repo: str) -> list[Any]:
+        items: list[Any] = []
+        page = 1
+        while True:
+            page_items = _as_list(self.service.list_labels(owner, repo, page=page, per_page=100))
+            items.extend(page_items)
+            if len(page_items) < 100:
+                return items
+            page += 1
+
+    def _list_all_milestones(self, owner: str, repo: str) -> list[Any]:
+        items: list[Any] = []
+        page = 1
+        while True:
+            page_items = _as_list(self.service.list_milestones(owner, repo, state="all", page=page, per_page=100))
+            items.extend(page_items)
+            if len(page_items) < 100:
+                return items
+            page += 1
 
     def list_issues(
         self,
@@ -110,16 +179,28 @@ class IssueAdapter:
         body: str | None,
         assignee: str | None,
         labels: tuple[str, ...] | None,
-        milestone: int | None,
+        milestone: str | None,
     ) -> dict[str, Any] | None:
+        normalized_labels = _normalize_labels(labels)
+        if normalized_labels:
+            available_labels = _extract_label_options(self._list_all_labels(owner, repo))
+            for label in normalized_labels:
+                if label not in available_labels:
+                    raise click.ClickException(f"could not add label: '{label}' not found")
+        milestone_number = None
+        if milestone is not None:
+            milestones = []
+            if not milestone.strip().isdigit():
+                milestones = self._list_all_milestones(owner, repo)
+            milestone_number = _resolve_milestone_number(milestones, milestone)
         return self.service.create(
             owner,
             repo,
             title=title,
             body=body,
             assignee=assignee,
-            labels=_normalize_multi_values(labels),
-            milestone=milestone,
+            labels=_normalize_multi_values(normalized_labels),
+            milestone=milestone_number,
         )
 
     def close_issue(

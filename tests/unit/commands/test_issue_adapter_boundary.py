@@ -77,7 +77,7 @@ class TestIssueCommandAdapterBoundary:
             mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
             result = runner.invoke(
                 main,
-                ["issue", "create", "-t", "Bug", "-b", "Body", "-l", "bug", "-m", "1"],
+                ["issue", "create", "-t", "Bug", "-b", "Body", "-l", "bug", "-m", "v1.0"],
             )
 
         assert result.exit_code == 0
@@ -90,7 +90,7 @@ class TestIssueCommandAdapterBoundary:
             body="Body",
             assignee=None,
             labels=("bug",),
-            milestone=1,
+            milestone="v1.0",
         )
 
     def test_issue_close_delegates_to_adapter(

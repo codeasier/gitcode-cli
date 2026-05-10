@@ -15,6 +15,12 @@ class IssueService:
     def list_user_issues(self, **params: Any) -> Any | None:
         return self.client.get("/user/issues", params=params)
 
+    def list_labels(self, owner: str, repo: str, **params: Any) -> Any | None:
+        return self.client.get(f"/repos/{owner}/{repo}/labels", params=params)
+
+    def list_milestones(self, owner: str, repo: str, **params: Any) -> Any | None:
+        return self.client.get(f"/repos/{owner}/{repo}/milestones", params=params)
+
     def get(self, owner: str, repo: str, number: str) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/issues/{number}")
 

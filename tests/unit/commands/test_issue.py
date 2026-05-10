@@ -339,12 +339,18 @@ class TestIssueCreate:
         assert "Body file not found" in result.output
         mock_client.post.assert_not_called()
 
-    def test_rejects_title_longer_than_255_characters(self, runner, mock_client, mock_repo):
-        title = "T" * 256
+    def test_rejects_title_longer_than_200_characters(self, runner, mock_client, mock_repo):
+        title = "T" * 201
         result = runner.invoke(main, ["issue", "create", "-t", title])
         assert result.exit_code != 0
-        assert "title must be 255 characters or fewer" in result.output
+        assert "title must be 200 characters or fewer" in result.output
         mock_client.post.assert_not_called()
+
+    def test_allows_title_with_200_characters(self, runner, mock_client, mock_repo):
+        title = "T" * 200
+        result = runner.invoke(main, ["issue", "create", "-t", title])
+        assert result.exit_code == 0
+        mock_client.post.assert_called_once()
 
     def test_web(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
@@ -365,12 +371,18 @@ class TestIssueCreate:
         mock_client.post.assert_called_once()
 
     def test_with_options(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "create", "-t", "T", "-a", "user", "-l", "bug", "-m", "v1.0"])
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-a", "user", "-l", "bug", "-m", "1"])
         assert result.exit_code == 0
         json_data = mock_client.post.call_args[1]["json"]
         assert json_data["assignee"] == "user"
         assert json_data["labels"] == "bug"
-        assert json_data["milestone"] == "v1.0"
+        assert json_data["milestone"] == 1
+
+    def test_milestone_requires_number(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-m", "v1.0"])
+        assert result.exit_code != 0
+        assert "'v1.0' is not a valid integer" in result.output
+        mock_client.post.assert_not_called()
 
     def test_editor_uses_prompted_title_before_body_editing(self, runner, mock_client, mock_repo, monkeypatch):
         monkeypatch.setattr(
@@ -674,6 +686,27 @@ class TestIssueEdit:
         assert result.exit_code == 0
         json_data = mock_client.patch.call_args[1]["json"]
         assert json_data["labels"] == "bug,docs"
+
+    def test_milestone_requires_number(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-m", "v1.0"])
+        assert result.exit_code != 0
+        assert "'v1.0' is not a valid integer" in result.output
+        mock_client.patch.assert_not_called()
+
+    def test_milestone_number(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-m", "1"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args[1]["json"]["milestone"] == 1
+
+    def test_remove_milestone_sends_zero(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "--remove-milestone"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args[1]["json"]["milestone"] == 0
+
+    def test_remove_milestone_overrides_milestone_number(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "-m", "1", "--remove-milestone"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args[1]["json"]["milestone"] == 0
 
     def test_body_and_body_file_are_mutually_exclusive(self, runner, mock_client, mock_repo, tmp_path):
         body_file = tmp_path / "body.md"

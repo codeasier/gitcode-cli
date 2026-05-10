@@ -101,7 +101,7 @@ class IssueAdapter:
         body: str | None,
         assignee: str | None,
         labels: tuple[str, ...] | None,
-        milestone: str | None,
+        milestone: int | None,
     ) -> dict[str, Any] | None:
         return self.service.create(
             owner,
@@ -202,7 +202,7 @@ class IssueAdapter:
         body: str | None,
         add_assignee: str | None,
         add_labels: tuple[str, ...] | None,
-        milestone: str | None,
+        milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
         data = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
@@ -225,7 +225,7 @@ class IssueAdapter:
         if milestone is not None:
             data["milestone"] = milestone
         if remove_milestone:
-            data["milestone"] = ""
+            data["milestone"] = 0
         return self.service.update(owner, repo, number, **data)
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:

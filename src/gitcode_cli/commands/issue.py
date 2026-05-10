@@ -63,6 +63,45 @@ def _echo_issue_status(data: dict[str, list[dict]]) -> None:
         safe_echo("")
 
 
+def _normalize_issue_state(state: object) -> object:
+    if not isinstance(state, str):
+        return state
+    normalized = state.upper()
+    if normalized == "OPENED":
+        return "OPEN"
+    return normalized
+
+
+def _normalize_issue_number(number: object) -> object:
+    if isinstance(number, str) and number.isdigit():
+        return int(number)
+    return number
+
+
+def _normalize_issue_author(item: dict) -> object:
+    author = item.get("author") or item.get("user") or item.get("creator")
+    if not isinstance(author, dict):
+        return author
+    login = author.get("login") or author.get("username") or author.get("name")
+    return {
+        "id": author.get("id"),
+        "is_bot": bool(author.get("is_bot", False)),
+        "login": login,
+        "name": author.get("name") or login,
+    }
+
+
+def _normalize_issue_list_items(items: list[dict]) -> list[dict]:
+    normalized = []
+    for item in items:
+        normalized_item = dict(item)
+        normalized_item["number"] = _normalize_issue_number(normalized_item.get("number"))
+        normalized_item["state"] = _normalize_issue_state(normalized_item.get("state"))
+        normalized_item["author"] = _normalize_issue_author(normalized_item)
+        normalized.append(normalized_item)
+    return normalized
+
+
 def _pending_gh_compat(name: str) -> None:
     raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
 
@@ -129,17 +168,24 @@ def issue_group() -> None:
 
 @issue_group.command("list")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.option("-s", "--state")
+@click.option("-s", "--state", type=click.Choice(["open", "closed", "all"]))
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-A", "--author")
 @click.option("-a", "--assignee")
 @click.option("--milestone")
 @click.option("--mention")
-@click.option("--app")
+@click.option("--app", help="Filter by app author. Unsupported on GitCode.")
 @click.option("-S", "--search")
 @click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
 @click.option("-w", "--web", is_flag=True, help="Open the issue list in the web browser.")
-@click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
+@click.option(
+    "--json",
+    "json_fields",
+    is_flag=False,
+    flag_value="",
+    default=None,
+    help="Output JSON. Optionally specify comma-separated fields.",
+)
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")
 @click.pass_context
@@ -166,6 +212,9 @@ def issue_list(
         raise click.BadParameter("must be greater than 0", param_hint="--limit")
     if app is not None:
         raise unsupported("ISSUE_LIST_APP")
+    if json_fields == "":
+        safe_echo("Available fields: " + ", ".join(getattr(issue_list, "gc_json_fields", [])))
+        raise click.exceptions.Exit(1)
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
@@ -184,7 +233,7 @@ def issue_list(
         limit=limit,
     )
     output_result(
-        items,
+        _normalize_issue_list_items(items) if json_fields or jq_query or template else items,
         json_fields,
         jq_query,
         template,

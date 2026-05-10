@@ -35,6 +35,13 @@ def _extract_label_names(issue: dict[str, Any] | None) -> list[str]:
     return names
 
 
+def _matches_all_labels(issue: dict[str, Any], labels: tuple[str, ...] | None) -> bool:
+    if not labels or len(labels) < 2:
+        return True
+    actual = {label.lower() for label in _extract_label_names(issue)}
+    return all(label.lower() in actual for label in labels)
+
+
 def _extract_login(data: dict[str, Any] | None) -> str | None:
     if not isinstance(data, dict):
         return None
@@ -88,6 +95,8 @@ class IssueAdapter:
             mention=mention,
             search=search,
         )
+        if isinstance(items, list) and labels and len(labels) > 1:
+            items = [item for item in items if _matches_all_labels(item, labels)]
         if limit is not None:
             return items[:limit]
         return items

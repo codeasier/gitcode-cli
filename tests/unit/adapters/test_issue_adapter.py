@@ -24,7 +24,7 @@ def adapter(service, user_service):
 
 class TestIssueAdapter:
     def test_list_issues_maps_author_to_creator_and_normalizes_labels(self, adapter, service):
-        service.list.return_value = [{"number": "1"}]
+        service.list.return_value = [{"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]}]
 
         result = adapter.list_issues(
             "owner",
@@ -50,7 +50,28 @@ class TestIssueAdapter:
             mention="carol",
             search="query",
         )
-        assert result == [{"number": "1"}]
+        assert result == [{"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]}]
+
+    def test_list_issues_filters_repeated_labels_with_and_semantics(self, adapter, service):
+        service.list.return_value = [
+            {"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]},
+            {"number": "2", "labels": [{"name": "bug"}]},
+        ]
+
+        result = adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=("bug", "docs"),
+            author=None,
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=None,
+        )
+
+        assert result == [{"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]}]
 
     def test_list_issues_resolves_author_me_to_current_login(self, adapter, service, user_service):
         user_service.current.return_value = {"login": "alice"}

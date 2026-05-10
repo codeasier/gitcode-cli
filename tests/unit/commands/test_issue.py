@@ -126,22 +126,36 @@ class TestIssueList:
         ]
 
     def test_json_fields(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = [{"number": "1", "title": "T", "state": "open"}]
-        result = runner.invoke(main, ["issue", "list", "--json", "number,title"])
+        mock_client.get.return_value = [{"number": "1", "title": "T", "state": "open", "user": {"login": "alice"}}]
+        result = runner.invoke(main, ["issue", "list", "--json", "number,title,state,author"])
         assert result.exit_code == 0
-        assert '"number"' in result.output
-        assert '"state"' not in result.output
+        assert '"number": 1' in result.output
+        assert '"state": "OPEN"' in result.output
+        assert '"login": "alice"' in result.output
+
+    def test_json_without_fields_lists_available_fields(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "list", "--json"])
+        assert result.exit_code == 1
+        assert "Available fields: author, assignees" in result.output
+        mock_client.get.assert_not_called()
 
     def test_jq(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "title": "T"}]
         result = runner.invoke(main, ["issue", "list", "-q", ".[0].number"])
         assert result.exit_code == 0
+        assert result.output.strip() == "1"
 
     def test_template(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "title": "T"}]
         result = runner.invoke(main, ["issue", "list", "-t", "{{.number}} {{.title}}"])
         assert result.exit_code == 0
         assert "1 T" in result.output
+
+    def test_template_supports_list_range(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"number": "1", "title": "T"}, {"number": "2", "title": "U"}]
+        result = runner.invoke(main, ["issue", "list", "-t", '{{range .}}{{.title}}{{"\\n"}}{{end}}'])
+        assert result.exit_code == 0
+        assert result.output.strip().splitlines() == ["T", "U"]
 
     def test_alias_ls(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"number": "1", "state": "open", "title": "T"}]
@@ -155,11 +169,22 @@ class TestIssueList:
         assert "Maximum number of items to fetch." in result.output
         assert "[default:" in result.output
 
-    def test_list_app_remains_unsupported(self, runner, mock_client, mock_repo):
+    def test_list_app_remains_visible_and_unsupported(self, runner, mock_client, mock_repo):
+        help_result = runner.invoke(main, ["issue", "list", "--help"])
+        assert help_result.exit_code == 0
+        assert "--app" in help_result.output
+        assert "Unsupported on GitCode." in help_result.output
+
         result = runner.invoke(main, ["issue", "list", "--app", "github-actions"])
         assert result.exit_code != 0
         assert "GitCode issue API does not support --app filtering." in result.output
         assert "recognized but not implemented" not in result.output
+        mock_client.get.assert_not_called()
+
+    def test_rejects_invalid_state(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "list", "--state", "invalid_state"])
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
         mock_client.get.assert_not_called()
 
     def test_rejects_zero_limit(self, runner, mock_client, mock_repo):

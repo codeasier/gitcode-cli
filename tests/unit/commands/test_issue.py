@@ -831,3 +831,32 @@ class TestIssueStatus:
         assert '"assigned"' in result.output
         assert '"createdBy"' in result.output
         assert '"mentioned"' not in result.output
+
+    def test_jq_outputs_grouped_status(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"number": "1", "state": "open", "title": "Assigned"}],
+            [],
+            [],
+        ]
+        result = runner.invoke(main, ["issue", "status", "--jq", ".assigned[].title"])
+        assert result.exit_code == 0
+        assert result.output == '[\n  "Assigned"\n]\n'
+
+    def test_template_outputs_grouped_status(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"number": "1", "state": "open", "title": "Assigned"}],
+            [],
+            [],
+        ]
+        result = runner.invoke(main, ["issue", "status", "--template", "{{.assigned}}"])
+        assert result.exit_code == 0
+        assert "Assigned" in result.output
+        assert "number" in result.output
+
+    def test_status_fails_when_current_user_has_no_login(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {}
+        result = runner.invoke(main, ["issue", "status"])
+        assert result.exit_code != 0
+        assert "current user has no login" in result.output

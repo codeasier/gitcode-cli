@@ -246,7 +246,8 @@ class TestIssueAdapter:
 
         assert result.approximated is True
         assert result.message == (
-            "GitCode-limited approximation of gh issue status: mentioned issues use repository mention filtering."
+            "GitCode-limited approximation of gh issue status: assigned and opened issues use user-level "
+            "GitCode results; mentioned issues use repository mention filtering."
         )
         assert result.item == {
             "assigned": [{"number": "1", "state": "open", "title": "Assigned"}],

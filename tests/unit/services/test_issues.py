@@ -54,6 +54,16 @@ class TestIssueService:
         )
         assert result == {"number": "42"}
 
+    def test_update_keeps_zero_values(self, service, mock_client):
+        mock_client.patch.return_value = {"number": "42"}
+        result = service.update("owner", "repo", "42", milestone=0)
+
+        mock_client.patch.assert_called_once_with(
+            "/repos/owner/issues/42",
+            json={"repo": "repo", "milestone": 0},
+        )
+        assert result == {"number": "42"}
+
     def test_delete(self, service, mock_client):
         mock_client.delete.return_value = {"success": True}
         result = service.delete("owner", "repo", "42")

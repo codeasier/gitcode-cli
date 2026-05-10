@@ -224,7 +224,7 @@ def issue_view(
 @click.option("-a", "--assignee")
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-l", "--label", "labels", multiple=True)
-@click.option("-m", "--milestone")
+@click.option("-m", "--milestone", type=int)
 @click.option("-F", "--body-file")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
@@ -239,7 +239,7 @@ def issue_create(
     assignee: str | None,
     editor: bool,
     labels: tuple[str, ...] | None,
-    milestone: str | None,
+    milestone: int | None,
     body_file: str | None,
     web: bool,
     json_fields: str | None,
@@ -252,8 +252,8 @@ def issue_create(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/new")
         return
     title = prompt_if_missing(title, "Title")
-    if len(title) > 255:
-        raise click.ClickException("title must be 255 characters or fewer")
+    if len(title) > 200:
+        raise click.ClickException("title must be 200 characters or fewer")
     if template and (body is not None or body_file is not None or editor):
         raise click.UsageError("--template cannot be used with --body, --body-file, or --editor.")
     body = (
@@ -426,7 +426,7 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str, com
 @click.option("-F", "--body-file")
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label", "add_labels", multiple=True)
-@click.option("-m", "--milestone")
+@click.option("-m", "--milestone", type=int)
 @click.option("--remove-assignee")
 @click.option("--remove-label", "remove_labels", multiple=True)
 @click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the issue.")
@@ -440,7 +440,7 @@ def issue_edit(
     body_file: str | None,
     add_assignee: str | None,
     add_labels: tuple[str, ...] | None,
-    milestone: str | None,
+    milestone: int | None,
     remove_assignee: str | None,
     remove_labels: tuple[str, ...] | None,
     remove_milestone: bool,

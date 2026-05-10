@@ -90,7 +90,7 @@ class TestIssueAdapter:
             body="Body",
             assignee="alice",
             labels=("bug", "docs"),
-            milestone="v1",
+            milestone=1,
         )
 
         service.create.assert_called_once_with(
@@ -100,7 +100,7 @@ class TestIssueAdapter:
             body="Body",
             assignee="alice",
             labels="bug,docs",
-            milestone="v1",
+            milestone=1,
         )
 
     def test_delete_issue_calls_service_delete(self, adapter, service):
@@ -197,6 +197,36 @@ class TestIssueAdapter:
         )
 
         service.update.assert_called_once_with("owner", "repo", "42", labels="existing,bug,docs")
+
+    def test_edit_issue_sets_milestone_number(self, adapter, service):
+        adapter.edit_issue(
+            "owner",
+            "repo",
+            "42",
+            title=None,
+            body=None,
+            add_assignee=None,
+            add_labels=None,
+            milestone=1,
+            remove_milestone=False,
+        )
+
+        service.update.assert_called_once_with("owner", "repo", "42", milestone=1)
+
+    def test_edit_issue_removes_milestone_with_zero(self, adapter, service):
+        adapter.edit_issue(
+            "owner",
+            "repo",
+            "42",
+            title=None,
+            body=None,
+            add_assignee=None,
+            add_labels=None,
+            milestone=None,
+            remove_milestone=True,
+        )
+
+        service.update.assert_called_once_with("owner", "repo", "42", milestone=0)
 
     def test_develop_returns_browser_fallback_message(self, adapter):
         result = adapter.develop("owner", "repo", "42", base="main", name="feature")

@@ -46,14 +46,14 @@ class GitCodeClient:
         if response.status_code == 401:
             try:
                 data = response.json()
-                original = data.get("message") or str(data)
+                original = data.get("error_message") or data.get("message") or str(data)
             except Exception:
                 original = response.text
             raise APIError(f"Authentication failed: {original}. Run 'gc auth login' to authenticate.", 401)
         if response.status_code >= 400:
             try:
                 data = response.json()
-                message = data.get("message") or str(data)
+                message = data.get("error_message") or data.get("message") or str(data)
             except Exception:
                 message = response.text
             raise APIError(message or "GitCode API request failed", response.status_code)

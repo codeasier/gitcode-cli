@@ -94,6 +94,22 @@ class TestGitCodeClientMethods:
             with pytest.raises(APIError, match="Bad request"):
                 client.get("error")
 
+    def test_api_error_prefers_error_message(self, client: GitCodeClient):
+        with respx.mock:
+            respx.get("https://api.gitcode.com/api/v5/error").mock(
+                return_value=Response(
+                    404,
+                    json={
+                        "error_code": 404,
+                        "error_message": "Project not found:owner/missing",
+                        "trace_id": "hidden",
+                    },
+                )
+            )
+            with pytest.raises(APIError, match="Project not found:owner/missing") as exc_info:
+                client.get("error")
+            assert "trace_id" not in str(exc_info.value)
+
     def test_api_error_with_non_json_body(self, client: GitCodeClient):
         with respx.mock:
             respx.get("https://api.gitcode.com/api/v5/error").mock(

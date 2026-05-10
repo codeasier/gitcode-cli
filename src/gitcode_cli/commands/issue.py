@@ -26,6 +26,43 @@ def _echo_issue_summary(items: list[dict]) -> None:
         safe_echo(output)
 
 
+def _issue_status_labels(item: dict) -> str:
+    labels = item.get("labels") or []
+    if isinstance(labels, str):
+        return labels
+    names = []
+    for label in labels:
+        if isinstance(label, dict):
+            name = label.get("name") or label.get("title")
+            if name:
+                names.append(str(name))
+        elif label:
+            names.append(str(label))
+    return ", ".join(names)
+
+
+def _echo_issue_status(data: dict[str, list[dict]]) -> None:
+    sections = [
+        ("Issues assigned to you", data.get("assigned") or []),
+        ("Issues mentioning you", data.get("mentioned") or []),
+        ("Issues opened by you", data.get("createdBy") or []),
+    ]
+    for title, items in sections:
+        safe_echo(title)
+        if not items:
+            safe_echo("  No issues found")
+            safe_echo("")
+            continue
+        for item in items:
+            labels = _issue_status_labels(item)
+            created_at = item.get("created_at") or item.get("createdAt") or ""
+            safe_echo(
+                f"  #{safe_number(item, '?')}  {str(item.get('state') or '').upper()}  "
+                f"{item.get('title') or ''}  {labels}  {created_at}".rstrip()
+            )
+        safe_echo("")
+
+
 def _pending_gh_compat(name: str) -> None:
     raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
 
@@ -506,17 +543,32 @@ def issue_delete(ctx: click.Context, repo_name: str | None, identifier: str, yes
 
 @issue_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
+@click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
+@click.option("-t", "--template", help="Format output using a Go template string.")
 @click.pass_context
-def issue_status(ctx: click.Context, repo_name: str | None) -> None:
+def issue_status(
+    ctx: click.Context,
+    repo_name: str | None,
+    json_fields: str | None,
+    jq_query: str | None,
+    template: str | None,
+) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = IssueService(app.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(app.client()))
     result = adapter.status(owner, repo)
-    safe_echo(result.message)
-    safe_echo(f"Repository open issues for {owner}/{repo}:")
-    for item in result.items or []:
-        safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
+    data = result.item or {"assigned": [], "mentioned": [], "createdBy": []}
+    if json_fields or jq_query or template:
+        output_result(data, json_fields, jq_query, template, default_formatter=_echo_issue_status)
+        return
+    safe_echo(f"Relevant issues in {owner}/{repo}")
+    safe_echo("")
+    if result.message:
+        safe_echo(result.message)
+        safe_echo("")
+    _echo_issue_status(data)
 
 
 @issue_group.command("develop")

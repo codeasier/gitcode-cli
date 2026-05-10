@@ -27,6 +27,13 @@ class TestIssueService:
         mock_client.get.assert_called_once_with("/repos/owner/repo/issues", params={"state": "open", "per_page": 10})
         assert result == [{"number": "1"}]
 
+    def test_list_user_issues(self, service, mock_client):
+        mock_client.get.return_value = [{"number": "1"}]
+        result = service.list_user_issues(filter="assigned", state="open")
+
+        mock_client.get.assert_called_once_with("/user/issues", params={"filter": "assigned", "state": "open"})
+        assert result == [{"number": "1"}]
+
     def test_get(self, service, mock_client):
         mock_client.get.return_value = {"number": "42"}
         result = service.get("owner", "repo", "42")

@@ -205,7 +205,7 @@ class IssueAdapter:
         milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
-        data = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
+        data: dict[str, Any] = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
 
         if add_assignee is not None:
             data["assignee"] = add_assignee

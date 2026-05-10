@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -234,11 +234,28 @@ class TestIssueAdapter:
         assert result.message == "Opening issue #42 in the browser instead."
         assert result.warning == "Note: 'issue develop' does not create a local branch on GitCode."
 
-    def test_status_returns_approximation_message(self, adapter, service):
-        service.list.return_value = [{"number": "1", "state": "open", "title": "Test"}]
+    def test_status_returns_grouped_user_context(self, adapter, service, user_service):
+        user_service.current.return_value = {"login": "alice"}
+        service.list_user_issues.side_effect = [
+            [{"number": "1", "state": "open", "title": "Assigned"}],
+            [{"number": "2", "state": "open", "title": "Created"}],
+        ]
+        service.list.return_value = [{"number": "3", "state": "open", "title": "Mentioned"}]
 
         result = adapter.status("owner", "repo")
 
         assert result.approximated is True
-        assert result.message == "GitCode-limited approximation of gh issue status"
-        assert result.items == [{"number": "1", "state": "open", "title": "Test"}]
+        assert result.message == (
+            "GitCode-limited approximation of gh issue status: assigned and opened issues use user-level "
+            "GitCode results; mentioned issues use repository mention filtering."
+        )
+        assert result.item == {
+            "assigned": [{"number": "1", "state": "open", "title": "Assigned"}],
+            "mentioned": [{"number": "3", "state": "open", "title": "Mentioned"}],
+            "createdBy": [{"number": "2", "state": "open", "title": "Created"}],
+        }
+        assert service.list_user_issues.call_args_list == [
+            call(filter="assigned", state="open"),
+            call(filter="created", state="open"),
+        ]
+        service.list.assert_called_once_with("owner", "repo", state="open", mention="alice")

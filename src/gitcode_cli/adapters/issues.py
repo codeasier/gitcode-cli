@@ -229,9 +229,16 @@ class IssueAdapter:
         return self.service.update(owner, repo, number, **data)
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:
-        items = self.service.list(owner, repo, state="open")
+        if self.user_service is None:
+            raise click.ClickException("failed to resolve current user: current user lookup is unavailable")
+        current_login = _extract_login(self.user_service.current())
+        if not current_login:
+            raise click.ClickException("failed to resolve current user: current user has no login")
+        assigned = self.service.list_user_issues(filter="assigned", state="open") or []
+        created = self.service.list_user_issues(filter="created", state="open") or []
+        mentioned = self.service.list(owner, repo, state="open", mention=current_login) or []
         return AdapterActionResult(
-            items=items,
+            item={"assigned": assigned, "mentioned": mentioned, "createdBy": created},
             message=capability_message("ISSUE_STATUS_GH_SEMANTICS"),
             approximated=True,
         )

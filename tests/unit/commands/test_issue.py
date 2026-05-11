@@ -866,7 +866,7 @@ class TestIssueStatus:
         ]
         result = runner.invoke(main, ["issue", "status", "--jq", ".assigned[].title"])
         assert result.exit_code == 0
-        assert result.output == '[\n  "Assigned"\n]\n'
+        assert result.output == '"Assigned"\n'
 
     def test_template_outputs_grouped_status(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [

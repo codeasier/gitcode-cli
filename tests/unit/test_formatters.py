@@ -119,6 +119,11 @@ class TestRenderTemplate:
         result = render_template(data, "no placeholders")
         assert result == "no placeholders"
 
+    def test_range_over_list(self):
+        data = [{"title": "A"}, {"title": "B"}]
+        result = render_template(data, '{{range .}}{{.title}}{{"\\n"}}{{end}}')
+        assert result == "A\nB\n"
+
 
 class TestListAndDetailFormatters:
     def test_format_issue_list_includes_author_when_available(self):
@@ -203,12 +208,20 @@ class TestOutputResult:
         mock_formatter.assert_called_once_with(data)
 
     def test_jq_query(self, capsys, mocker):
-        mock_apply_jq = mocker.patch("gitcode_cli.formatters.apply_jq", return_value=[{"id": 1}])
-        data = {"items": [{"id": 1}]}
+        mock_apply_jq = mocker.patch("gitcode_cli.formatters.apply_jq", return_value=[{"id": 1}, {"id": 2}])
+        data = {"items": [{"id": 1}, {"id": 2}]}
         output_result(data, json_fields=None, jq_query=".items[]", template=None, default_formatter=lambda x: None)
         captured = capsys.readouterr()
         mock_apply_jq.assert_called_once_with(data, ".items[]")
-        assert json.loads(captured.out) == [{"id": 1}]
+        assert json.loads(captured.out) == [{"id": 1}, {"id": 2}]
+
+    def test_jq_query_unwraps_single_result(self, capsys, mocker):
+        mocker.patch("gitcode_cli.formatters.apply_jq", return_value=["T"])
+        output_result(
+            [{"title": "T"}], json_fields=None, jq_query=".[0].title", template=None, default_formatter=lambda x: None
+        )
+        captured = capsys.readouterr()
+        assert json.loads(captured.out) == "T"
 
 
 class TestApplyJq:

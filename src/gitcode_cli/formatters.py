@@ -19,21 +19,23 @@ def dump_json(data, fields: list[str] | None = None) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+def _field_value(item: dict, field: str):
+    if "." in field:
+        parts = field.split(".")
+        value = item
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                return None
+        return value
+    return item.get(field)
+
+
 def _filter_fields(item: dict, fields: list[str]) -> dict:
     result = {}
     for field in fields:
-        if "." in field:
-            parts = field.split(".")
-            value = item
-            for part in parts:
-                if isinstance(value, dict):
-                    value = value.get(part)
-                else:
-                    value = None
-                    break
-            result[field] = value
-        else:
-            result[field] = item.get(field)
+        result[field] = _field_value(item, field)
     return result
 
 
@@ -138,26 +140,22 @@ def apply_jq(data, query: str):
 
 def render_template(data, template: str) -> str:
     def replacer(match):
-        key = match.group(1)
-        if "." in key:
-            parts = key.split(".")
-            value = data
-            for part in parts:
-                if isinstance(value, dict):
-                    value = value.get(part)
-                else:
-                    value = None
-                    break
-        else:
-            value = data.get(key) if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return ""
+        value = _field_value(data, match.group(1))
         return str(value) if value is not None else ""
 
-    return re.sub(r"\{\{\.(\w+(?:\.\w+)*)\}\}", replacer, template)
+    range_match = re.fullmatch(r"\{\{range \.\}\}(.+)\{\{end\}\}", template, flags=re.S)
+    if range_match and isinstance(data, list):
+        return "".join(render_template(item, range_match.group(1)) for item in data)
+    return re.sub(r"\{\{\s*\"\\n\"\s*\}\}", "\n", re.sub(r"\{\{\.(\w+(?:\.\w+)*)\}\}", replacer, template))
 
 
 def output_result(data, json_fields: str | None, jq_query: str | None, template: str | None, default_formatter):
     if jq_query:
         data = apply_jq(data, jq_query)
+        if len(data) == 1:
+            data = data[0]
         safe_echo(dump_json(data))
         return
     if template:
@@ -167,7 +165,7 @@ def output_result(data, json_fields: str | None, jq_query: str | None, template:
                 data = [_filter_fields(item, fields) for item in data]
             else:
                 data = _filter_fields(data, fields)
-        if isinstance(data, list):
+        if isinstance(data, list) and "{{range .}}" not in template:
             for item in data:
                 safe_echo(render_template(item, template))
         else:

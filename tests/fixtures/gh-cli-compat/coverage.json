@@ -25,7 +25,8 @@
         {"name": "--remove-project", "reason": "project association is outside the selected #86 placeholder set"}
       ],
       "list": [
-        {"name": "-m", "reason": "gh short alias differs from gc, which only exposes --milestone"}
+        {"name": "-m", "reason": "gh short alias differs from gc, which only exposes --milestone"},
+        {"name": "--app", "reason": "GitCode issue API does not support application filtering"}
       ]
     },
     "pr": {

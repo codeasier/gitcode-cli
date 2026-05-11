@@ -310,7 +310,7 @@ def issue_view(
 @click.option("-a", "--assignee")
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-l", "--label", "labels", multiple=True)
-@click.option("-m", "--milestone", type=int)
+@click.option("-m", "--milestone")
 @click.option("-F", "--body-file")
 @click.option("-w", "--web", is_flag=True, help="Open the issue in the web browser.")
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
@@ -325,7 +325,7 @@ def issue_create(
     assignee: str | None,
     editor: bool,
     labels: tuple[str, ...] | None,
-    milestone: int | None,
+    milestone: str | None,
     body_file: str | None,
     web: bool,
     json_fields: str | None,
@@ -349,6 +349,8 @@ def issue_create(
     )
     if editor and body is None:
         raise click.ClickException("Editor was closed without saving an issue body.")
+    if body is None:
+        raise click.UsageError("--title and --body are required when not running interactively")
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     item = adapter.create_issue(

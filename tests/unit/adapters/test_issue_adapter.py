@@ -104,16 +104,19 @@ class TestIssueAdapter:
         )
 
     def test_create_issue_normalizes_labels(self, adapter, service):
+        service.list_labels.return_value = [{"name": "bug"}, {"name": "docs"}]
+
         adapter.create_issue(
             "owner",
             "repo",
             title="Bug",
             body="Body",
             assignee="alice",
-            labels=("bug", "docs"),
-            milestone=1,
+            labels=(" bug ", "docs"),
+            milestone="1",
         )
 
+        service.list_labels.assert_called_once_with("owner", "repo", page=1, per_page=100)
         service.create.assert_called_once_with(
             "owner",
             "repo",
@@ -123,6 +126,91 @@ class TestIssueAdapter:
             labels="bug,docs",
             milestone=1,
         )
+
+    def test_create_issue_rejects_unknown_label(self, adapter, service):
+        service.list_labels.return_value = [{"name": "bug"}]
+
+        with pytest.raises(Exception, match="could not add label: 'missing' not found"):
+            adapter.create_issue(
+                "owner",
+                "repo",
+                title="Bug",
+                body="Body",
+                assignee=None,
+                labels=("missing",),
+                milestone=None,
+            )
+
+        service.create.assert_not_called()
+
+    def test_create_issue_resolves_milestone_name(self, adapter, service):
+        service.list_milestones.return_value = [{"title": "v1.0", "number": 7}]
+
+        adapter.create_issue(
+            "owner",
+            "repo",
+            title="Bug",
+            body="Body",
+            assignee=None,
+            labels=None,
+            milestone="v1.0",
+        )
+
+        service.list_milestones.assert_called_once_with("owner", "repo", state="all", page=1, per_page=100)
+        service.create.assert_called_once_with(
+            "owner",
+            "repo",
+            title="Bug",
+            body="Body",
+            assignee=None,
+            labels=None,
+            milestone=7,
+        )
+
+    def test_create_issue_resolves_milestone_name_when_number_is_string(self, adapter, service):
+        service.list_milestones.return_value = [{"title": "v1.0", "number": "7"}]
+
+        adapter.create_issue(
+            "owner",
+            "repo",
+            title="Bug",
+            body="Body",
+            assignee=None,
+            labels=None,
+            milestone="v1.0",
+        )
+
+        service.create.assert_called_once_with(
+            "owner",
+            "repo",
+            title="Bug",
+            body="Body",
+            assignee=None,
+            labels=None,
+            milestone=7,
+        )
+
+    def test_create_issue_reads_label_pages_until_exhausted(self, adapter, service):
+        service.list_labels.side_effect = [
+            [{"name": f"label-{index}"} for index in range(100)],
+            [{"name": "target"}],
+        ]
+
+        adapter.create_issue(
+            "owner",
+            "repo",
+            title="Bug",
+            body="Body",
+            assignee=None,
+            labels=("target",),
+            milestone=None,
+        )
+
+        assert service.list_labels.call_args_list == [
+            call("owner", "repo", page=1, per_page=100),
+            call("owner", "repo", page=2, per_page=100),
+        ]
+        service.create.assert_called_once()
 
     def test_delete_issue_calls_service_delete(self, adapter, service):
         service.delete.return_value = {"success": True}

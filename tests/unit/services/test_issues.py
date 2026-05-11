@@ -34,6 +34,22 @@ class TestIssueService:
         mock_client.get.assert_called_once_with("/user/issues", params={"filter": "assigned", "state": "open"})
         assert result == [{"number": "1"}]
 
+    def test_list_labels(self, service, mock_client):
+        mock_client.get.return_value = [{"name": "bug"}]
+        result = service.list_labels("owner", "repo", per_page=100)
+
+        mock_client.get.assert_called_once_with("/repos/owner/repo/labels", params={"per_page": 100})
+        assert result == [{"name": "bug"}]
+
+    def test_list_milestones(self, service, mock_client):
+        mock_client.get.return_value = [{"title": "v1.0", "number": 7}]
+        result = service.list_milestones("owner", "repo", state="all", per_page=100)
+
+        mock_client.get.assert_called_once_with(
+            "/repos/owner/repo/milestones", params={"state": "all", "per_page": 100}
+        )
+        assert result == [{"title": "v1.0", "number": 7}]
+
     def test_get(self, service, mock_client):
         mock_client.get.return_value = {"number": "42"}
         result = service.get("owner", "repo", "42")

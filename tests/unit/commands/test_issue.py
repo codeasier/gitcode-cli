@@ -366,16 +366,22 @@ class TestIssueCreate:
 
     def test_rejects_title_longer_than_200_characters(self, runner, mock_client, mock_repo):
         title = "T" * 201
-        result = runner.invoke(main, ["issue", "create", "-t", title])
+        result = runner.invoke(main, ["issue", "create", "-t", title, "-b", "Body"])
         assert result.exit_code != 0
         assert "title must be 200 characters or fewer" in result.output
         mock_client.post.assert_not_called()
 
     def test_allows_title_with_200_characters(self, runner, mock_client, mock_repo):
         title = "T" * 200
-        result = runner.invoke(main, ["issue", "create", "-t", title])
+        result = runner.invoke(main, ["issue", "create", "-t", title, "-b", "Body"])
         assert result.exit_code == 0
         mock_client.post.assert_called_once()
+
+    def test_missing_body_returns_usage_error_before_api_request(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "create", "-t", "T"])
+        assert result.exit_code != 0
+        assert "--title and --body are required when not running interactively" in result.output
+        mock_client.post.assert_not_called()
 
     def test_web(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
@@ -391,22 +397,37 @@ class TestIssueCreate:
         mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/new")
 
     def test_alias_new(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "new", "-t", "T"])
+        result = runner.invoke(main, ["issue", "new", "-t", "T", "-b", "Body"])
         assert result.exit_code == 0
         mock_client.post.assert_called_once()
 
     def test_with_options(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "create", "-t", "T", "-a", "user", "-l", "bug", "-m", "1"])
+        mock_client.get.return_value = [{"name": "bug"}]
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "Body", "-a", "user", "-l", "bug", "-m", "1"])
         assert result.exit_code == 0
         json_data = mock_client.post.call_args[1]["json"]
         assert json_data["assignee"] == "user"
         assert json_data["labels"] == "bug"
         assert json_data["milestone"] == 1
 
-    def test_milestone_requires_number(self, runner, mock_client, mock_repo):
-        result = runner.invoke(main, ["issue", "create", "-t", "T", "-m", "v1.0"])
+    def test_unknown_label_returns_error_before_create(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"name": "bug"}]
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "Body", "-l", "missing"])
         assert result.exit_code != 0
-        assert "'v1.0' is not a valid integer" in result.output
+        assert "could not add label: 'missing' not found" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_milestone_name_resolves_to_number(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"title": "v1.0", "number": 7}]
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "Body", "-m", "v1.0"])
+        assert result.exit_code == 0
+        assert mock_client.post.call_args[1]["json"]["milestone"] == 7
+
+    def test_missing_milestone_name_returns_error_before_create(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"title": "v2.0", "number": 8}]
+        result = runner.invoke(main, ["issue", "create", "-t", "T", "-b", "Body", "-m", "v1.0"])
+        assert result.exit_code != 0
+        assert "could not resolve milestone: 'v1.0' not found" in result.output
         mock_client.post.assert_not_called()
 
     def test_editor_uses_prompted_title_before_body_editing(self, runner, mock_client, mock_repo, monkeypatch):

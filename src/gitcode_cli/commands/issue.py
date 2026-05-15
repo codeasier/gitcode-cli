@@ -753,6 +753,7 @@ issue_edit.short_help = "Edit issues"
 issue_edit.help = "Edit issues."
 issue_delete.short_help = "Delete issue"
 issue_delete.help = "Delete issue."
+set_gc_help(issue_delete, gc_usage="gc issue delete {<number> | <url>} [flags]")
 issue_status.short_help = "Show status of relevant issues"
 issue_status.help = "Show status of relevant issues."
 issue_develop.short_help = "Manage linked branches for an issue"

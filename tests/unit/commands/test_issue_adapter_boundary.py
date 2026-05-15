@@ -121,10 +121,11 @@ class TestIssueCommandAdapterBoundary:
             reason="completed",
         )
 
-    def test_issue_develop_rejects_unsupported_base_before_adapter(
+    def test_issue_develop_rejects_unsupported_base_after_issue_validation(
         self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock
     ) -> None:
-        issue_service_ctor = MagicMock()
+        service = MagicMock()
+        issue_service_ctor = MagicMock(return_value=service)
         issue_adapter_ctor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -134,13 +135,15 @@ class TestIssueCommandAdapterBoundary:
 
         assert result.exit_code != 0
         assert "--base" in result.output
-        issue_service_ctor.assert_not_called()
+        issue_service_ctor.assert_called_once_with(mock_app_client)
+        service.get.assert_called_once_with("owner", "repo", "42")
         issue_adapter_ctor.assert_not_called()
 
-    def test_issue_develop_rejects_unsupported_name_before_adapter(
+    def test_issue_develop_rejects_unsupported_name_after_issue_validation(
         self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock
     ) -> None:
-        issue_service_ctor = MagicMock()
+        service = MagicMock()
+        issue_service_ctor = MagicMock(return_value=service)
         issue_adapter_ctor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -150,5 +153,6 @@ class TestIssueCommandAdapterBoundary:
 
         assert result.exit_code != 0
         assert "--name" in result.output
-        issue_service_ctor.assert_not_called()
+        issue_service_ctor.assert_called_once_with(mock_app_client)
+        service.get.assert_called_once_with("owner", "repo", "42")
         issue_adapter_ctor.assert_not_called()

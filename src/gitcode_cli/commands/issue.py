@@ -571,10 +571,6 @@ def issue_edit(
     remove_labels: tuple[str, ...] | None,
     remove_milestone: bool,
 ) -> None:
-    if remove_assignee is not None:
-        _pending_gh_compat("issue edit --remove-assignee")
-    if remove_labels:
-        _pending_gh_compat("issue edit --remove-label")
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -607,10 +603,12 @@ def issue_edit(
         body=body,
         add_assignee=add_assignee,
         add_labels=add_labels,
+        remove_assignee=remove_assignee,
+        remove_labels=remove_labels,
         milestone=milestone,
         remove_milestone=remove_milestone,
     )
-    safe_echo(f"Edited issue #{safe_number(item, number)}")
+    safe_echo((item or {}).get("html_url") or f"Edited issue #{safe_number(item, number)}")
 
 
 @issue_group.command("delete")

@@ -292,6 +292,8 @@ class IssueAdapter:
         body: str | None,
         add_assignee: str | None,
         add_labels: tuple[str, ...] | None,
+        remove_assignee: str | None,
+        remove_labels: tuple[str, ...] | None,
         milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
@@ -299,15 +301,18 @@ class IssueAdapter:
 
         if add_assignee is not None:
             data["assignee"] = add_assignee
+        if remove_assignee is not None:
+            data["assignee"] = ""
 
-        if add_labels:
+        if add_labels or remove_labels:
             current = self.service.get(owner, repo, number)
             existing = _extract_label_names(current)
+            removed = {label.strip() for label in remove_labels or () if label.strip()}
             merged: list[str] = []
             seen: set[str] = set()
-            for label in [*existing, *list(add_labels)]:
+            for label in [*existing, *list(add_labels or ())]:
                 normalized = label.strip()
-                if normalized and normalized not in seen:
+                if normalized and normalized not in removed and normalized not in seen:
                     seen.add(normalized)
                     merged.append(normalized)
             data["labels"] = ",".join(merged)

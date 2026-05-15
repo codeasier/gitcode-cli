@@ -116,7 +116,7 @@ def _resolve_issue_target(app, repo_name: str | None, identifier: str) -> tuple[
 
 
 def _validate_issue_comment_history_flags(
-    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool
+    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool, has_body_source: bool
 ) -> None:
     if create_if_none and not edit_last:
         raise click.UsageError(capability_message("ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST"))
@@ -126,6 +126,24 @@ def _validate_issue_comment_history_flags(
         raise click.UsageError("--yes can only be used together with --delete-last.")
     if edit_last and delete_last:
         raise click.UsageError("Specify only one of --edit-last or --delete-last.")
+    if delete_last and has_body_source:
+        raise click.UsageError("--delete-last cannot be used with --body, --body-file, or --editor.")
+
+
+def _validate_issue_comment_body_sources(*, body: str | None, body_file: str | None, editor: bool, web: bool) -> None:
+    selected = [body is not None, body_file is not None, editor, web]
+    if sum(selected) > 1:
+        raise click.UsageError("specify only one of --body, --body-file, --editor, or --web")
+
+
+def _issue_comment_url(owner: str, repo: str, number: str, item: dict | None) -> str:
+    if item:
+        if item.get("html_url"):
+            return str(item["html_url"])
+        comment_id = item.get("id")
+        if comment_id is not None:
+            return f"https://gitcode.com/{owner}/{repo}/issues/{number}#issuecomment-{comment_id}"
+    return f"https://gitcode.com/{owner}/{repo}/issues/{number}"
 
 
 def _handle_issue_comment_history(
@@ -140,8 +158,8 @@ def _handle_issue_comment_history(
     create_if_none: bool,
     yes: bool,
 ) -> None:
-    if edit_last:
-        body = prompt_if_missing(body, "Comment")
+    if edit_last and body is None:
+        raise click.UsageError("--body or --body-file is required when not running interactively")
     if delete_last and not yes and not click.confirm("Delete your last issue comment?", default=False):
         raise click.ClickException("Aborted.")
     result = adapter.manage_comment_history(
@@ -156,9 +174,9 @@ def _handle_issue_comment_history(
         safe_echo(f"Deleted last comment on issue #{number}")
         return
     if result.message == "created":
-        safe_echo(result.item.get("html_url") or f"Commented on issue #{number}")
+        safe_echo(_issue_comment_url(owner, repo, number, result.item))
         return
-    safe_echo((result.item or {}).get("html_url") or f"Edited last comment on issue #{number}")
+    safe_echo(_issue_comment_url(owner, repo, number, result.item))
 
 
 @click.group("issue", cls=GCSectionGroup, help="Work with GitCode issues.")
@@ -443,6 +461,7 @@ def issue_comment(
     yes: bool,
 ) -> None:
     app = ctx.obj["app"]
+    _validate_issue_comment_body_sources(body=body, body_file=body_file, editor=editor, web=web)
     owner, repo, number, target_url = _resolve_issue_target(app, repo_name, identifier)
     if web:
         open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
@@ -453,6 +472,7 @@ def issue_comment(
         delete_last=delete_last,
         edit_last=edit_last,
         yes=yes,
+        has_body_source=body is not None or body_file is not None or editor,
     )
     history_mode = edit_last or delete_last
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
@@ -478,7 +498,7 @@ def issue_comment(
 
     body = prompt_if_missing(body, "Comment")
     item = adapter.comment_issue(owner, repo, number, body=body)
-    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
+    safe_echo(_issue_comment_url(owner, repo, number, item))
 
 
 @issue_group.command("reopen")
@@ -719,12 +739,22 @@ issue_close.short_help = "Close issue"
 issue_close.help = "Close issue."
 issue_comment.short_help = "Add a comment to an issue"
 issue_comment.help = "Add a comment to an issue."
+set_gc_help(
+    issue_comment,
+    gc_examples=[
+        'gc issue comment 123 --body "I have a question"',
+        "gc issue comment 123 --body-file comment.md",
+        "gc issue comment 123 --edit-last --body-file comment.md",
+        "gc issue comment 123 --web",
+    ],
+)
 issue_reopen.short_help = "Reopen issue"
 issue_reopen.help = "Reopen issue."
 issue_edit.short_help = "Edit issues"
 issue_edit.help = "Edit issues."
 issue_delete.short_help = "Delete issue"
 issue_delete.help = "Delete issue."
+set_gc_help(issue_delete, gc_usage="gc issue delete {<number> | <url>} [flags]")
 issue_status.short_help = "Show status of relevant issues"
 issue_status.help = "Show status of relevant issues."
 issue_develop.short_help = "Manage linked branches for an issue"

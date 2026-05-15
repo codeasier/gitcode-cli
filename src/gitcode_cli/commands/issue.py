@@ -625,8 +625,8 @@ def issue_status(
 @issue_group.command("develop")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
-@click.option("-b", "--base", help="Base branch for the develop branch.")
-@click.option("-n", "--name", help="Name for the local branch.")
+@click.option("-b", "--base", help="Unsupported: GitCode does not provide an issue develop branch API.")
+@click.option("-n", "--name", help="Unsupported: GitCode does not provide an issue develop branch API.")
 @click.pass_context
 def issue_develop(
     ctx: click.Context,
@@ -636,10 +636,6 @@ def issue_develop(
     name: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    if base is not None:
-        raise unsupported("ISSUE_DEVELOP_BASE")
-    if name is not None:
-        raise unsupported("ISSUE_DEVELOP_NAME")
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
         assert url_repo is not None
@@ -648,6 +644,11 @@ def issue_develop(
         owner, repo = resolve_repo(repo_name or app.repo)
         number = require_issue_number(identifier)
     service = IssueService(app.client())
+    service.get(owner, repo, number)
+    if base is not None:
+        raise unsupported("ISSUE_DEVELOP_BASE")
+    if name is not None:
+        raise unsupported("ISSUE_DEVELOP_NAME")
     adapter = IssueAdapter(service)
     result = adapter.develop(owner, repo, number, base=base, name=name)
     if result.warning:

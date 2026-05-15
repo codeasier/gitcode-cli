@@ -757,16 +757,36 @@ class TestIssueComment:
 
 class TestIssueReopen:
     def test_default(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.get.return_value = {"number": "42", "state": "closed", "title": "Test issue"}
+        mock_client.patch.return_value = {"number": "42", "state": "open", "title": "Test issue"}
         result = runner.invoke(main, ["issue", "reopen", "42"])
         assert result.exit_code == 0
-        assert "Reopened issue #42" in result.output
+        assert "✓ Reopened issue #42 (Test issue)" in result.output
         mock_client.patch.assert_called_once()
 
     def test_url(self, runner, mock_client):
         mock_client.get.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "reopen", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
+
+    def test_with_comment(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        result = runner.invoke(main, ["issue", "reopen", "42", "--comment", "Reopening for review"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args_list[0].args[0] == "/repos/owner/issues/42"
+        assert mock_client.post.call_args_list[0].args[0] == "/repos/owner/repo/issues/42/comments"
+        assert mock_client.mock_calls[1][0] == "patch"
+        assert mock_client.mock_calls[2][0] == "post"
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/issues/42/comments", json={"body": "Reopening for review"}
+        )
+
+    def test_with_comment_does_not_comment_when_reopen_fails(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.patch.side_effect = RuntimeError("boom")
+        result = runner.invoke(main, ["issue", "reopen", "42", "--comment", "Reopening for review"])
+        assert result.exit_code != 0
+        mock_client.post.assert_not_called()
 
     def test_reopen_rejects_non_numeric_identifier(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "reopen", "not-a-number"])
@@ -777,10 +797,10 @@ class TestIssueReopen:
 
 class TestIssueReopenIdempotency:
     def test_reopen_already_open_issue_is_idempotent(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test issue"}
         result = runner.invoke(main, ["issue", "reopen", "42"])
         assert result.exit_code == 0
-        assert "already open" in result.output.lower()
+        assert "! Issue #42 (Test issue) is already open" in result.output
         mock_client.patch.assert_not_called()
 
 

@@ -295,11 +295,13 @@ class IssueAdapter:
                 return comment
         return None
 
-    def reopen_issue(self, owner: str, repo: str, number: str) -> AdapterActionResult:
+    def reopen_issue(self, owner: str, repo: str, number: str, *, comment: str | None = None) -> AdapterActionResult:
         current = self.service.get(owner, repo, number)
         if current and current.get("state") == "open":
             return AdapterActionResult(item=current, message="already_open")
         item = self.service.update(owner, repo, number, state="reopen")
+        if comment:
+            self.service.comment(owner, repo, number, comment)
         return AdapterActionResult(item=item, message="reopened")
 
     def delete_issue(self, owner: str, repo: str, number: str) -> AdapterActionResult:

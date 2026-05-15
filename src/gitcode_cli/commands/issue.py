@@ -63,6 +63,18 @@ def _echo_issue_status(data: dict[str, list[dict]]) -> None:
         safe_echo("")
 
 
+def _format_issue_reference(item: dict | None, fallback: str) -> str:
+    number = safe_number(item, fallback)
+    title = item.get("title") if isinstance(item, dict) else None
+    return f"#{number} ({title})" if title else f"#{number}"
+
+
+def _normalize_issue_close_reason(reason: str | None) -> str | None:
+    if reason == "not planned":
+        return "not_planned"
+    return reason
+
+
 def _normalize_issue_state(state: object) -> object:
     if not isinstance(state, str):
         return state
@@ -394,7 +406,12 @@ def issue_create(
 @click.argument("identifier")
 @click.option("-c", "--comment", help="Leave a closing comment.")
 @click.option("--duplicate-of", help="Close as a GitCode-limited duplicate approximation by posting a comment first.")
-@click.option("-r", "--reason", type=click.Choice(["completed", "not_planned"]), help="Reason for closing.")
+@click.option(
+    "-r",
+    "--reason",
+    type=click.Choice(["completed", "not_planned", "not planned"]),
+    help="Reason for closing.",
+)
 @click.pass_context
 def issue_close(
     ctx: click.Context,
@@ -418,19 +435,20 @@ def issue_close(
         comment = f"{comment}\n\n{duplicate_comment}" if comment else duplicate_comment
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
-    result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
+    result = adapter.close_issue(owner, repo, number, comment=comment, reason=_normalize_issue_close_reason(reason))
     approximation_note = (
         "Note: --duplicate-of is a GitCode-limited approximation; no native duplicate relationship was created."
     )
+    issue_ref = _format_issue_reference(result.item, number)
     if result.message == "already_closed_commented":
-        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed; posted comment")
+        safe_echo(f"Issue {issue_ref} is already closed; posted comment")
         if approximated:
             safe_echo(approximation_note)
         return
     if result.message == "already_closed":
-        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed")
+        safe_echo(f"Issue {issue_ref} is already closed")
         return
-    safe_echo(f"Closed issue #{safe_number(result.item, number)}")
+    safe_echo(f"Closed issue {issue_ref}")
     if approximated:
         safe_echo(approximation_note)
 

@@ -662,6 +662,24 @@ class TestIssueComment:
         assert mock_client.patch.call_args.kwargs["json"]["body"] == "new body"
         assert "/issues/comments/11" in mock_client.patch.call_args.args[0]
 
+    def test_edit_last_editor_updates_last_owned_comment(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: "edited body")
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "user": {"login": "alice"}, "body": "old"}],
+        ]
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "--editor"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args.kwargs["json"]["body"] == "edited body"
+
+    @pytest.mark.parametrize("args", [["--body", "hi"], ["--body-file", "comment.md"], ["--editor"]])
+    def test_delete_last_rejects_body_sources(self, runner, mock_client, mock_repo, args):
+        result = runner.invoke(main, ["issue", "comment", "42", "--delete-last", "--yes", *args])
+        assert result.exit_code != 0
+        assert "--delete-last cannot be used with --body, --body-file, or --editor." in result.output
+        mock_client.get.assert_not_called()
+        mock_client.delete.assert_not_called()
+
     def test_edit_last_succeeds_when_update_returns_none(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
             {"login": "alice"},

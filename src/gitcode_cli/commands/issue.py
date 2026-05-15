@@ -116,7 +116,7 @@ def _resolve_issue_target(app, repo_name: str | None, identifier: str) -> tuple[
 
 
 def _validate_issue_comment_history_flags(
-    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool
+    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool, has_body_source: bool
 ) -> None:
     if create_if_none and not edit_last:
         raise click.UsageError(capability_message("ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST"))
@@ -126,6 +126,8 @@ def _validate_issue_comment_history_flags(
         raise click.UsageError("--yes can only be used together with --delete-last.")
     if edit_last and delete_last:
         raise click.UsageError("Specify only one of --edit-last or --delete-last.")
+    if delete_last and has_body_source:
+        raise click.UsageError("--delete-last cannot be used with --body, --body-file, or --editor.")
 
 
 def _validate_issue_comment_body_sources(*, body: str | None, body_file: str | None, editor: bool, web: bool) -> None:
@@ -470,6 +472,7 @@ def issue_comment(
         delete_last=delete_last,
         edit_last=edit_last,
         yes=yes,
+        has_body_source=body is not None or body_file is not None or editor,
     )
     history_mode = edit_last or delete_last
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)

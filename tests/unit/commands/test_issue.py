@@ -571,7 +571,31 @@ class TestIssueComment:
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "comment", "42", "-b", "hi"])
         assert result.exit_code == 0
+        assert "https://example.com/42" in result.output
         mock_client.post.assert_called_once()
+
+    def test_comment_missing_html_url_falls_back_to_comment_anchor(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"id": 99}
+        result = runner.invoke(main, ["issue", "comment", "42", "-b", "hi"])
+        assert result.exit_code == 0
+        assert "https://gitcode.com/owner/repo/issues/42#issuecomment-99" in result.output
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--body", "hi", "--body-file", "comment.md"],
+            ["--body", "hi", "--editor"],
+            ["--body", "hi", "--web"],
+            ["--body-file", "comment.md", "--editor"],
+            ["--body-file", "comment.md", "--web"],
+            ["--editor", "--web"],
+        ],
+    )
+    def test_body_sources_are_mutually_exclusive(self, runner, mock_client, mock_repo, args):
+        result = runner.invoke(main, ["issue", "comment", "42", *args])
+        assert result.exit_code != 0
+        assert "specify only one of --body, --body-file, --editor, or --web" in result.output
+        mock_client.post.assert_not_called()
 
     def test_prompt_body(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "comment", "42"], input="comment body\n")
@@ -620,6 +644,13 @@ class TestIssueComment:
         assert "Issue identifier must be a number or a valid issue URL." in result.output
         mock_client.post.assert_not_called()
 
+    def test_edit_last_requires_body_in_non_interactive_mode(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last"])
+        assert result.exit_code != 0
+        assert "--body or --body-file is required when not running interactively" in result.output
+        mock_client.get.assert_not_called()
+        mock_client.patch.assert_not_called()
+
     def test_edit_last_updates_last_owned_comment(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
             {"login": "alice"},
@@ -627,8 +658,27 @@ class TestIssueComment:
         ]
         result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
         assert result.exit_code == 0
+        assert "https://example.com/42" in result.output
         assert mock_client.patch.call_args.kwargs["json"]["body"] == "new body"
         assert "/issues/comments/11" in mock_client.patch.call_args.args[0]
+
+    def test_edit_last_editor_updates_last_owned_comment(self, runner, mock_client, mock_repo, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.issue.get_body_from_options", lambda **kwargs: "edited body")
+        mock_client.get.side_effect = [
+            {"login": "alice"},
+            [{"id": 11, "user": {"login": "alice"}, "body": "old"}],
+        ]
+        result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "--editor"])
+        assert result.exit_code == 0
+        assert mock_client.patch.call_args.kwargs["json"]["body"] == "edited body"
+
+    @pytest.mark.parametrize("args", [["--body", "hi"], ["--body-file", "comment.md"], ["--editor"]])
+    def test_delete_last_rejects_body_sources(self, runner, mock_client, mock_repo, args):
+        result = runner.invoke(main, ["issue", "comment", "42", "--delete-last", "--yes", *args])
+        assert result.exit_code != 0
+        assert "--delete-last cannot be used with --body, --body-file, or --editor." in result.output
+        mock_client.get.assert_not_called()
+        mock_client.delete.assert_not_called()
 
     def test_edit_last_succeeds_when_update_returns_none(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
@@ -638,7 +688,7 @@ class TestIssueComment:
         mock_client.patch.return_value = None
         result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
         assert result.exit_code == 0
-        assert "Edited last comment on issue #42" in result.output
+        assert "https://gitcode.com/owner/repo/issues/42" in result.output
 
     def test_edit_last_create_if_none_creates_comment(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
@@ -680,6 +730,12 @@ class TestIssueComment:
         result = runner.invoke(main, ["issue", "comment", "42", "--edit-last", "-b", "new body"])
         assert result.exit_code != 0
         assert "refusing to edit or delete comments safely" in result.output
+
+    def test_help_includes_examples(self, runner):
+        result = runner.invoke(main, ["issue", "comment", "--help"])
+        assert result.exit_code == 0
+        assert "EXAMPLES" in result.output
+        assert 'gc issue comment 123 --body "I have a question"' in result.output
 
 
 class TestIssueReopen:

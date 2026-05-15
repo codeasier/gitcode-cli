@@ -33,6 +33,11 @@ class TestCli:
         assert "GENERAL COMMANDS" in result.output
         assert "list" in result.output
 
+    def test_cli_issue_delete_help(self, runner):
+        result = runner.invoke(main, ["issue", "delete", "--help"])
+        assert result.exit_code == 0
+        assert "gc issue delete {<number> | <url>} [flags]" in result.output
+
     def test_cli_pr_group(self, runner):
         result = runner.invoke(main, ["pr", "--help"])
         assert result.exit_code == 0
@@ -217,6 +222,20 @@ class TestGlobalErrorHandler:
                 result = runner.invoke(main, ["pr", "view", "999999"])
         assert result.exit_code == 1
         assert "error: Not Found" in result.output
+        assert "Traceback" not in result.output
+
+    def test_issue_delete_api_error_hides_raw_payload_fields(self, runner):
+        with patch("gitcode_cli.cli.get_token", return_value="fake-token"):
+            with patch("gitcode_cli.commands.issue.resolve_repo", return_value=("owner", "repo")):
+                with patch("gitcode_cli.context.AppContext.client") as mock_client_factory:
+                    mock_client = MagicMock()
+                    mock_client.delete.side_effect = APIError("Issue Not Found", status_code=404)
+                    mock_client_factory.return_value = mock_client
+                    result = runner.invoke(main, ["issue", "delete", "999999", "--yes"])
+        assert result.exit_code == 1
+        assert "error: Issue Not Found" in result.output
+        assert "trace_id" not in result.output
+        assert "error_code" not in result.output
         assert "Traceback" not in result.output
 
     def test_gc_error_produces_clean_message_without_traceback(self, runner):

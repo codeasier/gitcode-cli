@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import main
+from gitcode_cli.errors import APIError
 
 
 @pytest.fixture
@@ -813,6 +814,17 @@ class TestIssueDevelop:
         assert "does not create a local branch" in result.output
         mock_client.get.assert_called_once_with("/repos/owner/repo/issues/42")
         mock_browser.assert_called_once_with("https://gitcode.com/owner/repo/issues/42")
+
+    def test_develop_does_not_open_browser_when_validation_fails(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = APIError("Not Found", status_code=404)
+
+        with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
+            result = runner.invoke(main, ["issue", "develop", "42"])
+
+        assert result.exit_code == 1
+        assert "error: Not Found" in result.output
+        mock_client.get.assert_called_once_with("/repos/owner/repo/issues/42")
+        mock_browser.assert_not_called()
 
     def test_develop_help_marks_branch_options_unsupported(self, runner):
         result = runner.invoke(main, ["issue", "develop", "--help"])

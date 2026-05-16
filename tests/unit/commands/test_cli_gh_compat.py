@@ -169,7 +169,6 @@ class TestCliGhCompatibility:
             (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
             (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
             (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["issue", "reopen", "1", "--comment", "reopening"], "issue reopen --comment"),
             (["pr", "reopen", "1", "--comment", "reopening"], "pr reopen --comment"),
             (["pr", "diff", "1", "--name-only"], "pr diff --name-only"),
             (["pr", "diff", "1", "--patch"], "pr diff --patch"),

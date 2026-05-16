@@ -527,8 +527,6 @@ def issue_comment(
 @click.option("-c", "--comment")
 @click.pass_context
 def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str, comment: str | None) -> None:
-    if comment is not None:
-        _pending_gh_compat("issue reopen --comment")
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -539,11 +537,12 @@ def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str, com
         number = require_issue_number(identifier)
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
-    result = adapter.reopen_issue(owner, repo, number)
+    result = adapter.reopen_issue(owner, repo, number, comment=comment)
+    title = f" ({result.item.get('title')})" if isinstance(result.item, dict) and result.item.get("title") else ""
     if result.message == "already_open":
-        safe_echo(f"Issue #{safe_number(result.item, number)} is already open")
+        safe_echo(f"! Issue #{safe_number(result.item, number)}{title} is already open")
         return
-    safe_echo(f"Reopened issue #{safe_number(result.item, number)}")
+    safe_echo(f"✓ Reopened issue #{safe_number(result.item, number)}{title}")
 
 
 @issue_group.command("edit")

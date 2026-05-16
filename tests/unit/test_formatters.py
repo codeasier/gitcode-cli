@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import MagicMock
 
 import click
@@ -234,6 +235,13 @@ class TestApplyJq:
         result = apply_jq({"id": 1}, ".id")
         assert result == [{"id": 1}]
 
+    def test_pyjq_error_raises_click_exception(self, mocker):
+        mock_jq_module = MagicMock()
+        mock_jq_module.compile.side_effect = ValueError("invalid filter")
+        mocker.patch.dict("sys.modules", {"jq": mock_jq_module})
+        with pytest.raises(click.ClickException, match="jq expression error: invalid filter"):
+            apply_jq({"id": 1}, ".id | @tsv")
+
     def test_jq_cli_success(self, mocker):
         mocker.patch.dict("sys.modules", {"jq": None})
         mock_run = mocker.patch("gitcode_cli.formatters.subprocess.run")
@@ -265,6 +273,16 @@ class TestApplyJq:
         mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
         result = apply_jq({"id": 1}, "empty")
         assert result == []
+
+    def test_jq_cli_error_raises_click_exception(self, mocker):
+        mocker.patch.dict("sys.modules", {"jq": None})
+        mocker.patch("gitcode_cli.formatters.shutil.which", return_value="/usr/bin/jq")
+        mocker.patch(
+            "gitcode_cli.formatters.subprocess.run",
+            side_effect=subprocess.CalledProcessError(5, ["jq"], stderr="invalid filter"),
+        )
+        with pytest.raises(click.ClickException, match="jq expression error: invalid filter"):
+            apply_jq({"id": 1}, ".id | @tsv")
 
     def test_jq_not_available_raises_click_exception(self, mocker):
         mocker.patch.dict("sys.modules", {"jq": None})

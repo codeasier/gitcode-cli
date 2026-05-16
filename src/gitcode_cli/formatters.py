@@ -121,19 +121,26 @@ def _parse_jq_output(stdout: str):
 def apply_jq(data, query: str):
     try:
         import jq  # noqa: PLC0415
-
-        return jq.compile(query).input(data).all()
     except ImportError:
         pass
+    else:
+        try:
+            return jq.compile(query).input(data).all()
+        except Exception as exc:
+            raise click.ClickException(f"jq expression error: {exc}") from exc
     jq_bin = shutil.which("jq")
     if jq_bin:
-        proc = subprocess.run(
-            [jq_bin, "-c", query],
-            input=json.dumps(data),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        try:
+            proc = subprocess.run(
+                [jq_bin, "-c", query],
+                input=json.dumps(data),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            message = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise click.ClickException(f"jq expression error: {message}") from exc
         return _parse_jq_output(proc.stdout)
     raise click.ClickException("jq is required for --jq. Install with: pip install pyjq or install jq CLI.")
 

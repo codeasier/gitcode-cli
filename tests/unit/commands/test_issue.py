@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -227,10 +228,25 @@ class TestIssueView:
         mock_client.get.assert_called_with("/repos/owner/repo/issues/42")
 
     def test_json(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "title": "Test"}
-        result = runner.invoke(main, ["issue", "view", "42", "--json", "number"])
+        mock_client.get.return_value = {
+            "number": "42",
+            "title": "Test",
+            "state": "opened",
+            "user": {"id": 7, "login": "alice"},
+        }
+        result = runner.invoke(main, ["issue", "view", "42", "--json", "number,state,author"])
         assert result.exit_code == 0
-        assert '"number"' in result.output
+        assert json.loads(result.output) == {
+            "number": 42,
+            "state": "OPEN",
+            "author": {"id": 7, "is_bot": False, "login": "alice", "name": "alice"},
+        }
+
+    def test_jq_uses_single_normalized_issue(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "title": "Test", "user": {"login": "alice"}}
+        result = runner.invoke(main, ["issue", "view", "42", "--jq", ".author.login"])
+        assert result.exit_code == 0
+        assert json.loads(result.output) == "alice"
 
     def test_comments_json_includes_comments(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
@@ -242,7 +258,7 @@ class TestIssueView:
         ]
         result = runner.invoke(main, ["issue", "view", "42", "--comments", "--json", "number,comments"])
         assert result.exit_code == 0
-        assert '"number": "42"' in result.output
+        assert '"number": 42' in result.output
         assert '"comments"' in result.output
         assert '"First comment"' in result.output
         assert '"Second comment"' in result.output

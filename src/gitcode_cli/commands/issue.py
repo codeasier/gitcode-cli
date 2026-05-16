@@ -103,15 +103,16 @@ def _normalize_issue_author(item: dict) -> object:
     }
 
 
+def _normalize_issue_item(item: dict) -> dict:
+    normalized_item = dict(item)
+    normalized_item["number"] = _normalize_issue_number(normalized_item.get("number"))
+    normalized_item["state"] = _normalize_issue_state(normalized_item.get("state"))
+    normalized_item["author"] = _normalize_issue_author(normalized_item)
+    return normalized_item
+
+
 def _normalize_issue_list_items(items: list[dict]) -> list[dict]:
-    normalized = []
-    for item in items:
-        normalized_item = dict(item)
-        normalized_item["number"] = _normalize_issue_number(normalized_item.get("number"))
-        normalized_item["state"] = _normalize_issue_state(normalized_item.get("state"))
-        normalized_item["author"] = _normalize_issue_author(normalized_item)
-        normalized.append(normalized_item)
-    return normalized
+    return [_normalize_issue_item(item) for item in items]
 
 
 def _pending_gh_compat(name: str) -> None:
@@ -304,9 +305,10 @@ def issue_view(
         return
     service = IssueService(app.client())
     item = service.get(owner, repo, number)
+    output_item = _normalize_issue_item(item) if item and (json_fields or jq_query or template) else item
     if comments:
         comment_items = service.list_comments(owner, repo, number)
-        data = dict(item) if item else {}
+        data = dict(output_item) if output_item else {}
         data["comments"] = comment_items
 
         def default_formatter(data: dict) -> None:
@@ -325,7 +327,7 @@ def issue_view(
         )
         return
     output_result(
-        item,
+        output_item,
         json_fields,
         jq_query,
         template,

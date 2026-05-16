@@ -40,3 +40,5 @@ Thumbs.db
 .claude/
 .trae/
 .omc/
+output/
+**/AGENTS.md

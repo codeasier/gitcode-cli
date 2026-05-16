@@ -329,7 +329,29 @@ class TestIssueAdapter:
 
         service.update.assert_called_once_with("owner", "repo", "42", labels="existing,docs")
 
-    def test_edit_issue_remove_assignee_sends_empty_assignee(self, adapter, service):
+    def test_edit_issue_adds_and_removes_labels(self, adapter, service):
+        service.get.return_value = {"labels": [{"name": "existing"}, {"name": "bug"}]}
+        service.update.return_value = {"number": "42"}
+
+        adapter.edit_issue(
+            "owner",
+            "repo",
+            "42",
+            title=None,
+            body=None,
+            add_assignee=None,
+            add_labels=("docs",),
+            remove_assignee=None,
+            remove_labels=("bug",),
+            milestone=None,
+            remove_milestone=False,
+        )
+
+        service.update.assert_called_once_with("owner", "repo", "42", labels="existing,docs")
+
+    def test_edit_issue_removes_assignee_from_existing_assignees(self, adapter, service):
+        service.get.return_value = {"assignee": "alice,bob"}
+
         adapter.edit_issue(
             "owner",
             "repo",
@@ -338,13 +360,13 @@ class TestIssueAdapter:
             body=None,
             add_assignee=None,
             add_labels=None,
-            remove_assignee="user",
+            remove_assignee="bob",
             remove_labels=None,
             milestone=None,
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", assignee="")
+        service.update.assert_called_once_with("owner", "repo", "42", assignee="alice")
 
     def test_edit_issue_sets_milestone_number(self, adapter, service):
         adapter.edit_issue(

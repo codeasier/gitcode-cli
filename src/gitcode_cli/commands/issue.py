@@ -63,6 +63,18 @@ def _echo_issue_status(data: dict[str, list[dict]]) -> None:
         safe_echo("")
 
 
+def _format_issue_reference(item: dict | None, fallback: str) -> str:
+    number = safe_number(item, fallback)
+    title = item.get("title") if isinstance(item, dict) else None
+    return f"#{number} ({title})" if title else f"#{number}"
+
+
+def _normalize_issue_close_reason(reason: str | None) -> str | None:
+    if reason == "not planned":
+        return "not_planned"
+    return reason
+
+
 def _normalize_issue_state(state: object) -> object:
     if not isinstance(state, str):
         return state
@@ -117,7 +129,7 @@ def _resolve_issue_target(app, repo_name: str | None, identifier: str) -> tuple[
 
 
 def _validate_issue_comment_history_flags(
-    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool
+    *, create_if_none: bool, delete_last: bool, edit_last: bool, yes: bool, has_body_source: bool
 ) -> None:
     if create_if_none and not edit_last:
         raise click.UsageError(capability_message("ISSUE_CREATE_IF_NONE_REQUIRES_EDIT_LAST"))
@@ -127,6 +139,24 @@ def _validate_issue_comment_history_flags(
         raise click.UsageError("--yes can only be used together with --delete-last.")
     if edit_last and delete_last:
         raise click.UsageError("Specify only one of --edit-last or --delete-last.")
+    if delete_last and has_body_source:
+        raise click.UsageError("--delete-last cannot be used with --body, --body-file, or --editor.")
+
+
+def _validate_issue_comment_body_sources(*, body: str | None, body_file: str | None, editor: bool, web: bool) -> None:
+    selected = [body is not None, body_file is not None, editor, web]
+    if sum(selected) > 1:
+        raise click.UsageError("specify only one of --body, --body-file, --editor, or --web")
+
+
+def _issue_comment_url(owner: str, repo: str, number: str, item: dict | None) -> str:
+    if item:
+        if item.get("html_url"):
+            return str(item["html_url"])
+        comment_id = item.get("id")
+        if comment_id is not None:
+            return f"https://gitcode.com/{owner}/{repo}/issues/{number}#issuecomment-{comment_id}"
+    return f"https://gitcode.com/{owner}/{repo}/issues/{number}"
 
 
 def _handle_issue_comment_history(
@@ -141,8 +171,8 @@ def _handle_issue_comment_history(
     create_if_none: bool,
     yes: bool,
 ) -> None:
-    if edit_last:
-        body = prompt_if_missing(body, "Comment")
+    if edit_last and body is None:
+        raise click.UsageError("--body or --body-file is required when not running interactively")
     if delete_last and not yes and not click.confirm("Delete your last issue comment?", default=False):
         raise click.ClickException("Aborted.")
     result = adapter.manage_comment_history(
@@ -157,9 +187,9 @@ def _handle_issue_comment_history(
         safe_echo(f"Deleted last comment on issue #{number}")
         return
     if result.message == "created":
-        safe_echo(result.item.get("html_url") or f"Commented on issue #{number}")
+        safe_echo(_issue_comment_url(owner, repo, number, result.item))
         return
-    safe_echo((result.item or {}).get("html_url") or f"Edited last comment on issue #{number}")
+    safe_echo(_issue_comment_url(owner, repo, number, result.item))
 
 
 @click.group("issue", cls=GCSectionGroup, help="Work with GitCode issues.")
@@ -378,7 +408,12 @@ def issue_create(
 @click.argument("identifier")
 @click.option("-c", "--comment", help="Leave a closing comment.")
 @click.option("--duplicate-of", help="Close as a GitCode-limited duplicate approximation by posting a comment first.")
-@click.option("-r", "--reason", type=click.Choice(["completed", "not_planned"]), help="Reason for closing.")
+@click.option(
+    "-r",
+    "--reason",
+    type=click.Choice(["completed", "not_planned", "not planned"]),
+    help="Reason for closing.",
+)
 @click.pass_context
 def issue_close(
     ctx: click.Context,
@@ -402,19 +437,20 @@ def issue_close(
         comment = f"{comment}\n\n{duplicate_comment}" if comment else duplicate_comment
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
-    result = adapter.close_issue(owner, repo, number, comment=comment, reason=reason)
+    result = adapter.close_issue(owner, repo, number, comment=comment, reason=_normalize_issue_close_reason(reason))
     approximation_note = (
         "Note: --duplicate-of is a GitCode-limited approximation; no native duplicate relationship was created."
     )
+    issue_ref = _format_issue_reference(result.item, number)
     if result.message == "already_closed_commented":
-        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed; posted comment")
+        safe_echo(f"Issue {issue_ref} is already closed; posted comment")
         if approximated:
             safe_echo(approximation_note)
         return
     if result.message == "already_closed":
-        safe_echo(f"Issue #{safe_number(result.item, number)} is already closed")
+        safe_echo(f"Issue {issue_ref} is already closed")
         return
-    safe_echo(f"Closed issue #{safe_number(result.item, number)}")
+    safe_echo(f"Closed issue {issue_ref}")
     if approximated:
         safe_echo(approximation_note)
 
@@ -445,6 +481,7 @@ def issue_comment(
     yes: bool,
 ) -> None:
     app = ctx.obj["app"]
+    _validate_issue_comment_body_sources(body=body, body_file=body_file, editor=editor, web=web)
     owner, repo, number, target_url = _resolve_issue_target(app, repo_name, identifier)
     if web:
         open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
@@ -455,6 +492,7 @@ def issue_comment(
         delete_last=delete_last,
         edit_last=edit_last,
         yes=yes,
+        has_body_source=body is not None or body_file is not None or editor,
     )
     history_mode = edit_last or delete_last
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
@@ -480,7 +518,7 @@ def issue_comment(
 
     body = prompt_if_missing(body, "Comment")
     item = adapter.comment_issue(owner, repo, number, body=body)
-    safe_echo(item.get("html_url") or f"Commented on issue #{number}")
+    safe_echo(_issue_comment_url(owner, repo, number, item))
 
 
 @issue_group.command("reopen")
@@ -535,10 +573,6 @@ def issue_edit(
     remove_labels: tuple[str, ...] | None,
     remove_milestone: bool,
 ) -> None:
-    if remove_assignee is not None:
-        _pending_gh_compat("issue edit --remove-assignee")
-    if remove_labels:
-        _pending_gh_compat("issue edit --remove-label")
     app = ctx.obj["app"]
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
@@ -571,10 +605,12 @@ def issue_edit(
         body=body,
         add_assignee=add_assignee,
         add_labels=add_labels,
+        remove_assignee=remove_assignee,
+        remove_labels=remove_labels,
         milestone=milestone,
         remove_milestone=remove_milestone,
     )
-    safe_echo(f"Edited issue #{safe_number(item, number)}")
+    safe_echo((item or {}).get("html_url") or f"Edited issue #{safe_number(item, number)}")
 
 
 @issue_group.command("delete")
@@ -627,8 +663,8 @@ def issue_status(
 @issue_group.command("develop")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
-@click.option("-b", "--base", help="Base branch for the develop branch.")
-@click.option("-n", "--name", help="Name for the local branch.")
+@click.option("-b", "--base", help="Unsupported: GitCode does not provide an issue develop branch API.")
+@click.option("-n", "--name", help="Unsupported: GitCode does not provide an issue develop branch API.")
 @click.pass_context
 def issue_develop(
     ctx: click.Context,
@@ -638,10 +674,6 @@ def issue_develop(
     name: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    if base is not None:
-        raise unsupported("ISSUE_DEVELOP_BASE")
-    if name is not None:
-        raise unsupported("ISSUE_DEVELOP_NAME")
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
         assert url_repo is not None
@@ -650,6 +682,11 @@ def issue_develop(
         owner, repo = resolve_repo(repo_name or app.repo)
         number = require_issue_number(identifier)
     service = IssueService(app.client())
+    service.get(owner, repo, number)
+    if base is not None:
+        raise unsupported("ISSUE_DEVELOP_BASE")
+    if name is not None:
+        raise unsupported("ISSUE_DEVELOP_NAME")
     adapter = IssueAdapter(service)
     result = adapter.develop(owner, repo, number, base=base, name=name)
     if result.warning:
@@ -720,12 +757,22 @@ issue_close.short_help = "Close issue"
 issue_close.help = "Close issue."
 issue_comment.short_help = "Add a comment to an issue"
 issue_comment.help = "Add a comment to an issue."
+set_gc_help(
+    issue_comment,
+    gc_examples=[
+        'gc issue comment 123 --body "I have a question"',
+        "gc issue comment 123 --body-file comment.md",
+        "gc issue comment 123 --edit-last --body-file comment.md",
+        "gc issue comment 123 --web",
+    ],
+)
 issue_reopen.short_help = "Reopen issue"
 issue_reopen.help = "Reopen issue."
 issue_edit.short_help = "Edit issues"
 issue_edit.help = "Edit issues."
 issue_delete.short_help = "Delete issue"
 issue_delete.help = "Delete issue."
+set_gc_help(issue_delete, gc_usage="gc issue delete {<number> | <url>} [flags]")
 issue_status.short_help = "Show status of relevant issues"
 issue_status.help = "Show status of relevant issues."
 issue_develop.short_help = "Manage linked branches for an issue"

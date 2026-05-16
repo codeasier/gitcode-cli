@@ -42,6 +42,30 @@ def _extract_label_names(issue: dict[str, Any] | None) -> list[str]:
     return names
 
 
+def _extract_assignee_names(issue: dict[str, Any] | None) -> list[str]:
+    assignees = issue.get("assignees") if isinstance(issue, dict) else None
+    if isinstance(assignees, str):
+        return [part.strip() for part in assignees.split(",") if part.strip()]
+    if isinstance(assignees, list):
+        names: list[str] = []
+        for assignee in assignees:
+            if isinstance(assignee, dict):
+                name = _extract_login(assignee)
+                if name:
+                    names.append(name)
+            elif assignee:
+                names.append(str(assignee))
+        return names
+
+    assignee = issue.get("assignee") if isinstance(issue, dict) else None
+    if isinstance(assignee, str):
+        return [part.strip() for part in assignee.split(",") if part.strip()]
+    if isinstance(assignee, dict):
+        name = _extract_login(assignee)
+        return [name] if name else []
+    return []
+
+
 def _matches_all_labels(issue: dict[str, Any], labels: tuple[str, ...] | None) -> bool:
     if not labels or len(labels) < 2:
         return True
@@ -292,6 +316,8 @@ class IssueAdapter:
         body: str | None,
         add_assignee: str | None,
         add_labels: tuple[str, ...] | None,
+        remove_assignee: str | None,
+        remove_labels: tuple[str, ...] | None,
         milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
@@ -299,15 +325,20 @@ class IssueAdapter:
 
         if add_assignee is not None:
             data["assignee"] = add_assignee
+        if remove_assignee is not None:
+            current = self.service.get(owner, repo, number)
+            remaining = [name for name in _extract_assignee_names(current) if name != remove_assignee]
+            data["assignee"] = ",".join(remaining)
 
-        if add_labels:
+        if add_labels or remove_labels:
             current = self.service.get(owner, repo, number)
             existing = _extract_label_names(current)
+            removed = {label.strip() for label in remove_labels or () if label.strip()}
             merged: list[str] = []
             seen: set[str] = set()
-            for label in [*existing, *list(add_labels)]:
+            for label in [*existing, *list(add_labels or ())]:
                 normalized = label.strip()
-                if normalized and normalized not in seen:
+                if normalized and normalized not in removed and normalized not in seen:
                     seen.add(normalized)
                     merged.append(normalized)
             data["labels"] = ",".join(merged)

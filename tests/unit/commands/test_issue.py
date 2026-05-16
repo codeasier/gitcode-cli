@@ -772,7 +772,7 @@ class TestIssueEdit:
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "edit", "42", "-t", "New", "-b", "New body"])
         assert result.exit_code == 0
-        assert "Edited issue #42" in result.output
+        assert "https://example.com/42" in result.output
         json_data = mock_client.patch.call_args[1]["json"]
         assert json_data["title"] == "New"
         assert json_data["body"] == "New body"
@@ -789,6 +789,19 @@ class TestIssueEdit:
         assert result.exit_code == 0
         json_data = mock_client.patch.call_args[1]["json"]
         assert json_data["labels"] == "bug,docs"
+
+    def test_remove_assignee(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "edit", "42", "--remove-assignee", "user"])
+        assert result.exit_code == 0
+        json_data = mock_client.patch.call_args[1]["json"]
+        assert json_data["assignee"] == ""
+
+    def test_remove_label(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"labels": [{"name": "bug"}, {"name": "docs"}]}
+        result = runner.invoke(main, ["issue", "edit", "42", "--remove-label", "bug"])
+        assert result.exit_code == 0
+        json_data = mock_client.patch.call_args[1]["json"]
+        assert json_data["labels"] == "docs"
 
     def test_milestone_requires_number(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "edit", "42", "-m", "v1.0"])

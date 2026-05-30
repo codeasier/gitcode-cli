@@ -61,7 +61,9 @@ def _split_merged_range(value: str) -> tuple[str | None, str | None]:
     return value, value
 
 
-def _extract_search_filters(search: str | None, state: str | None) -> tuple[str | None, str | None, str | None, str | None]:
+def _extract_search_filters(
+    search: str | None, state: str | None
+) -> tuple[str | None, str | None, str | None, str | None]:
     if not search:
         return search, state, None, None
     remaining = search

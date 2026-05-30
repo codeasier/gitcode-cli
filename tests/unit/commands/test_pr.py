@@ -194,7 +194,11 @@ class TestPrList:
             ),
             ("merged:2026-05-01..*", None, {"merged_after": "2026-05-01"}),
             ("merged:*..2026-05-30", None, {"merged_before": "2026-05-30"}),
-            ("author:alice is:merged merged:2026-05-28", "author:alice", {"state": "merged", "merged_after": "2026-05-28", "merged_before": "2026-05-28"}),
+            (
+                "author:alice is:merged merged:2026-05-28",
+                "author:alice",
+                {"state": "merged", "merged_after": "2026-05-28", "merged_before": "2026-05-28"},
+            ),
         ],
     )
     def test_pr_list_maps_gh_merged_search_qualifiers(
@@ -224,7 +228,6 @@ class TestPrList:
         result = runner.invoke(main, ["pr", "list", "--json", "number,title,merged_at"])
         assert result.exit_code == 0
         assert '"merged_at": "2026-05-28T12:00:00+08:00"' in result.output
-
 
     def test_pr_list_template_with_json_uses_template(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [

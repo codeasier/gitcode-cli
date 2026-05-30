@@ -20,6 +20,8 @@ def dump_json(data, fields: list[str] | None = None) -> str:
 
 
 def _field_value(item: dict, field: str):
+    if field == "mergedAt":
+        return item.get("mergedAt") or item.get("merged_at")
     if "." in field:
         parts = field.split(".")
         value = item

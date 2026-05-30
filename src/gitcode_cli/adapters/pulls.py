@@ -31,19 +31,24 @@ class PullRequestAdapter:
         labels: tuple[str, ...] | None,
         search: str | None,
         limit: int | None,
+        merged_after: str | None = None,
+        merged_before: str | None = None,
     ) -> Any:
-        items = self.service.list(
-            owner,
-            repo,
-            state=state,
-            author=author,
-            base=base,
-            assignee=assignee,
-            draft=draft,
-            head=head,
-            labels=_normalize_multi_values(labels),
-            search=search,
-        )
+        params = {
+            "state": state,
+            "author": author,
+            "base": base,
+            "assignee": assignee,
+            "draft": draft,
+            "head": head,
+            "labels": _normalize_multi_values(labels),
+            "search": search,
+        }
+        if merged_after is not None:
+            params["merged_after"] = merged_after
+        if merged_before is not None:
+            params["merged_before"] = merged_before
+        items = self.service.list(owner, repo, **params)
         if limit is not None:
             return items[:limit]
         return items

@@ -49,7 +49,15 @@ def _normalize_pr_fields(item: dict) -> dict:
 def _split_merged_range(value: str) -> tuple[str | None, str | None]:
     if ".." in value:
         after, before = value.split("..", 1)
-        return after or None, before or None
+        return (after if after and after != "*" else None), (before if before and before != "*" else None)
+    if value.startswith(">="):
+        return value[2:], None
+    if value.startswith(">"):
+        return value[1:], None
+    if value.startswith("<="):
+        return None, value[2:]
+    if value.startswith("<"):
+        return None, value[1:]
     return value, value
 
 
@@ -381,21 +389,22 @@ def pr_list(
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
     search, state, merged_after, merged_before = _extract_search_filters(search, state)
-    items = adapter.list_prs(
-        owner,
-        repo,
-        state=state,
-        author=author,
-        base=base,
-        assignee=assignee,
-        draft=draft,
-        head=head,
-        labels=labels,
-        search=search,
-        limit=limit,
-        merged_after=merged_after,
-        merged_before=merged_before,
-    )
+    list_kwargs = {
+        "state": state,
+        "author": author,
+        "base": base,
+        "assignee": assignee,
+        "draft": draft,
+        "head": head,
+        "labels": labels,
+        "search": search,
+        "limit": limit,
+    }
+    if merged_after is not None:
+        list_kwargs["merged_after"] = merged_after
+    if merged_before is not None:
+        list_kwargs["merged_before"] = merged_before
+    items = adapter.list_prs(owner, repo, **list_kwargs)
     items = [_normalize_pr_fields(item) for item in items]
 
     def default_formatter(data):

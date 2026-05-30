@@ -178,25 +178,53 @@ class TestPrList:
         )
         assert '"mergedAt": "2026-05-28T16:00:00+08:00"' in result.output
 
-    def test_pr_list_search_is_merged_sets_state_when_state_omitted(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = []
-        result = runner.invoke(main, ["pr", "list", "--search", "author:alice is:merged merged:2026-05-28"])
+    @pytest.mark.parametrize(
+        ("search", "expected_search", "expected_params"),
+        [
+            ("is:merged", None, {"state": "merged"}),
+            ("merged:2026-05-28", None, {"merged_after": "2026-05-28", "merged_before": "2026-05-28"}),
+            ("merged:>2026-05-28", None, {"merged_after": "2026-05-28"}),
+            ("merged:>=2026-05-28", None, {"merged_after": "2026-05-28"}),
+            ("merged:<2026-05-28", None, {"merged_before": "2026-05-28"}),
+            ("merged:<=2026-05-28", None, {"merged_before": "2026-05-28"}),
+            (
+                "merged:2026-05-01..2026-05-30",
+                None,
+                {"merged_after": "2026-05-01", "merged_before": "2026-05-30"},
+            ),
+            ("merged:2026-05-01..*", None, {"merged_after": "2026-05-01"}),
+            ("merged:*..2026-05-30", None, {"merged_before": "2026-05-30"}),
+            ("author:alice is:merged merged:2026-05-28", "author:alice", {"state": "merged", "merged_after": "2026-05-28", "merged_before": "2026-05-28"}),
+        ],
+    )
+    def test_pr_list_maps_gh_merged_search_qualifiers(
+        self, runner, mock_client, mock_repo, search, expected_search, expected_params
+    ):
+        result = runner.invoke(main, ["pr", "list", "--search", search])
         assert result.exit_code == 0
-        assert mock_client.get.call_args == call(
-            "/repos/owner/repo/pulls",
-            params={
-                "state": "merged",
-                "author": None,
-                "base": None,
-                "assignee": None,
-                "draft": None,
-                "head": None,
-                "labels": None,
-                "search": "author:alice",
-                "merged_after": "2026-05-28",
-                "merged_before": "2026-05-28",
-            },
-        )
+        params = mock_client.get.call_args.kwargs["params"]
+        assert params | expected_params == params
+        assert params["search"] == expected_search
+
+    def test_pr_list_merged_search_preserves_explicit_state_without_is_merged(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "list", "--state", "all", "--search", "merged:>=2026-05-28"])
+        assert result.exit_code == 0
+        assert mock_client.get.call_args.kwargs["params"]["state"] == "all"
+        assert mock_client.get.call_args.kwargs["params"]["merged_after"] == "2026-05-28"
+
+    def test_pr_list_is_merged_search_overrides_state(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "list", "--state", "all", "--search", "is:merged"])
+        assert result.exit_code == 0
+        assert mock_client.get.call_args.kwargs["params"]["state"] == "merged"
+
+    def test_pr_list_json_includes_api_merged_at_field(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"number": 1, "title": "First PR", "merged_at": "2026-05-28T12:00:00+08:00"},
+        ]
+        result = runner.invoke(main, ["pr", "list", "--json", "number,title,merged_at"])
+        assert result.exit_code == 0
+        assert '"merged_at": "2026-05-28T12:00:00+08:00"' in result.output
+
 
     def test_pr_list_template_with_json_uses_template(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [

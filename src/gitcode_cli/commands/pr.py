@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 
 import click
@@ -31,6 +32,43 @@ from ..utils import (
 
 def _pending_gh_compat(name: str) -> None:
     raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+
+
+def _pr_merged_at(item: dict) -> str | None:
+    value = item.get("mergedAt") or item.get("merged_at")
+    return str(value) if value else None
+
+
+def _normalize_pr_fields(item: dict) -> dict:
+    result = dict(item)
+    if "mergedAt" not in result:
+        result["mergedAt"] = _pr_merged_at(item)
+    return result
+
+
+def _split_merged_range(value: str) -> tuple[str | None, str | None]:
+    if ".." in value:
+        after, before = value.split("..", 1)
+        return after or None, before or None
+    return value, value
+
+
+def _extract_search_filters(search: str | None, state: str | None) -> tuple[str | None, str | None, str | None, str | None]:
+    if not search:
+        return search, state, None, None
+    remaining = search
+    merged_after = None
+    merged_before = None
+    for match in re.finditer(r"(?:^|\s)merged:(\S+)", search):
+        after, before = _split_merged_range(match.group(1))
+        merged_after = after
+        merged_before = before
+        remaining = remaining.replace(match.group(0), " ", 1)
+    if re.search(r"(?:^|\s)is:merged(?:\s|$)", search):
+        state = "merged"
+        remaining = re.sub(r"(?:^|\s)is:merged(?=\s|$)", " ", remaining)
+    normalized_search = " ".join(remaining.split()) or None
+    return normalized_search, state, merged_after, merged_before
 
 
 @click.group("pr", cls=GCSectionGroup, help="Work with GitCode pull requests.")
@@ -342,6 +380,7 @@ def pr_list(
         return
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
+    search, state, merged_after, merged_before = _extract_search_filters(search, state)
     items = adapter.list_prs(
         owner,
         repo,
@@ -354,7 +393,10 @@ def pr_list(
         labels=labels,
         search=search,
         limit=limit,
+        merged_after=merged_after,
+        merged_before=merged_before,
     )
+    items = [_normalize_pr_fields(item) for item in items]
 
     def default_formatter(data):
         output = format_pr_list(data)
@@ -744,6 +786,7 @@ set_gc_help(
         "createdAt",
         "headRefName",
         "labels",
+        "mergedAt",
         "number",
         "state",
         "title",

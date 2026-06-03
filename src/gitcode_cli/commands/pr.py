@@ -81,6 +81,75 @@ def _extract_search_filters(
     return normalized_search, state, merged_after, merged_before
 
 
+def _advance_diff_line(
+    raw_line: str, old_line: int, new_line: int, target_line: int, target_side: str, position: int
+) -> tuple[int | None, int, int]:
+    prefix = raw_line[:1]
+    if prefix == "-":
+        return (position if target_side == "LEFT" and old_line == target_line else None), old_line + 1, new_line
+    if prefix == "+":
+        return (position if target_side == "RIGHT" and new_line == target_line else None), old_line, new_line + 1
+    matched = (target_side == "LEFT" and old_line == target_line) or (
+        target_side == "RIGHT" and new_line == target_line
+    )
+    return (position if matched else None), old_line + 1, new_line + 1
+
+
+def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> int:
+    target_side = side.upper()
+    if target_side not in {"LEFT", "RIGHT"}:
+        raise click.UsageError("--side must be LEFT or RIGHT")
+
+    old_line = None
+    new_line = None
+    position = 0
+    in_target_file = False
+    saw_target_file = False
+
+    for raw_line in diff_text.splitlines():
+        if raw_line.startswith("diff --git "):
+            old_line = None
+            new_line = None
+            position = 0
+            in_target_file = False
+            continue
+        if raw_line.startswith("+++ b/"):
+            in_target_file = raw_line[6:] == path
+            saw_target_file = saw_target_file or in_target_file
+            continue
+        if not in_target_file:
+            continue
+        hunk = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw_line)
+        if hunk:
+            old_line = int(hunk.group(1))
+            new_line = int(hunk.group(2))
+            continue
+        if old_line is None or new_line is None or raw_line.startswith("\\"):
+            continue
+
+        position += 1
+        matched_position, old_line, new_line = _advance_diff_line(
+            raw_line, old_line, new_line, line, target_side, position
+        )
+        if matched_position is not None:
+            return matched_position
+
+    if not saw_target_file:
+        raise click.ClickException(f"Path '{path}' was not found in the pull request diff.")
+    raise click.ClickException(f"Line {line} on {target_side} side is not in the pull request diff.")
+
+
+def _resolve_comment_position_from_line(
+    service: PullRequestService, owner: str, repo: str, number: int, path: str | None, line: int | None, side: str
+) -> int | None:
+    if line is None:
+        return None
+    if path is None:
+        raise click.UsageError("--path is required when using --line")
+    diff_text = service.diff(owner, repo, number)
+    return _diff_position_for_line(diff_text, path, line, side)
+
+
 @click.group("pr", cls=GCSectionGroup, help="Work with GitCode pull requests.")
 def pr_group() -> None:
     pass
@@ -158,6 +227,10 @@ def pr_merge(
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--path")
 @click.option("--position", type=int)
+@click.option("--line", type=int)
+@click.option("--side", default="RIGHT", show_default=True)
+@click.option("--commit-id")
+@click.option("--commit", "commit_id")
 @click.option("--yes", is_flag=True)
 @click.pass_context
 def pr_comment(
@@ -173,6 +246,9 @@ def pr_comment(
     web: bool,
     path: str | None,
     position: int | None,
+    line: int | None,
+    side: str,
+    commit_id: str | None,
     yes: bool,
 ) -> None:
     if create_if_none:
@@ -183,6 +259,10 @@ def pr_comment(
         _pending_gh_compat("pr comment --edit-last")
     if yes:
         _pending_gh_compat("pr comment --yes")
+    if commit_id:
+        raise click.ClickException("GitCode PR comments do not support selecting a commit for line comments.")
+    if line is not None and position is not None:
+        raise click.UsageError("--line cannot be used with --position")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -195,7 +275,8 @@ def pr_comment(
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
-    item = service.comment(owner, repo, number, body=body, path=path, position=position)
+    resolved_position = position or _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    item = service.comment(owner, repo, number, body=body, path=path, position=resolved_position)
     safe_echo(str(item["id"]))
 
 

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-06-04
+
+本次发布聚焦于继续补齐 `gc issue` 与 `gc pr` 的 `gh` 兼容行为，完善 PR 查询与评论能力，并修正多处参数解析、输出格式与边界条件问题，让日常命令行使用与脚本集成更加稳定可预期。
+
+### Added
+
+- `pr list` 新增按合并时间筛选能力，便于在较长时间范围内筛选已合并 PR，并补齐 PR 评论行号映射支持，改善 review/comment 相关场景的可用性 ([#128](https://github.com/codeasier/gitcode-cli/pull/128), [#129](https://github.com/codeasier/gitcode-cli/pull/129))
+
+### Fixed
+
+- 修复 `pr list` 搜索状态解析与分页行为，减少带筛选条件时结果异常或翻页不一致的问题 ([#131](https://github.com/codeasier/gitcode-cli/pull/131))
+- 修复 `issue` 命令在状态筛选、列表作者解析、查看输出、评论、关闭、重新打开、编辑参数校验与里程碑处理等方面的兼容性缺口，降低与 `gh` 使用习惯不一致带来的困扰 ([#96](https://github.com/codeasier/gitcode-cli/pull/96), [#98](https://github.com/codeasier/gitcode-cli/pull/98), [#102](https://github.com/codeasier/gitcode-cli/pull/102), [#113](https://github.com/codeasier/gitcode-cli/pull/113), [#114](https://github.com/codeasier/gitcode-cli/pull/114), [#115](https://github.com/codeasier/gitcode-cli/pull/115), [#116](https://github.com/codeasier/gitcode-cli/pull/116), [#117](https://github.com/codeasier/gitcode-cli/pull/117), [#118](https://github.com/codeasier/gitcode-cli/pull/118), [#119](https://github.com/codeasier/gitcode-cli/pull/119), [#120](https://github.com/codeasier/gitcode-cli/pull/120), [#121](https://github.com/codeasier/gitcode-cli/pull/121), [#122](https://github.com/codeasier/gitcode-cli/pull/122))
+- 修复 `jq` CLI fallback 多项输出解析问题，以及 review 语义、模板和重复 close 近似处理等边界行为，提升脚本化与兼容模式下的稳定性 ([#89](https://github.com/codeasier/gitcode-cli/pull/89), [#91](https://github.com/codeasier/gitcode-cli/pull/91), [#95](https://github.com/codeasier/gitcode-cli/pull/95))
+
+### Changed
+
+- 持续收敛 `gh` 兼容层语义，补充 pending/unsupported 标志的显式反馈，并将部分能力检查前移到命令层，使兼容行为更清晰可维护 ([#88](https://github.com/codeasier/gitcode-cli/pull/88), [#90](https://github.com/codeasier/gitcode-cli/pull/90), [#97](https://github.com/codeasier/gitcode-cli/pull/97))
+- 忽略本地生成文件并整理中英文文档结构，减少仓库噪音并提升用户文档可读性 ([#81](https://github.com/codeasier/gitcode-cli/pull/81), [#99](https://github.com/codeasier/gitcode-cli/pull/99), [#100](https://github.com/codeasier/gitcode-cli/pull/100), [#123](https://github.com/codeasier/gitcode-cli/pull/123))
+
 ## [0.1.2] - 2026-05-05
 
 本次发布聚焦于提升 `gc` 与 `gh` 的交互兼容性、修复常见命令边界行为，并补齐发布链路自动化，使日常使用与后续发版流程更加稳定顺畅。

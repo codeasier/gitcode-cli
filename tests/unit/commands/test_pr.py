@@ -88,6 +88,8 @@ class TestPrList:
                 "head": "feature-branch",
                 "labels": "bug",
                 "search": "search",
+                "page": 1,
+                "per_page": 1,
             },
         )
 
@@ -114,7 +116,8 @@ class TestPrList:
                 "draft": None,
                 "head": None,
                 "labels": "bug,docs",
-                "search": None,
+                "page": 1,
+                "per_page": 30,
             },
         )
 
@@ -171,9 +174,10 @@ class TestPrList:
                 "draft": None,
                 "head": None,
                 "labels": None,
-                "search": None,
                 "merged_after": "2026-05-28T14:00:00+08:00",
                 "merged_before": "2026-05-28T20:00:00+08:00",
+                "page": 1,
+                "per_page": 100,
             },
         )
         assert '"mergedAt": "2026-05-28T16:00:00+08:00"' in result.output
@@ -181,6 +185,8 @@ class TestPrList:
     @pytest.mark.parametrize(
         ("search", "expected_search", "expected_params"),
         [
+            ("is:open", None, {"state": "open"}),
+            ("is:closed", None, {"state": "closed"}),
             ("is:merged", None, {"state": "merged"}),
             ("merged:2026-05-28", None, {"merged_after": "2026-05-28", "merged_before": "2026-05-28"}),
             ("merged:>2026-05-28", None, {"merged_after": "2026-05-28"}),
@@ -208,7 +214,7 @@ class TestPrList:
         assert result.exit_code == 0
         params = mock_client.get.call_args.kwargs["params"]
         assert params | expected_params == params
-        assert params["search"] == expected_search
+        assert params.get("search") == expected_search
 
     def test_pr_list_merged_search_preserves_explicit_state_without_is_merged(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "list", "--state", "all", "--search", "merged:>=2026-05-28"])

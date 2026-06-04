@@ -74,9 +74,11 @@ def _extract_search_filters(
         merged_after = after
         merged_before = before
         remaining = remaining.replace(match.group(0), " ", 1)
-    if re.search(r"(?:^|\s)is:merged(?:\s|$)", search):
-        state = "merged"
-        remaining = re.sub(r"(?:^|\s)is:merged(?=\s|$)", " ", remaining)
+    for search_state in ("open", "closed", "merged"):
+        if re.search(rf"(?:^|\s)is:{search_state}(?:\s|$)", search):
+            state = search_state
+            remaining = re.sub(rf"(?:^|\s)is:{search_state}(?=\s|$)", " ", remaining)
+            break
     normalized_search = " ".join(remaining.split()) or None
     return normalized_search, state, merged_after, merged_before
 

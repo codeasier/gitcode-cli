@@ -13,6 +13,16 @@ def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
     return ",".join(values)
 
 
+def _normalize_limit(limit: int | None) -> tuple[int, int | None]:
+    if limit is None:
+        return 30, 30
+    if limit < 0:
+        return 100, None
+    if limit == 0:
+        return 0, 0
+    return min(limit, 100), limit
+
+
 class PullRequestAdapter:
     def __init__(self, service: PullRequestService):
         self.service = service
@@ -42,15 +52,30 @@ class PullRequestAdapter:
             "draft": draft,
             "head": head,
             "labels": _normalize_multi_values(labels),
-            "search": search,
         }
+        if search is not None:
+            params["search"] = search
         if merged_after is not None:
             params["merged_after"] = merged_after
         if merged_before is not None:
             params["merged_before"] = merged_before
-        items = self.service.list(owner, repo, **params)
-        if limit is not None:
-            return items[:limit]
+
+        per_page, remaining = _normalize_limit(limit)
+        if remaining == 0:
+            return []
+
+        items = []
+        page = 1
+        while True:
+            page_items = self.service.list(owner, repo, **params, page=page, per_page=per_page)
+            if not page_items:
+                break
+            items.extend(page_items)
+            if remaining is not None and len(items) >= remaining:
+                return items[:remaining]
+            if len(page_items) < per_page:
+                break
+            page += 1
         return items
 
     def create_pr(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -31,7 +31,7 @@ class TestPullRequestAdapter:
             draft=True,
             head="feature",
             labels=("bug", "docs"),
-            search="query",
+            search=None,
             limit=1,
         )
 
@@ -45,9 +45,111 @@ class TestPullRequestAdapter:
             draft=True,
             head="feature",
             labels="bug,docs",
-            search="query",
+            page=1,
+            per_page=1,
         )
         assert result == [{"number": 1}]
+
+    def test_list_prs_paginates_until_limit(self, adapter, service):
+        service.list.side_effect = [
+            [{"number": number} for number in range(1, 6)],
+            [{"number": number} for number in range(6, 11)],
+        ]
+
+        result = adapter.list_prs(
+            "owner",
+            "repo",
+            state="open",
+            author=None,
+            base=None,
+            assignee=None,
+            draft=None,
+            head=None,
+            labels=None,
+            search=None,
+            limit=5,
+        )
+
+        assert service.list.call_args_list == [
+            call(
+                "owner",
+                "repo",
+                state="open",
+                author=None,
+                base=None,
+                assignee=None,
+                draft=None,
+                head=None,
+                labels=None,
+                page=1,
+                per_page=5,
+            ),
+        ]
+        assert result == [{"number": number} for number in range(1, 6)]
+
+    def test_list_prs_fetches_all_pages_for_unlimited_limit(self, adapter, service):
+        service.list.side_effect = [
+            [{"number": number} for number in range(1, 101)],
+            [{"number": number} for number in range(101, 201)],
+            [{"number": 201}],
+        ]
+
+        result = adapter.list_prs(
+            "owner",
+            "repo",
+            state=None,
+            author=None,
+            base=None,
+            assignee=None,
+            draft=None,
+            head=None,
+            labels=None,
+            search=None,
+            limit=-1,
+        )
+
+        assert service.list.call_args_list == [
+            call(
+                "owner",
+                "repo",
+                state=None,
+                author=None,
+                base=None,
+                assignee=None,
+                draft=None,
+                head=None,
+                labels=None,
+                page=1,
+                per_page=100,
+            ),
+            call(
+                "owner",
+                "repo",
+                state=None,
+                author=None,
+                base=None,
+                assignee=None,
+                draft=None,
+                head=None,
+                labels=None,
+                page=2,
+                per_page=100,
+            ),
+            call(
+                "owner",
+                "repo",
+                state=None,
+                author=None,
+                base=None,
+                assignee=None,
+                draft=None,
+                head=None,
+                labels=None,
+                page=3,
+                per_page=100,
+            ),
+        ]
+        assert result == [{"number": number} for number in range(1, 202)]
 
     def test_create_pr_dry_run_returns_normalized_payload_without_service_call(self, adapter, service):
         result = adapter.create_pr(

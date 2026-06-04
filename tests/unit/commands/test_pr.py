@@ -669,6 +669,58 @@ class TestPrMerge:
         assert result.exit_code == 0
         assert "123" in result.output
 
+    def test_pr_comment_maps_right_line_to_gitcode_position(self, runner, mock_client, mock_repo):
+        mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -10,3 +10,4 @@
+ context
+-old
++new
++added
+"""
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", "12"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 4}
+
+    def test_pr_comment_maps_left_line_to_gitcode_position(self, runner, mock_client, mock_repo):
+        mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -10,3 +10,3 @@
+ context
+-old
++new
+ unchanged
+"""
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", "11", "--side", "LEFT"],
+        )
+        assert result.exit_code == 0
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 2}
+
+    def test_pr_comment_line_requires_path(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "comment", "42", "--body", "hi", "--line", "12"])
+        assert result.exit_code != 0
+        assert "--path is required when using --line" in result.output
+        mock_client.request.assert_not_called()
+        mock_client.post.assert_not_called()
+
+    def test_pr_comment_rejects_commit_selection(self, runner, mock_client, mock_repo):
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", "12", "--commit-id", "abc"],
+        )
+        assert result.exit_code != 0
+        assert "do not support selecting a commit" in result.output
+        mock_client.post.assert_not_called()
+
     def test_pr_comment_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         with patch(

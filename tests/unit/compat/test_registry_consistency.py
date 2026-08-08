@@ -54,9 +54,9 @@ class TestRegistryBasics:
         for entry in _ENTRIES:
             if entry.status is CompatStatus.UNSUPPORTED:
                 assert entry.unsupported_key, f"{entry.label()}: UNSUPPORTED entries must set unsupported_key"
-                assert entry.unsupported_key in CAPABILITY_MESSAGES, (
-                    f"{entry.label()}: capability key {entry.unsupported_key!r} " f"missing from CAPABILITY_MESSAGES"
-                )
+                assert (
+                    entry.unsupported_key in CAPABILITY_MESSAGES
+                ), f"{entry.label()}: capability key {entry.unsupported_key!r} missing from CAPABILITY_MESSAGES"
 
     def test_other_statuses_have_no_guard_keys(self) -> None:
         for entry in _ENTRIES:

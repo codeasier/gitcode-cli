@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -280,6 +281,53 @@ class TestPrList:
         assert "Author:\talice" in result.output
         assert "Branch:\talice:feature -> owner:main" in result.output
         assert "Body:\nPR body" in result.output
+
+    def test_pr_view_json_includes_closing_issue_references(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            {"number": 42, "title": "Test PR"},
+            [
+                {
+                    "number": "7",
+                    "title": "Related issue",
+                    "state": "closed",
+                    "url": "https://api.gitcode.com/api/v5/repos/owner/repo/issues/7",
+                    "html_url": "https://gitcode.com/owner/repo/issues/7",
+                }
+            ],
+        ]
+
+        result = runner.invoke(main, ["pr", "view", "42", "--json", "number,closingIssuesReferences"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == {
+            "number": 42,
+            "closingIssuesReferences": [
+                {
+                    "number": 7,
+                    "title": "Related issue",
+                    "state": "CLOSED",
+                    "url": "https://gitcode.com/owner/repo/issues/7",
+                }
+            ],
+        }
+        assert mock_client.get.call_args_list == [
+            call("/repos/owner/repo/pulls/42"),
+            call("/repos/owner/repo/pulls/42/issues"),
+        ]
+
+    def test_pr_view_does_not_fetch_closing_issues_unless_requested(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": 42, "title": "Test PR"}
+
+        result = runner.invoke(main, ["pr", "view", "42", "--json", "number"])
+
+        assert result.exit_code == 0
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42")
+
+    def test_pr_view_help_lists_closing_issue_references(self, runner):
+        result = runner.invoke(main, ["pr", "view", "--help"])
+
+        assert result.exit_code == 0
+        assert "closingIssuesReferences" in result.output
 
     def test_pr_view_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [

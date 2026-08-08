@@ -46,6 +46,29 @@ def _normalize_pr_fields(item: dict) -> dict:
     return result
 
 
+def _normalize_closing_issue(item: dict) -> dict:
+    number = item.get("number")
+    if isinstance(number, str) and number.isdigit():
+        number = int(number)
+
+    state = item.get("state")
+    if isinstance(state, str):
+        state = state.upper()
+        if state == "OPENED":
+            state = "OPEN"
+
+    return {
+        "number": number,
+        "title": item.get("title"),
+        "state": state,
+        "url": item.get("html_url") or item.get("url"),
+    }
+
+
+def _json_field_requested(json_fields: str | None, field: str) -> bool:
+    return json_fields is not None and field in {value.strip() for value in json_fields.split(",")}
+
+
 def _split_merged_range(value: str) -> tuple[str | None, str | None]:
     if ".." in value:
         after, before = value.split("..", 1)
@@ -535,6 +558,10 @@ def pr_view(
     if web:
         open_in_browser(item["html_url"])
         return
+    if _json_field_requested(json_fields, "closingIssuesReferences"):
+        item = dict(item or {})
+        related_issues = service.list_issues(owner, repo, number) or []
+        item["closingIssuesReferences"] = [_normalize_closing_issue(issue) for issue in related_issues]
     if comments:
         comment_items = service.list_comments(owner, repo, number)
         data = dict(item) if item else {}
@@ -896,6 +923,26 @@ set_gc_help(
 )
 pr_view.short_help = "View a pull request"
 pr_view.help = "View a pull request."
+set_gc_help(
+    pr_view,
+    gc_json_fields=[
+        "author",
+        "assignees",
+        "baseRefName",
+        "body",
+        "closingIssuesReferences",
+        "comments",
+        "createdAt",
+        "headRefName",
+        "labels",
+        "mergedAt",
+        "number",
+        "state",
+        "title",
+        "updatedAt",
+        "url",
+    ],
+)
 pr_create.short_help = "Create a pull request"
 pr_create.help = "Create a pull request."
 set_gc_help(pr_create, gc_aliases=["new"])

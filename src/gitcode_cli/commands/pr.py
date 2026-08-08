@@ -65,6 +65,43 @@ def _normalize_closing_issue(item: dict) -> dict:
     }
 
 
+def _normalize_pr_actor(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    login = value.get("login") or value.get("username") or value.get("name")
+    return {
+        "id": value.get("id"),
+        "is_bot": bool(value.get("is_bot", False)),
+        "login": login,
+        "name": value.get("name") or login,
+    }
+
+
+def _pr_ref_name(value: object) -> object:
+    return value.get("ref") if isinstance(value, dict) else value
+
+
+def _normalize_pr_view_fields(item: dict) -> dict:
+    result = _normalize_pr_fields(item)
+    assignees = item.get("assignees")
+    result.update(
+        {
+            "author": _normalize_pr_actor(item.get("author") or item.get("user") or item.get("creator")),
+            "assignees": (
+                [_normalize_pr_actor(assignee) for assignee in assignees] if isinstance(assignees, list) else assignees
+            ),
+            "baseRefName": item.get("baseRefName") or _pr_ref_name(item.get("base")),
+            "createdAt": item.get("createdAt") or item.get("created_at"),
+            "headRefName": item.get("headRefName") or _pr_ref_name(item.get("head")),
+            "updatedAt": item.get("updatedAt") or item.get("updated_at"),
+            "url": item.get("html_url") or item.get("url"),
+        }
+    )
+    if isinstance(result.get("state"), str):
+        result["state"] = result["state"].upper()
+    return result
+
+
 def _json_field_requested(json_fields: str | None, field: str) -> bool:
     return json_fields is not None and field in {value.strip() for value in json_fields.split(",")}
 
@@ -558,32 +595,36 @@ def pr_view(
     if web:
         open_in_browser(item["html_url"])
         return
+    output_item = _normalize_pr_view_fields(item) if item and (json_fields or jq_query or template) else item
     if _json_field_requested(json_fields, "closingIssuesReferences"):
-        item = dict(item or {})
+        output_item = dict(output_item or {})
         related_issues = service.list_issues(owner, repo, number) or []
-        item["closingIssuesReferences"] = [_normalize_closing_issue(issue) for issue in related_issues]
-    if comments:
-        comment_items = service.list_comments(owner, repo, number)
-        data = dict(item) if item else {}
+        output_item["closingIssuesReferences"] = [_normalize_closing_issue(issue) for issue in related_issues]
+    if comments or _json_field_requested(json_fields, "comments"):
+        comment_items = service.list_comments(owner, repo, number) or []
+        data = dict(output_item) if output_item else {}
         data["comments"] = comment_items
 
-        def default_formatter(data: dict) -> None:
-            safe_echo(format_pr_detail(data))
-            if comment_items:
-                safe_echo("\nComments:")
-                for comment in comment_items:
-                    safe_echo(f"- {comment.get('body') or ''}")
+        if comments:
 
-        output_result(
-            data,
-            json_fields,
-            jq_query,
-            template,
-            default_formatter=default_formatter,
-        )
-        return
+            def default_formatter(data: dict) -> None:
+                safe_echo(format_pr_detail(data))
+                if comment_items:
+                    safe_echo("\nComments:")
+                    for comment in comment_items:
+                        safe_echo(f"- {comment.get('body') or ''}")
+
+            output_result(
+                data,
+                json_fields,
+                jq_query,
+                template,
+                default_formatter=default_formatter,
+            )
+            return
+        output_item = data
     output_result(
-        item,
+        output_item,
         json_fields,
         jq_query,
         template,

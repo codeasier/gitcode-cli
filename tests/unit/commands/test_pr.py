@@ -359,9 +359,9 @@ class TestPrList:
             "updatedAt": "2026-08-02T10:00:00+08:00",
             "url": "https://gitcode.com/owner/repo/merge_requests/42",
         }
-        assert mock_client.get.call_args_list == [
-            call("/repos/owner/repo/pulls/42"),
-            call("/repos/owner/repo/pulls/42/comments"),
+        assert [request.args[0] for request in mock_client.get.call_args_list] == [
+            "/repos/owner/repo/pulls/42",
+            "/repos/owner/repo/pulls/42/comments",
         ]
 
     def test_pr_view_does_not_fetch_closing_issues_unless_requested(self, runner, mock_client, mock_repo):

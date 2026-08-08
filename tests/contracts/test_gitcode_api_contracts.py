@@ -245,5 +245,10 @@ class TestPullRequestServiceContracts:
 
         service.list_comments("owner", "repo", 42)
 
-        client.get.assert_called_once_with(_contract_path(contract, owner="owner", repo="repo", number=42))
+        client.get.assert_called_once_with(
+            _contract_path(contract, owner="owner", repo="repo", number=42),
+            params={"page": 1, "per_page": 100},
+        )
         assert contract["method"] == "GET"
+        query_fields = {field["name"] for field in contract["queryParams"]}
+        assert {"page", "per_page"}.issubset(query_fields)

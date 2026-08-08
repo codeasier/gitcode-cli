@@ -9,6 +9,7 @@ from click.shell_completion import get_completion_class
 
 from . import __version__
 from .commands.auth import auth_group
+from .commands.compat import compat_group
 from .commands.issue import issue_group
 from .commands.pr import pr_group
 from .config import get_token
@@ -67,12 +68,13 @@ set_gc_help(
     gc_usage="gc <command> <subcommand> [flags]",
     gc_command_sections=[
         ("CORE COMMANDS", ["auth", "issue", "pr"]),
-        ("ADDITIONAL COMMANDS", ["completion", "version"]),
+        ("ADDITIONAL COMMANDS", ["compat", "completion", "version"]),
     ],
     gc_examples=[
         "gc issue create",
         "gc pr list -R owner/repo",
         "gc auth login",
+        "gc compat report --stdout",
     ],
     gc_learn_more=[
         "Use `gc <command> <subcommand> --help` for more information about a command.",
@@ -80,17 +82,18 @@ set_gc_help(
 )
 
 
-auth_group.short_help = "Authenticate gc with GitCode"
-issue_group.short_help = "Manage issues"
-pr_group.short_help = "Manage pull requests"
+auth_group.short_help = "Authenticate gc with GitCode"  # type: ignore[attr-defined]
+issue_group.short_help = "Manage issues"  # type: ignore[attr-defined]
+pr_group.short_help = "Manage pull requests"  # type: ignore[attr-defined]
+compat_group.short_help = "Inspect gc ↔ gh compatibility"  # type: ignore[attr-defined]
 
 
-@main.command("version", short_help="Show gc version", help="Show gc version.")
+@main.command("version", short_help="Show gc version", help="Show gc version.")  # type: ignore[attr-defined]
 def version_command() -> None:
     safe_echo(f"gitcode version {_get_version()}")
 
 
-@main.command("completion", short_help="Generate shell completion scripts", help="Generate shell completion scripts.")
+@main.command("completion", short_help="Generate shell completion scripts", help="Generate shell completion scripts.")  # type: ignore[attr-defined]
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completion_command(shell: str) -> None:
     comp_class = get_completion_class(shell)
@@ -100,9 +103,10 @@ def completion_command(shell: str) -> None:
     safe_echo(comp.source())
 
 
-main.add_command(auth_group)
-main.add_command(issue_group)
-main.add_command(pr_group)
+main.add_command(auth_group)  # type: ignore[attr-defined]
+main.add_command(issue_group)  # type: ignore[attr-defined]
+main.add_command(pr_group)  # type: ignore[attr-defined]
+main.add_command(compat_group)  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":  # pragma: no cover

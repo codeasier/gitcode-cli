@@ -17,6 +17,10 @@ CAPABILITY_MESSAGES = {
     ),
     "PR_MERGE_AUTHOR_EMAIL": "GitCode merge API does not support --author-email.",
     "PR_MERGE_AUTO": "GitCode merge API does not support --auto.",
+    "PR_EDIT_BASE": (
+        "GitCode's pull request update API does not support changing the base branch; "
+        "-B/--base cannot be used with 'gc pr edit'."
+    ),
     "PR_REVIEW_REQUEST_CHANGES": (
         "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
     ),

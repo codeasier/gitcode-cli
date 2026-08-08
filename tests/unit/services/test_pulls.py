@@ -105,6 +105,18 @@ class TestPullRequestService:
             call("/repos/owner/repo/pulls/42/comments", params={"page": 2, "per_page": 100}),
         ]
 
+    def test_list_comments_keeps_fetched_pages_when_next_page_is_not_a_list(self, service, mock_client):
+        first_page = [{"id": i} for i in range(100)]
+        mock_client.get.side_effect = [first_page, None]
+
+        result = service.list_comments("owner", "repo", 42)
+
+        assert result == first_page
+        assert mock_client.get.call_args_list == [
+            call("/repos/owner/repo/pulls/42/comments", params={"page": 1, "per_page": 100}),
+            call("/repos/owner/repo/pulls/42/comments", params={"page": 2, "per_page": 100}),
+        ]
+
     def test_diff_returns_empty_string_for_none(self, service, mock_client):
         mock_client.request.return_value = None
         result = service.diff("owner", "repo", 42)

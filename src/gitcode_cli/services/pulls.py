@@ -52,7 +52,7 @@ class PullRequestService:
                 params={"page": page, "per_page": per_page},
             )
             if not isinstance(result, list):
-                return result
+                return comments if comments else result
 
             comments.extend(result)
             if len(result) < per_page:

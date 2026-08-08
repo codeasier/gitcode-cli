@@ -161,7 +161,6 @@ class PullRequestAdapter:
         *,
         title: str | None,
         body: str | None,
-        base: str | None,
         add_assignee: str | None,
         add_label: str | None,
         add_reviewer: str | None,
@@ -176,7 +175,6 @@ class PullRequestAdapter:
             for k, v in {
                 "title": title,
                 "body": body,
-                "base": base,
                 "assignee": add_assignee,
                 "labels": add_label,
                 "reviewer": add_reviewer,

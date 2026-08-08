@@ -853,13 +853,29 @@ class TestPrReopen:
 
 
 class TestPrEdit:
+    def test_pr_edit_help_marks_base_unsupported(self, runner):
+        result = runner.invoke(main, ["pr", "edit", "--help"])
+
+        assert result.exit_code == 0
+        assert "Unsupported: GitCode does not allow changing a pull request's base branch." in result.output
+
     def test_pr_edit(self, runner, mock_client, mock_repo):
         mock_client.patch.return_value = {"number": 42}
-        result = runner.invoke(main, ["pr", "edit", "42", "-t", "New", "-B", "develop"])
+        result = runner.invoke(main, ["pr", "edit", "42", "-t", "New"])
         assert result.exit_code == 0
         assert "Edited pull request #42" in result.output
         assert mock_client.patch.call_args.kwargs["json"]["title"] == "New"
-        assert mock_client.patch.call_args.kwargs["json"]["base"] == "develop"
+        assert "base" not in mock_client.patch.call_args.kwargs["json"]
+
+    @pytest.mark.parametrize("base_option", ["-B", "--base"])
+    def test_pr_edit_rejects_unsupported_base_change(self, runner, mock_client, mock_repo, base_option):
+        result = runner.invoke(main, ["pr", "edit", "42", base_option, "develop"])
+
+        assert result.exit_code != 0
+        assert "does not support changing the base branch" in result.output
+        assert "-B/--base" in result.output
+        mock_client.get.assert_not_called()
+        mock_client.patch.assert_not_called()
 
     def test_pr_edit_without_number_in_response(self, runner, mock_client, mock_repo):
         mock_client.patch.return_value = {"iid": 42}

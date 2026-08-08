@@ -34,6 +34,13 @@ class TestPullRequestService:
         mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42")
         assert result == {"number": 42}
 
+    def test_list_issues(self, service, mock_client):
+        mock_client.get.return_value = [{"number": "7"}]
+        result = service.list_issues("owner", "repo", 42)
+
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/issues")
+        assert result == [{"number": "7"}]
+
     def test_create(self, service, mock_client):
         mock_client.post.return_value = {"number": 42}
         result = service.create("owner", "repo", title="Feature", head="dev", base="master", body=None)

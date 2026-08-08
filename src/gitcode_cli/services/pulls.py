@@ -15,6 +15,9 @@ class PullRequestService:
     def get(self, owner: str, repo: str, number: int) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}")
 
+    def list_issues(self, owner: str, repo: str, number: int) -> Any | None:
+        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/issues")
+
     def create(self, owner: str, repo: str, **data: Any) -> Any | None:
         return self.client.post(f"/repos/{owner}/{repo}/pulls", json={k: v for k, v in data.items() if v is not None})
 

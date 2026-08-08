@@ -45,7 +45,23 @@ class PullRequestService:
         return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json=filtered_payload)
 
     def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
-        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/comments")
+        per_page = 100
+        page = 1
+        comments: list[Any] = []
+
+        while True:
+            result = self.client.get(
+                f"/repos/{owner}/{repo}/pulls/{number}/comments",
+                params={"page": page, "per_page": per_page},
+            )
+            if not isinstance(result, list):
+                return comments if comments else result
+
+            comments.extend(result)
+            if len(result) < per_page:
+                return comments
+
+            page += 1
 
     def diff(self, owner: str, repo: str, number: int) -> str:
         response = self.client.request(

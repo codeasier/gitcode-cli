@@ -422,7 +422,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None,
 @click.option("-t", "--title")
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
-@click.option("-B", "--base")
+@click.option("-B", "--base", help="Unsupported: GitCode does not allow changing a pull request's base branch.")
 @click.option("-a", "--add-assignee")
 @click.option("-l", "--add-label")
 @click.option("-r", "--add-reviewer")
@@ -449,6 +449,8 @@ def pr_edit(
     milestone: str | None,
     remove_milestone: bool,
 ) -> None:
+    if base is not None:
+        raise unsupported("PR_EDIT_BASE")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -461,7 +463,6 @@ def pr_edit(
         [
             title is not None,
             body is not None,
-            base is not None,
             add_assignee is not None,
             add_label is not None,
             add_reviewer is not None,
@@ -480,7 +481,6 @@ def pr_edit(
         number,
         title=title,
         body=body,
-        base=base,
         add_assignee=add_assignee,
         add_label=add_label,
         add_reviewer=add_reviewer,

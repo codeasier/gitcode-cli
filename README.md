@@ -18,6 +18,14 @@ pip install pygitcode
 
 This exposes both `gc` and `gitcode` commands in your shell.
 
+To optionally route existing `gh` commands between GitCode and GitHub, install and configure the managed proxy:
+
+```bash
+gc setup gh-proxy --configure
+```
+
+The command installs the shim, adds a managed shell `PATH` block, and registers OpenCode instructions that teach agents to try the dispatcher before API fallbacks. Restart OpenCode afterward. The proxy sends GitCode repositories to `gc`, sends GitHub or unknown contexts to the native `gh`, and refuses unsupported commands when the target is GitCode. See [the compatibility notes](docs/en/gh-compatibility.md#optional-gh-proxy) for routing controls and uninstall instructions.
+
 ## Quick Start
 
 If you already know GitHub CLI (`gh`), you can start with the same familiar flows:

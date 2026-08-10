@@ -5,27 +5,42 @@ import subprocess
 
 from .errors import RepoResolutionError
 
-HTTPS_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
-SSH_RE = re.compile(r"git@[^:]+:(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+_URL_HOST = r"(?P<host>\[[^\]]+\]|[^/:]+)"
+HTTPS_RE = re.compile(rf"https?://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+SSH_URL_RE = re.compile(rf"ssh://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+SSH_RE = re.compile(r"(?:[^@/:]+@)?(?P<host>[^:]+):(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+
+
+def parse_repo_with_host(repo: str) -> tuple[str | None, str, str]:
+    parts = repo.split("/")
+    if len(parts) == 3:
+        host, owner, name = parts
+        return host, owner, name
+    if len(parts) == 2:
+        owner, name = parts
+        return None, owner, name
+    raise RepoResolutionError("Invalid repo format. Use OWNER/REPO or HOST/OWNER/REPO.")
 
 
 def parse_repo(repo: str) -> tuple[str, str]:
-    parts = repo.split("/")
-    if len(parts) == 3:
-        _, owner, name = parts
-    elif len(parts) == 2:
-        owner, name = parts
-    else:
-        raise RepoResolutionError("Invalid repo format. Use OWNER/REPO or HOST/OWNER/REPO.")
+    _, owner, name = parse_repo_with_host(repo)
     return owner, name
 
 
-def parse_remote_url(url: str) -> tuple[str, str]:
-    for pattern in (HTTPS_RE, SSH_RE):
+def parse_remote_url_with_host(url: str) -> tuple[str, str, str]:
+    for pattern in (HTTPS_RE, SSH_URL_RE, SSH_RE):
         match = pattern.match(url.strip())
         if match:
-            return match.group("owner"), match.group("repo")
+            host = match.group("host")
+            if host.startswith("[") and host.endswith("]"):
+                host = host[1:-1]
+            return host, match.group("owner"), match.group("repo")
     raise RepoResolutionError(f"Unsupported remote URL: {url}")
+
+
+def parse_remote_url(url: str) -> tuple[str, str]:
+    _, owner, repo = parse_remote_url_with_host(url)
+    return owner, repo
 
 
 def resolve_repo(explicit_repo: str | None = None) -> tuple[str, str]:

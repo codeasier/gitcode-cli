@@ -69,6 +69,16 @@ pip install pygitcode
 
 安装后会同时提供 `gc` 和 `gitcode` 两个命令。
 
+### 可选的 gh 透明路由
+
+如果 agent 默认调用 `gh`，可以安装由 `gc` 管理的可选代理：
+
+```bash
+gc setup gh-proxy --configure
+```
+
+该命令还会配置 shell 并注册持久化 OpenCode 指令，完成后需重启 OpenCode。agent 应先确认在 GitCode 仓库之外执行 `gh --version` 仍会调用原生 GitHub CLI，再分别在两类仓库中运行安全的只读命令。代理依次按 `GC_GH_TARGET`、显式仓库 host、当前 `origin` 判断目标；无法判断时使用原生 `gh`。目标明确为 GitCode 时，不支持的命令会被拒绝。原生 `gh` 自动查找失败时可设置 `GC_REAL_GH`，使用 `gc setup gh-proxy --uninstall` 可以移除受管配置。
+
 如果从源码安装，仓库文档中的步骤是：
 
 ```bash

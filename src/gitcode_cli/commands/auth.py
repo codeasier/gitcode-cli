@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import click
 
 from ..config import get_token, load_config, save_config
@@ -53,10 +55,21 @@ def auth_status(json_fields: str | None, jq_query: str | None, template: str | N
     try:
         token = get_token()
     except Exception:
-        safe_echo("Not logged in. Run `gc auth login` to authenticate.")
+        safe_echo("gitcode.com")
+        safe_echo("  X Not logged in to GitCode")
+        safe_echo("  - Run `gc auth login` or set GC_TOKEN to authenticate.")
+        if os.environ.get("GC_GH_PROXY_ACTIVE") == "1":
+            safe_echo("  - gh proxy: active; commands target GitCode, not GitHub")
+            raise click.exceptions.Exit(1) from None
         return
     masked = token[:4] + "****" if len(token) > 4 else "****"
-    safe_echo(f"Logged in to GitCode (token: {masked})")
+    safe_echo("gitcode.com")
+    safe_echo("  ✓ Logged in to GitCode")
+    safe_echo("  - Active account: true")
+    safe_echo("  - API host: https://api.gitcode.com")
+    safe_echo(f"  - Token: {masked}")
+    if os.environ.get("GC_GH_PROXY_ACTIVE") == "1":
+        safe_echo("  - gh proxy: active; commands target GitCode, not GitHub")
 
 
 @auth_group.command("token", short_help="Print the active token", help="Print the active token.")

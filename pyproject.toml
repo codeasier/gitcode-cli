@@ -126,6 +126,7 @@ reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
 reportUnknownParameterType = false
+reportFunctionMemberAccess = false
 reportOptionalSubscript = false
 reportOptionalMemberAccess = false
 reportOptionalIterable = false

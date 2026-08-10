@@ -174,10 +174,7 @@ def dispatch(argv: Sequence[str] | None = None, environ: Mapping[str, str] | Non
     env = os.environ if environ is None else environ
     if select_target(args, env) == "gitcode":
         validate_gitcode_command(args)
-        gc = shutil.which("gc", path=env.get("PATH"))
-        if not gc:
-            raise ProxyError("Unable to find gc on PATH.")
-        return _exec(gc, args)
+        return _exec(sys.executable, ["-m", "gitcode_cli.cli", *args])
 
     return _exec(find_real_gh(env), args)
 

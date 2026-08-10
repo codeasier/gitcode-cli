@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -141,11 +142,10 @@ def test_find_real_gh_reports_missing_binary(tmp_path):
 def test_dispatch_forwards_gitcode_args_unchanged(monkeypatch):
     calls = []
     monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda args, env: "gitcode")
-    monkeypatch.setattr("gitcode_cli.gh_proxy.shutil.which", lambda command, path=None: "/bin/gc")
     monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args: calls.append((executable, args)) or 7)
     args = ["issue", "view", "1", "--comments"]
     assert dispatch(args, {"PATH": "/bin"}) == 7
-    assert calls == [("/bin/gc", args)]
+    assert calls == [(sys.executable, ["-m", "gitcode_cli.cli", *args])]
 
 
 def test_dispatch_forwards_github_args_unchanged(monkeypatch):
@@ -166,11 +166,14 @@ def test_posix_exec_replaces_process_with_unchanged_args(monkeypatch):
     assert calls == [("/usr/bin/gh", ["/usr/bin/gh", "issue", "list"])]
 
 
-def test_dispatch_reports_missing_gc(monkeypatch):
+def test_gitcode_dispatch_does_not_resolve_gc_from_path(monkeypatch):
     monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda args, env: "gitcode")
-    monkeypatch.setattr("gitcode_cli.gh_proxy.shutil.which", lambda command, path=None: None)
-    with pytest.raises(ProxyError, match="Unable to find gc"):
-        dispatch(["issue", "list"], {"PATH": ""})
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.shutil.which",
+        lambda *args, **kwargs: pytest.fail("GitCode dispatch must not search PATH for gc"),
+    )
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args: 0)
+    assert dispatch(["issue", "list"], {"PATH": "/opt/homebrew/bin"}) == 0
 
 
 def test_origin_host_reads_git_remote(monkeypatch):

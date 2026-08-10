@@ -39,3 +39,23 @@ class TestAuthLogin:
         assert "No token provided on stdin." in result.output
         config_path = tmp_config_dir / "config.json"
         assert not config_path.exists()
+
+
+class TestAuthStatus:
+    def test_status_reports_gh_proxy_target(self, runner, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: "u6Gg-secret")
+        result = runner.invoke(main, ["auth", "status"], env={"GC_GH_PROXY_ACTIVE": "1"})
+        assert result.exit_code == 0
+        assert "gitcode.com" in result.output
+        assert "✓ Logged in to GitCode" in result.output
+        assert "Active account: true" in result.output
+        assert "API host: https://api.gitcode.com" in result.output
+        assert "Token: u6Gg****" in result.output
+        assert "gh proxy: active; commands target GitCode, not GitHub" in result.output
+
+    def test_status_reports_missing_auth_and_proxy_target(self, runner, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: (_ for _ in ()).throw(RuntimeError()))
+        result = runner.invoke(main, ["auth", "status"], env={"GC_GH_PROXY_ACTIVE": "1"})
+        assert result.exit_code == 0
+        assert "X Not logged in to GitCode" in result.output
+        assert "gh proxy: active; commands target GitCode, not GitHub" in result.output

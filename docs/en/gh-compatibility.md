@@ -26,6 +26,8 @@ Routing priority is:
 
 GitCode routing fails closed: commands absent from the compatibility registry are rejected rather than sent to GitHub. Remove the managed shim with `gc setup gh-proxy --uninstall`.
 
+In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy and names the GitCode target and `gc` backend. `gh auth status` similarly reports `gitcode.com`, the GitCode API host, a masked token, and an explicit notice that commands target GitCode rather than GitHub. In a GitHub repository, both commands continue to use the native GitHub CLI output.
+
 ## Aligned capabilities
 
 | Capability | Status in `gc` |

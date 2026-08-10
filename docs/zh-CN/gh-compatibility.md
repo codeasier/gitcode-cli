@@ -26,6 +26,8 @@ export PATH="$(gc setup gh-proxy --print-path):$PATH"
 
 GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令会直接拒绝，不会转发给 GitHub。使用 `gc setup gh-proxy --uninstall` 可移除代理。
 
+在 GitCode 仓库中，`gh --version` 会明确标识 pygitcode proxy、GitCode 目标和 `gc` 后端；`gh auth status` 会显示 `gitcode.com`、GitCode API host、脱敏 token，并明确提示命令目标是 GitCode 而非 GitHub。在 GitHub 仓库中，这两个命令仍保持原生 GitHub CLI 输出。
+
 ## 已对齐能力
 
 | 能力 | `gc` 支持情况 |

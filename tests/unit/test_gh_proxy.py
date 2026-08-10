@@ -142,28 +142,43 @@ def test_find_real_gh_reports_missing_binary(tmp_path):
 def test_dispatch_forwards_gitcode_args_unchanged(monkeypatch):
     calls = []
     monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda args, env: "gitcode")
-    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args: calls.append((executable, args)) or 7)
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy._exec",
+        lambda executable, args, env: calls.append((executable, args, env)) or 7,
+    )
     args = ["issue", "view", "1", "--comments"]
     assert dispatch(args, {"PATH": "/bin"}) == 7
-    assert calls == [(sys.executable, ["-m", "gitcode_cli.cli", *args])]
+    assert calls == [
+        (
+            sys.executable,
+            ["-m", "gitcode_cli.cli", *args],
+            {"PATH": "/bin", "GC_GH_PROXY_ACTIVE": "1", "GC_GH_PROXY_TARGET": "gitcode"},
+        )
+    ]
 
 
 def test_dispatch_forwards_github_args_unchanged(monkeypatch):
     calls = []
     monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda args, env: "github")
     monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda env: "/usr/bin/gh")
-    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args: calls.append((executable, args)) or 9)
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy._exec",
+        lambda executable, args, env: calls.append((executable, args, env)) or 9,
+    )
     args = ["repo", "view", "github.com/o/r"]
     assert dispatch(args, {}) == 9
-    assert calls == [("/usr/bin/gh", args)]
+    assert calls == [("/usr/bin/gh", args, {})]
 
 
 def test_posix_exec_replaces_process_with_unchanged_args(monkeypatch):
     calls = []
     monkeypatch.setattr("gitcode_cli.gh_proxy.os.name", "posix")
-    monkeypatch.setattr("gitcode_cli.gh_proxy.os.execv", lambda executable, args: calls.append((executable, args)))
-    assert _exec("/usr/bin/gh", ["issue", "list"]) == 0
-    assert calls == [("/usr/bin/gh", ["/usr/bin/gh", "issue", "list"])]
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.os.execve",
+        lambda executable, args, env: calls.append((executable, args, env)),
+    )
+    assert _exec("/usr/bin/gh", ["issue", "list"], {"PATH": "/usr/bin"}) == 0
+    assert calls == [("/usr/bin/gh", ["/usr/bin/gh", "issue", "list"], {"PATH": "/usr/bin"})]
 
 
 def test_gitcode_dispatch_does_not_resolve_gc_from_path(monkeypatch):
@@ -172,8 +187,19 @@ def test_gitcode_dispatch_does_not_resolve_gc_from_path(monkeypatch):
         "gitcode_cli.gh_proxy.shutil.which",
         lambda *args, **kwargs: pytest.fail("GitCode dispatch must not search PATH for gc"),
     )
-    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args: 0)
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda executable, args, env: 0)
     assert dispatch(["issue", "list"], {"PATH": "/opt/homebrew/bin"}) == 0
+
+
+@pytest.mark.parametrize("args", [["--version"], ["version"]])
+def test_gitcode_proxy_version_is_explicit(monkeypatch, capsys, args):
+    monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda argv, env: "gitcode")
+    monkeypatch.setattr("gitcode_cli.gh_proxy.importlib.metadata.version", lambda package: "1.2.3")
+    assert dispatch(args, {}) == 0
+    output = capsys.readouterr().out
+    assert "gh version 1.2.3 (pygitcode proxy)" in output
+    assert "Target: GitCode" in output
+    assert "not GitHub CLI" in output
 
 
 def test_origin_host_reads_git_remote(monkeypatch):

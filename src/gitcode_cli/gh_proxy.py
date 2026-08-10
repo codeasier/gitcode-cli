@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import os
 import shutil
 import subprocess
@@ -7,6 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from . import __version__
 from .compat import CompatStatus, iter_entries
 from .errors import RepoResolutionError
 from .repo import parse_remote_url_with_host, parse_repo_with_host
@@ -162,11 +164,24 @@ def find_real_gh(environ: Mapping[str, str] | None = None) -> str:
     return str(Path(candidate).resolve())
 
 
-def _exec(executable: str, args: list[str]) -> int:
+def _exec(executable: str, args: list[str], environ: Mapping[str, str]) -> int:
+    child_env = dict(environ)
     if os.name == "nt":
-        return subprocess.call([executable, *args])
-    os.execv(executable, [executable, *args])
+        return subprocess.call([executable, *args], env=child_env)
+    os.execve(executable, [executable, *args], child_env)
     return 0  # pragma: no cover
+
+
+def _print_gitcode_proxy_version() -> None:
+    try:
+        version = importlib.metadata.version("pygitcode")
+    except importlib.metadata.PackageNotFoundError:
+        version = __version__
+
+    print(f"gh version {version} (pygitcode proxy)")
+    print("Target: GitCode (gitcode.com)")
+    print("Backend: gc (GitCode CLI), not GitHub CLI")
+    print("https://github.com/codeasier/gitcode-cli")
 
 
 def dispatch(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
@@ -174,9 +189,15 @@ def dispatch(argv: Sequence[str] | None = None, environ: Mapping[str, str] | Non
     env = os.environ if environ is None else environ
     if select_target(args, env) == "gitcode":
         validate_gitcode_command(args)
-        return _exec(sys.executable, ["-m", "gitcode_cli.cli", *args])
+        if args in (["--version"], ["version"]):
+            _print_gitcode_proxy_version()
+            return 0
+        child_env = dict(env)
+        child_env["GC_GH_PROXY_ACTIVE"] = "1"
+        child_env["GC_GH_PROXY_TARGET"] = "gitcode"
+        return _exec(sys.executable, ["-m", "gitcode_cli.cli", *args], child_env)
 
-    return _exec(find_real_gh(env), args)
+    return _exec(find_real_gh(env), args, env)
 
 
 def main() -> None:

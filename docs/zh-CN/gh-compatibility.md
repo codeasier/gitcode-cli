@@ -6,14 +6,13 @@
 
 ## 可选 gh 代理
 
-`gc setup gh-proxy` 会在独立的用户目录中安装由 `gc` 管理的 `gh` shim，不会注册或覆盖 Python 包安装目录中的 `gh` console script。将输出目录放到原生 GitHub CLI 所在目录之前：
+`gc setup gh-proxy` 会在独立的用户目录中安装由 `gc` 管理的 `gh` shim，不会注册或覆盖 Python 包安装目录中的 `gh` console script。推荐同时配置检测到的 shell 和 OpenCode：
 
 ```bash
-gc setup gh-proxy
-export PATH="$(gc setup gh-proxy --print-path):$PATH"
+gc setup gh-proxy --configure
 ```
 
-在 PowerShell 中请使用 `gitcode` 避免与内置 `gc` 别名冲突，并通过 `$env:Path = "$(gitcode setup gh-proxy --print-path);$env:Path"` 将目录放到最前面。
+`--configure` 会在检测到的 zsh、bash、fish 或 PowerShell profile 中写入带标记且幂等的 `PATH` 配置块；同时创建 `gh-proxy-instructions.md` 并注册到全局 OpenCode `instructions` 数组，要求 agent 在 WebFetch、curl 或手写 API 前先验证并使用 `gh`。OpenCode 不会热加载指令，配置后必须重启。在 PowerShell 中请使用 `gitcode setup gh-proxy --configure` 避免与内置 `gc` 别名冲突。只运行 `gc setup gh-proxy` 仍保持仅安装模式，便于希望手动配置的用户使用。
 
 路由优先级如下：
 
@@ -24,7 +23,7 @@ export PATH="$(gc setup gh-proxy --print-path):$PATH"
 
 默认识别 `gitcode.com` 和 `ssh.gitcode.com`，包括 `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`。`ssh://git@ssh.github.com:443/OWNER/REPO.git` 等 GitHub SSH 地址会路由到原生 `gh`。私有部署可以通过 `GC_GITCODE_HOSTS` 配置逗号分隔的额外 host。自动查找原生 `gh` 失败时，可用 `GC_REAL_GH` 指定其可执行文件。代理查找时会排除自身目录；在 POSIX 上通过进程替换保留原始参数、标准流、信号和退出状态。
 
-GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令会直接拒绝，不会转发给 GitHub。使用 `gc setup gh-proxy --uninstall` 可移除代理。
+GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令会直接拒绝，不会转发给 GitHub。`gc setup gh-proxy --uninstall` 会移除 shim，并且只删除由该命令管理且带标记的 shell/OpenCode 配置。
 
 在 GitCode 仓库中，`gh --version` 会明确标识 pygitcode proxy、GitCode 目标和 `gc` 后端；`gh auth status` 会显示 `gitcode.com`、GitCode API host、脱敏 token，并明确提示命令目标是 GitCode 而非 GitHub。在 GitHub 仓库中，这两个命令仍保持原生 GitHub CLI 输出。
 

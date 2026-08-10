@@ -74,11 +74,10 @@ This installs both `gc` and `gitcode` commands.
 If an agent defaults to `gh`, you can install the optional managed proxy:
 
 ```bash
-gc setup gh-proxy
-export PATH="$(gc setup gh-proxy --print-path):$PATH"
+gc setup gh-proxy --configure
 ```
 
-The agent should verify that `gh --version` still reaches the native GitHub CLI outside a GitCode repository, then run a safe read-only command in each repository type. The proxy chooses `GC_GH_TARGET` first, then an explicit repository host, then the current `origin`; unknown contexts use native `gh`. It refuses unsupported commands for a confirmed GitCode target. Use `GC_REAL_GH` when native discovery fails and `gc setup gh-proxy --uninstall` to remove the shim.
+This also configures the shell and registers durable OpenCode instructions; restart OpenCode afterward. The agent should verify that `gh --version` still reaches the native GitHub CLI outside a GitCode repository, then run a safe read-only command in each repository type. The proxy chooses `GC_GH_TARGET` first, then an explicit repository host, then the current `origin`; unknown contexts use native `gh`. It refuses unsupported commands for a confirmed GitCode target. Use `GC_REAL_GH` when native discovery fails and `gc setup gh-proxy --uninstall` to remove the managed integration.
 
 For source installation, the repository documents this setup flow:
 

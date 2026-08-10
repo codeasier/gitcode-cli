@@ -6,14 +6,13 @@
 
 ## Optional gh proxy
 
-`gc setup gh-proxy` installs a managed `gh` shim in an isolated user directory; it does not register or overwrite a `gh` package console script. Add the printed directory before the native GitHub CLI directory in `PATH`:
+`gc setup gh-proxy` installs a managed `gh` shim in an isolated user directory; it does not register or overwrite a `gh` package console script. The recommended setup also configures the detected shell and OpenCode:
 
 ```bash
-gc setup gh-proxy
-export PATH="$(gc setup gh-proxy --print-path):$PATH"
+gc setup gh-proxy --configure
 ```
 
-On PowerShell, use `gitcode` to avoid the built-in `gc` alias and prepend the directory with `$env:Path = "$(gitcode setup gh-proxy --print-path);$env:Path"`.
+`--configure` writes a marked, idempotent `PATH` block to the detected zsh, bash, fish, or PowerShell profile. It also creates `gh-proxy-instructions.md`, registers it in the global OpenCode `instructions` array, and tells agents to verify and use `gh` before WebFetch, curl, or handwritten API requests. Restart OpenCode after configuration because it does not hot-reload instructions. Use `gitcode setup gh-proxy --configure` on PowerShell to avoid its built-in `gc` alias. Plain `gc setup gh-proxy` remains install-only for users who prefer manual configuration.
 
 Routing priority is:
 
@@ -24,7 +23,7 @@ Routing priority is:
 
 `gitcode.com` and `ssh.gitcode.com` are recognized by default, including `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`. GitHub SSH endpoints such as `ssh://git@ssh.github.com:443/OWNER/REPO.git` route to the native `gh`. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
 
-GitCode routing fails closed: commands absent from the compatibility registry are rejected rather than sent to GitHub. Remove the managed shim with `gc setup gh-proxy --uninstall`.
+GitCode routing fails closed: commands absent from the compatibility registry are rejected rather than sent to GitHub. `gc setup gh-proxy --uninstall` removes the shim and only the marked shell/OpenCode configuration managed by this command.
 
 In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy and names the GitCode target and `gc` backend. `gh auth status` similarly reports `gitcode.com`, the GitCode API host, a masked token, and an explicit notice that commands target GitCode rather than GitHub. In a GitHub repository, both commands continue to use the native GitHub CLI output.
 

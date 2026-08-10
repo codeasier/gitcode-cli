@@ -57,6 +57,20 @@ def test_custom_gitcode_host(monkeypatch):
     assert select_target([], {"GC_GITCODE_HOSTS": "code.example.com,gitcode.internal"}) == "gitcode"
 
 
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("gitcode.com", "gitcode"),
+        ("codeasier@gitcode.com", "gitcode"),
+        ("gitcode.com:443", "gitcode"),
+        ("git@github.com", "github"),
+    ],
+)
+def test_host_with_userinfo_or_port_is_normalized(monkeypatch, host, expected):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: host)
+    assert select_target([], {}) == expected
+
+
 def test_unqualified_repo_uses_remote(monkeypatch):
     monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "gitcode.com")
     assert select_target(["-R", "o/r", "issue", "list"], {}) == "gitcode"
@@ -163,6 +177,16 @@ def test_origin_host_reads_git_remote(monkeypatch):
     monkeypatch.setattr(
         "gitcode_cli.gh_proxy.subprocess.run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "git@gitcode.com:o/r.git\n", ""),
+    )
+    assert _origin_host() == "gitcode.com"
+
+
+def test_origin_host_reads_ssh_remote_with_custom_port(monkeypatch):
+    from gitcode_cli.gh_proxy import _origin_host
+
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "ssh://git@gitcode.com:2222/o/r.git\n", ""),
     )
     assert _origin_host() == "gitcode.com"
 

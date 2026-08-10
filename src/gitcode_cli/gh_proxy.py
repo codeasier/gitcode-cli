@@ -19,7 +19,12 @@ class ProxyError(Exception):
 
 
 def _normalize_host(host: str) -> str:
-    return host.strip().lower().rstrip(".")
+    host = host.strip().lower()
+    if "@" in host:
+        host = host.rsplit("@", 1)[1]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    return host.rstrip(".")
 
 
 def _gitcode_hosts(environ: Mapping[str, str]) -> set[str]:

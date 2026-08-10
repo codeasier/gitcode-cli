@@ -61,6 +61,16 @@ class TestParseRemoteUrl:
     def test_ssh_url_without_git(self):
         assert parse_remote_url("git@gitcode.com:owner/repo") == ("owner", "repo")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "ssh://git@gitcode.com:2222/owner/repo.git",
+            "ssh://gitcode.com:2222/owner/repo.git",
+        ],
+    )
+    def test_ssh_url_with_custom_port(self, url):
+        assert parse_remote_url(url) == ("owner", "repo")
+
     def test_invalid_url(self):
         with pytest.raises(RepoResolutionError, match="Unsupported remote URL"):
             parse_remote_url("ftp://gitcode.com/owner/repo")
@@ -72,7 +82,9 @@ class TestParseRemoteUrl:
         ("url", "expected"),
         [
             ("https://github.com/owner/repo.git", ("github.com", "owner", "repo")),
+            ("https://user@gitcode.com:8443/owner/repo.git", ("gitcode.com", "owner", "repo")),
             ("git@gitcode.com:owner/repo.git", ("gitcode.com", "owner", "repo")),
+            ("ssh://git@gitcode.com:2222/owner/repo.git", ("gitcode.com", "owner", "repo")),
         ],
     )
     def test_preserves_remote_host(self, url, expected):

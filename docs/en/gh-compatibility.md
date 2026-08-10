@@ -22,7 +22,7 @@ Routing priority is:
 3. the current repository's `origin` host
 4. the native GitHub CLI when the target cannot be determined
 
-`gitcode.com` is recognized by default. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
+`gitcode.com` and `ssh.gitcode.com` are recognized by default, including `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
 
 GitCode routing fails closed: commands absent from the compatibility registry are rejected rather than sent to GitHub. Remove the managed shim with `gc setup gh-proxy --uninstall`.
 

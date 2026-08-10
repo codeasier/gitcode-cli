@@ -29,7 +29,11 @@ def _normalize_host(host: str) -> str:
 
 def _gitcode_hosts(environ: Mapping[str, str]) -> set[str]:
     configured = environ.get(GITCODE_HOSTS_ENV, "")
-    return {"gitcode.com", *(_normalize_host(host) for host in configured.split(",") if host.strip())}
+    return {
+        "gitcode.com",
+        "ssh.gitcode.com",
+        *(_normalize_host(host) for host in configured.split(",") if host.strip()),
+    }
 
 
 def _target_for_host(host: str, environ: Mapping[str, str]) -> str:

@@ -61,6 +61,8 @@ def test_custom_gitcode_host(monkeypatch):
     ("host", "expected"),
     [
         ("gitcode.com", "gitcode"),
+        ("ssh.gitcode.com", "gitcode"),
+        ("git@ssh.gitcode.com:443", "gitcode"),
         ("codeasier@gitcode.com", "gitcode"),
         ("gitcode.com:443", "gitcode"),
         ("git@github.com", "github"),
@@ -189,6 +191,17 @@ def test_origin_host_reads_ssh_remote_with_custom_port(monkeypatch):
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "ssh://git@gitcode.com:2222/o/r.git\n", ""),
     )
     assert _origin_host() == "gitcode.com"
+
+
+def test_origin_host_reads_gitcode_ssh_endpoint_with_custom_port(monkeypatch):
+    from gitcode_cli.gh_proxy import _origin_host
+
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "ssh://git@ssh.gitcode.com:443/o/r.git\n", ""),
+    )
+    assert _origin_host() == "ssh.gitcode.com"
+    assert select_target([], {}) == "gitcode"
 
 
 def test_origin_host_ignores_git_failure(monkeypatch):

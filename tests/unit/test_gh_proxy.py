@@ -204,6 +204,17 @@ def test_origin_host_reads_gitcode_ssh_endpoint_with_custom_port(monkeypatch):
     assert select_target([], {}) == "gitcode"
 
 
+def test_origin_host_routes_github_ssh_endpoint_to_native_gh(monkeypatch):
+    from gitcode_cli.gh_proxy import _origin_host
+
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "ssh://git@ssh.github.com:443/o/r.git\n", ""),
+    )
+    assert _origin_host() == "ssh.github.com"
+    assert select_target([], {}) == "github"
+
+
 def test_origin_host_ignores_git_failure(monkeypatch):
     from gitcode_cli.gh_proxy import _origin_host
 

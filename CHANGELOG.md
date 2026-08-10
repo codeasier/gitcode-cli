@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-08-10
+
+本次发布继续完善 `gc pr` 的 `gh` 兼容行为，补齐关联 issue 查询与评论分页，并将兼容状态纳入仓库统一维护，使命令能力与兼容性进度更清晰、可靠。
+
+### Added
+
+- `pr view --json closingIssuesReferences` 新增关联 issue 查询支持，使用 GitCode 服务端关系数据返回将由 PR 关闭的 issue ([#136](https://github.com/codeasier/gitcode-cli/pull/136))
+- 新增 `gc compat report`、`gc compat stats` 与 `gc compat list` 命令，并引入声明式兼容性注册表，便于查看和维护 `gc` 与 `gh` 的命令及参数支持状态 ([#138](https://github.com/codeasier/gitcode-cli/pull/138))
+
+### Fixed
+
+- 修复 PR 评论仅获取第一页的问题，确保查看和处理评论时保留完整分页结果 ([#134](https://github.com/codeasier/gitcode-cli/pull/134))
+- 修复 `pr edit --base` 在 GitCode 不支持修改目标分支时仍继续请求的问题，改为明确报告不支持的能力 ([#137](https://github.com/codeasier/gitcode-cli/pull/137))
+
 ## [0.1.3] - 2026-06-04
 
 本次发布聚焦于继续补齐 `gc issue` 与 `gc pr` 的 `gh` 兼容行为，完善 PR 查询与评论能力，并修正多处参数解析、输出格式与边界条件问题，让日常命令行使用与脚本集成更加稳定可预期。

@@ -6,6 +6,7 @@ import os
 from click.testing import CliRunner
 
 from gitcode_cli.cli import main
+from gitcode_cli.commands.setup import shell_profile
 
 
 def _env(tmp_path):
@@ -38,6 +39,30 @@ def test_install_and_uninstall_gh_proxy(tmp_path):
     removed = runner.invoke(main, ["setup", "gh-proxy", "--uninstall"], env=env)
     assert removed.exit_code == 0, removed.output
     assert not shim.exists()
+
+
+def test_uninstall_removes_shim_before_cleaning_malformed_profile(tmp_path):
+    runner = CliRunner()
+    env = _env(tmp_path)
+    installed = runner.invoke(main, ["setup", "gh-proxy"], env=env)
+    assert installed.exit_code == 0, installed.output
+    shim = tmp_path / "proxy" / ("gh.cmd" if os.name == "nt" else "gh")
+    (tmp_path / ".zshenv").write_text("# >>> gc gh-proxy >>>\n", encoding="utf-8")
+
+    removed = runner.invoke(main, ["setup", "gh-proxy", "--uninstall"], env=env)
+
+    assert removed.exit_code != 0
+    assert "Malformed gc gh-proxy block" in removed.output
+    assert not shim.exists()
+
+
+def test_shell_profile_uses_bash_profile_on_macos(tmp_path, monkeypatch):
+    monkeypatch.delenv("GC_GH_SHELL_PROFILE", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setattr("gitcode_cli.commands.setup.sys.platform", "darwin")
+
+    assert shell_profile() == tmp_path / ".bash_profile"
 
 
 def test_install_refuses_to_overwrite_unmanaged_file(tmp_path):

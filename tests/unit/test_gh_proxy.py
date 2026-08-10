@@ -91,6 +91,8 @@ def test_unknown_context_defaults_to_github(monkeypatch):
         ["issue", "ls"],
         ["pr", "new"],
         ["auth", "login"],
+        ["help"],
+        ["help", "issue"],
         ["issue", "--help"],
         ["--version"],
     ],
@@ -155,6 +157,18 @@ def test_dispatch_forwards_gitcode_args_unchanged(monkeypatch):
             {"PATH": "/bin", "GC_GH_PROXY_ACTIVE": "1", "GC_GH_PROXY_TARGET": "gitcode"},
         )
     ]
+
+
+def test_dispatch_translates_gitcode_help_command(monkeypatch):
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy.select_target", lambda args, env: "gitcode")
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy._exec",
+        lambda executable, args, env: calls.append((executable, args, env)) or 0,
+    )
+
+    assert dispatch(["help", "issue"], {}) == 0
+    assert calls[0][1] == ["-m", "gitcode_cli.cli", "issue", "--help"]
 
 
 def test_dispatch_forwards_github_args_unchanged(monkeypatch):

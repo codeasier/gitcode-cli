@@ -5,8 +5,9 @@ import subprocess
 
 from .errors import RepoResolutionError
 
-HTTPS_RE = re.compile(r"https?://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
-SSH_URL_RE = re.compile(r"ssh://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+_URL_HOST = r"(?P<host>\[[^\]]+\]|[^/:]+)"
+HTTPS_RE = re.compile(rf"https?://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+SSH_URL_RE = re.compile(rf"ssh://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
 SSH_RE = re.compile(r"(?:[^@/:]+@)?(?P<host>[^:]+):(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
 
 
@@ -30,7 +31,10 @@ def parse_remote_url_with_host(url: str) -> tuple[str, str, str]:
     for pattern in (HTTPS_RE, SSH_URL_RE, SSH_RE):
         match = pattern.match(url.strip())
         if match:
-            return match.group("host"), match.group("owner"), match.group("repo")
+            host = match.group("host")
+            if host.startswith("[") and host.endswith("]"):
+                host = host[1:-1]
+            return host, match.group("owner"), match.group("repo")
     raise RepoResolutionError(f"Unsupported remote URL: {url}")
 
 

@@ -54,7 +54,7 @@ def shell_profile() -> Path:
     if shell == "zsh":
         return Path.home() / ".zshenv"
     if shell == "bash":
-        return Path.home() / ".bashrc"
+        return Path.home() / (".bash_profile" if sys.platform == "darwin" else ".bashrc")
     if shell == "fish":
         return Path.home() / ".config" / "fish" / "config.fish"
     raise click.ClickException("Unable to detect a supported shell profile; set GC_GH_SHELL_PROFILE.")
@@ -228,8 +228,8 @@ def gh_proxy_command(print_path: bool, uninstall: bool, configure: bool) -> None
         safe_echo(str(directory))
         return
     if uninstall:
-        removed_profile, removed_instructions = uninstall_managed_configuration()
         removed = uninstall_gh_proxy(directory)
+        removed_profile, removed_instructions = uninstall_managed_configuration()
         safe_echo(f"Removed gh proxy from {directory}." if removed else f"No gh proxy found in {directory}.")
         if removed_profile:
             safe_echo(f"Removed managed PATH block from {removed_profile}.")

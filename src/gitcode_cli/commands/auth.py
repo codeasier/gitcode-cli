@@ -60,6 +60,7 @@ def auth_status(json_fields: str | None, jq_query: str | None, template: str | N
         safe_echo("  - Run `gc auth login` or set GC_TOKEN to authenticate.")
         if os.environ.get("GC_GH_PROXY_ACTIVE") == "1":
             safe_echo("  - gh proxy: active; commands target GitCode, not GitHub")
+            raise click.exceptions.Exit(1) from None
         return
     masked = token[:4] + "****" if len(token) > 4 else "****"
     safe_echo("gitcode.com")

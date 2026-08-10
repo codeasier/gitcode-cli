@@ -55,6 +55,11 @@ class TestParseRemoteUrl:
     def test_http_url(self):
         assert parse_remote_url("http://gitcode.com/owner/repo.git") == ("owner", "repo")
 
+    def test_https_url_with_ipv6_literal(self):
+        url = "https://[::1]/owner/repo.git"
+        assert parse_remote_url(url) == ("owner", "repo")
+        assert parse_remote_url_with_host(url) == ("::1", "owner", "repo")
+
     def test_ssh_url(self):
         assert parse_remote_url("git@gitcode.com:owner/repo.git") == ("owner", "repo")
 

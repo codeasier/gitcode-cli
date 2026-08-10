@@ -56,6 +56,11 @@ class TestAuthStatus:
     def test_status_reports_missing_auth_and_proxy_target(self, runner, monkeypatch):
         monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: (_ for _ in ()).throw(RuntimeError()))
         result = runner.invoke(main, ["auth", "status"], env={"GC_GH_PROXY_ACTIVE": "1"})
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "X Not logged in to GitCode" in result.output
         assert "gh proxy: active; commands target GitCode, not GitHub" in result.output
+
+    def test_status_preserves_gc_exit_code_when_auth_is_missing(self, runner, monkeypatch):
+        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: (_ for _ in ()).throw(RuntimeError()))
+        result = runner.invoke(main, ["auth", "status"])
+        assert result.exit_code == 0

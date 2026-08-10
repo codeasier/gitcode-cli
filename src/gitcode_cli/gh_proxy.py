@@ -24,7 +24,9 @@ def _normalize_host(host: str) -> str:
     host = host.strip().lower()
     if "@" in host:
         host = host.rsplit("@", 1)[1]
-    if ":" in host:
+    if host.startswith("[") and "]" in host:
+        host = host[1 : host.index("]")]
+    elif host.count(":") == 1:
         host = host.split(":", 1)[0]
     return host.rstrip(".")
 
@@ -115,7 +117,7 @@ def _command_tokens(argv: Sequence[str]) -> list[str]:
 
 
 def validate_gitcode_command(argv: Sequence[str]) -> None:
-    if not argv or argv[0] in {"--help", "-h", "--version", "version"}:
+    if not argv or argv[0] in {"--help", "-h", "--version", "help", "version"}:
         return
 
     tokens = _command_tokens(argv)
@@ -192,6 +194,8 @@ def dispatch(argv: Sequence[str] | None = None, environ: Mapping[str, str] | Non
         if args in (["--version"], ["version"]):
             _print_gitcode_proxy_version()
             return 0
+        if args and args[0] == "help":
+            args = [*args[1:], "--help"]
         child_env = dict(env)
         child_env["GC_GH_PROXY_ACTIVE"] = "1"
         child_env["GC_GH_PROXY_TARGET"] = "gitcode"

@@ -37,11 +37,7 @@ def _shim_content() -> str:
             "exit /b %ERRORLEVEL%\r\n"
         )
     python = shlex.quote(sys.executable)
-    return (
-        f"#!/bin/sh\n# {_MARKER}\n"
-        'GC_GH_SHIM="$0"\nexport GC_GH_SHIM\n'
-        f'exec {python} -m gitcode_cli.gh_proxy "$@"\n'
-    )
+    return f'#!/bin/sh\n# {_MARKER}\nGC_GH_SHIM="$0"\nexport GC_GH_SHIM\nexec {python} -m gitcode_cli.gh_proxy "$@"\n'
 
 
 def install_gh_proxy(directory: Path) -> Path:
@@ -49,7 +45,8 @@ def install_gh_proxy(directory: Path) -> Path:
     if shim.exists() and _MARKER not in shim.read_text(encoding="utf-8", errors="replace"):
         raise click.ClickException(f"Refusing to overwrite unmanaged file: {shim}")
     directory.mkdir(parents=True, exist_ok=True)
-    shim.write_text(_shim_content(), encoding="utf-8", newline="")
+    with open(shim, "w", encoding="utf-8", newline="") as handle:
+        handle.write(_shim_content())
     if os.name != "nt":
         shim.chmod(0o755)
     return shim

@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from gitcode_cli.errors import RepoResolutionError
-from gitcode_cli.repo import parse_remote_url, parse_repo, resolve_repo
+from gitcode_cli.repo import (
+    parse_remote_url,
+    parse_remote_url_with_host,
+    parse_repo,
+    parse_repo_with_host,
+    resolve_repo,
+)
 
 
 class TestParseRepo:
@@ -31,6 +37,12 @@ class TestParseRepo:
     def test_invalid_four_parts(self):
         with pytest.raises(RepoResolutionError, match="Invalid repo format"):
             parse_repo("a/b/c/d")
+
+    def test_preserves_explicit_host(self):
+        assert parse_repo_with_host("gitcode.com/owner/repo") == ("gitcode.com", "owner", "repo")
+
+    def test_host_is_optional(self):
+        assert parse_repo_with_host("owner/repo") == (None, "owner", "repo")
 
 
 class TestParseRemoteUrl:
@@ -55,6 +67,16 @@ class TestParseRemoteUrl:
 
     def test_ssh_url_with_whitespace(self):
         assert parse_remote_url("  git@gitcode.com:owner/repo.git  ") == ("owner", "repo")
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://github.com/owner/repo.git", ("github.com", "owner", "repo")),
+            ("git@gitcode.com:owner/repo.git", ("gitcode.com", "owner", "repo")),
+        ],
+    )
+    def test_preserves_remote_host(self, url, expected):
+        assert parse_remote_url_with_host(url) == expected
 
 
 class TestResolveRepo:

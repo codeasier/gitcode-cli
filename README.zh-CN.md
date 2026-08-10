@@ -18,6 +18,15 @@ pip install pygitcode
 
 安装后会提供 `gc` 和 `gitcode` 两个命令。
 
+如果希望原有 `gh` 命令能按仓库自动路由到 GitCode 或 GitHub，可以安装可选代理，并将代理目录放到 `PATH` 最前面：
+
+```bash
+gc setup gh-proxy
+export PATH="$(gc setup gh-proxy --print-path):$PATH"
+```
+
+代理会将 GitCode 仓库转给 `gc`，将 GitHub 或无法判断的场景转给原生 `gh`；当目标为 GitCode 时，不支持的命令会直接报错。路由控制和卸载方式见[兼容性说明](docs/zh-CN/gh-compatibility.md#可选-gh-代理)。
+
 ## 快速开始
 
 如果你熟悉 GitHub CLI（`gh`），可以直接从这些常见流程开始：

@@ -177,18 +177,35 @@ class IssueAdapter:
             if not current_login:
                 raise click.ClickException("failed to resolve @me: current user has no login")
             author = current_login
-        items = self.service.list(
-            owner,
-            repo,
-            state=state,
-            labels=_normalize_multi_values(labels),
-            creator=author,
-            assignee=assignee,
-            milestone=milestone,
-            mention=mention,
-            search=search,
-        )
-        if isinstance(items, list) and labels and len(labels) > 1:
+        params = {
+            "state": state,
+            "labels": _normalize_multi_values(labels),
+            "creator": author,
+            "assignee": assignee,
+            "milestone": milestone,
+            "mention": mention,
+            "search": search,
+        }
+        needs_and_filter = bool(labels) and len(labels) > 1
+        per_page = 100 if limit is None else min(limit, 100)
+        items: list[Any] = []
+        page = 1
+        while True:
+            page_items = _as_list(self.service.list(owner, repo, **params, page=page, per_page=per_page))
+            if not page_items:
+                break
+            items.extend(page_items)
+            if len(page_items) < per_page:
+                break
+            if limit is not None:
+                if needs_and_filter:
+                    matched = sum(1 for item in items if _matches_all_labels(item, labels))
+                else:
+                    matched = len(items)
+                if matched >= limit:
+                    break
+            page += 1
+        if needs_and_filter:
             items = [item for item in items if _matches_all_labels(item, labels)]
         if limit is not None:
             return items[:limit]

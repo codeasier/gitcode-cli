@@ -92,8 +92,54 @@ class TestIssueList:
                 "search": "search",
                 "milestone": "v1",
                 "mention": "octocat",
+                "page": 1,
+                "per_page": 1,
             },
         )
+
+    def test_paginates_until_limit_met(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            [{"number": str(number), "state": "open", "title": f"Issue {number}"} for number in range(1, 101)],
+            [{"number": str(number), "state": "open", "title": f"Issue {number}"} for number in range(101, 201)],
+        ]
+
+        result = runner.invoke(main, ["issue", "list", "-L", "150"])
+
+        assert result.exit_code == 0
+        assert mock_client.get.call_count == 2
+        assert mock_client.get.call_args_list == [
+            call(
+                "/repos/owner/repo/issues",
+                params={
+                    "state": None,
+                    "labels": None,
+                    "creator": None,
+                    "assignee": None,
+                    "milestone": None,
+                    "mention": None,
+                    "search": None,
+                    "page": 1,
+                    "per_page": 100,
+                },
+            ),
+            call(
+                "/repos/owner/repo/issues",
+                params={
+                    "state": None,
+                    "labels": None,
+                    "creator": None,
+                    "assignee": None,
+                    "milestone": None,
+                    "mention": None,
+                    "search": None,
+                    "page": 2,
+                    "per_page": 100,
+                },
+            ),
+        ]
+        assert "#1\topen\tIssue 1" in result.output
+        assert "#150\topen\tIssue 150" in result.output
+        assert "#151" not in result.output
 
     def test_web_opens_issues_page_without_fetching(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.issue.open_in_browser") as mock_browser:
@@ -123,6 +169,8 @@ class TestIssueList:
                     "milestone": None,
                     "mention": None,
                     "search": None,
+                    "page": 1,
+                    "per_page": 30,
                 },
             ),
         ]

@@ -49,6 +49,8 @@ class TestIssueAdapter:
             milestone="v1",
             mention="carol",
             search="query",
+            page=1,
+            per_page=1,
         )
         assert result == [{"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]}]
 
@@ -101,7 +103,159 @@ class TestIssueAdapter:
             milestone=None,
             mention=None,
             search=None,
+            page=1,
+            per_page=100,
         )
+
+    def test_list_issues_paginates_until_limit_met(self, adapter, service):
+        service.list.side_effect = [
+            [{"number": str(number)} for number in range(1, 101)],
+            [{"number": str(number)} for number in range(101, 201)],
+        ]
+
+        result = adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=None,
+            author=None,
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=150,
+        )
+
+        assert service.list.call_args_list == [
+            call(
+                "owner",
+                "repo",
+                state="open",
+                labels=None,
+                creator=None,
+                assignee=None,
+                milestone=None,
+                mention=None,
+                search=None,
+                page=1,
+                per_page=100,
+            ),
+            call(
+                "owner",
+                "repo",
+                state="open",
+                labels=None,
+                creator=None,
+                assignee=None,
+                milestone=None,
+                mention=None,
+                search=None,
+                page=2,
+                per_page=100,
+            ),
+        ]
+        assert result == [{"number": str(number)} for number in range(1, 151)]
+
+    def test_list_issues_stops_on_short_page(self, adapter, service):
+        service.list.side_effect = [
+            [{"number": str(number)} for number in range(1, 101)],
+            [{"number": str(number)} for number in range(101, 138)],
+        ]
+
+        result = adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=None,
+            author=None,
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=250,
+        )
+
+        assert service.list.call_count == 2
+        assert result == [{"number": str(number)} for number in range(1, 138)]
+
+    def test_list_issues_stops_on_empty_page(self, adapter, service):
+        service.list.side_effect = [
+            [{"number": str(number)} for number in range(1, 101)],
+            [],
+        ]
+
+        result = adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=None,
+            author=None,
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=None,
+        )
+
+        assert service.list.call_count == 2
+        assert result == [{"number": str(number)} for number in range(1, 101)]
+
+    def test_list_issues_multi_label_limit_counts_matching_items(self, adapter, service):
+        service.list.side_effect = [
+            [
+                {"number": "1", "labels": [{"name": "bug"}, {"name": "docs"}]},
+                {"number": "2", "labels": [{"name": "bug"}]},
+                {"number": "3", "labels": [{"name": "bug"}]},
+            ],
+            [
+                {"number": "4", "labels": [{"name": "bug"}, {"name": "docs"}]},
+                {"number": "5", "labels": [{"name": "bug"}, {"name": "docs"}]},
+                {"number": "6", "labels": [{"name": "bug"}]},
+            ],
+        ]
+
+        result = adapter.list_issues(
+            "owner",
+            "repo",
+            state="open",
+            labels=("bug", "docs"),
+            author=None,
+            assignee=None,
+            milestone=None,
+            mention=None,
+            search=None,
+            limit=3,
+        )
+
+        assert service.list.call_args_list == [
+            call(
+                "owner",
+                "repo",
+                state="open",
+                labels="bug,docs",
+                creator=None,
+                assignee=None,
+                milestone=None,
+                mention=None,
+                search=None,
+                page=1,
+                per_page=3,
+            ),
+            call(
+                "owner",
+                "repo",
+                state="open",
+                labels="bug,docs",
+                creator=None,
+                assignee=None,
+                milestone=None,
+                mention=None,
+                search=None,
+                page=2,
+                per_page=3,
+            ),
+        ]
+        assert [item["number"] for item in result] == ["1", "4", "5"]
 
     def test_create_issue_normalizes_labels(self, adapter, service):
         service.list_labels.return_value = [{"name": "bug"}, {"name": "docs"}]

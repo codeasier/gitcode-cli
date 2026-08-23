@@ -2,7 +2,8 @@
   "groups": {
     "auth": ["status"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
-    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"]
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
+    "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"]
   },
   "exclude_flags": {
     "auth": {
@@ -50,6 +51,66 @@
       "merge": [
         {"name": "--disable-auto", "reason": "disabling an existing auto-merge request is not implemented by gc pr merge"},
         {"name": "--match-head-commit", "reason": "head commit pinning is not implemented by gc pr merge"}
+      ]
+    },
+    "repo": {
+      "clone": [
+        {"name": "--no-upstream", "reason": "upstream remote management is not implemented by gc repo clone"},
+        {"name": "-u", "reason": "upstream remote management is not implemented by gc repo clone"},
+        {"name": "--upstream-remote-name", "reason": "upstream remote management is not implemented by gc repo clone"}
+      ],
+      "create": [
+        {"name": "-h", "reason": "gc reserves -h for help; gc repo create exposes --homepage only"},
+        {"name": "--include-all-branches", "reason": "template repositories have no GitCode v5 equivalent"},
+        {"name": "--push", "reason": "local-repository push flows are not implemented by gc repo create"},
+        {"name": "-r", "reason": "remote setup depends on --source, which is not implemented"},
+        {"name": "--remote", "reason": "remote setup depends on --source, which is not implemented"},
+        {"name": "-s", "reason": "local-repository source flows are not implemented by gc repo create"},
+        {"name": "--source", "reason": "local-repository source flows are not implemented by gc repo create"},
+        {"name": "-t", "reason": "team access grants have no GitCode v5 equivalent"},
+        {"name": "--team", "reason": "team access grants have no GitCode v5 equivalent"},
+        {"name": "-p", "reason": "template repositories have no GitCode v5 equivalent"},
+        {"name": "--template", "reason": "template repositories have no GitCode v5 equivalent"}
+      ],
+      "edit": [
+        {"name": "-h", "reason": "gc reserves -h for help; gc repo edit exposes --homepage only"},
+        {"name": "--accept-visibility-change-consequences", "reason": "GitHub-specific visibility gate has no GitCode equivalent"},
+        {"name": "--add-topic", "reason": "GitCode v5 has no repository topics API"},
+        {"name": "--allow-forking", "reason": "fork permission controls have no GitCode v5 equivalent"},
+        {"name": "--allow-update-branch", "reason": "branch update controls have no GitCode v5 equivalent"},
+        {"name": "--delete-branch-on-merge", "reason": "merge behavior controls have no GitCode v5 equivalent"},
+        {"name": "--enable-advanced-security", "reason": "advanced security controls have no GitCode v5 equivalent"},
+        {"name": "--enable-auto-merge", "reason": "auto-merge controls have no GitCode v5 equivalent"},
+        {"name": "--enable-discussions", "reason": "discussions have no GitCode v5 equivalent"},
+        {"name": "--enable-merge-commit", "reason": "merge method controls have no GitCode v5 equivalent"},
+        {"name": "--enable-projects", "reason": "project toggles have no GitCode v5 equivalent"},
+        {"name": "--enable-rebase-merge", "reason": "merge method controls have no GitCode v5 equivalent"},
+        {"name": "--enable-secret-scanning", "reason": "secret scanning has no GitCode v5 equivalent"},
+        {"name": "--enable-secret-scanning-push-protection", "reason": "secret scanning has no GitCode v5 equivalent"},
+        {"name": "--enable-squash-merge", "reason": "merge method controls have no GitCode v5 equivalent"},
+        {"name": "--remove-topic", "reason": "GitCode v5 has no repository topics API"},
+        {"name": "--squash-merge-commit-message", "reason": "merge method controls have no GitCode v5 equivalent"},
+        {"name": "--template", "reason": "repository template toggles have no GitCode v5 equivalent"}
+      ],
+      "fork": [
+        {"name": "--remote", "reason": "local remote rewiring is not implemented by gc repo fork"},
+        {"name": "--remote-name", "reason": "local remote rewiring is not implemented by gc repo fork"}
+      ],
+      "list": [
+        {"name": "--archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
+        {"name": "--no-archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
+        {"name": "--topic", "reason": "GitCode v5 has no repository topics API"}
+      ],
+      "sync": [
+        {"name": "-b", "reason": "GitCode fork sync has no branch selection"},
+        {"name": "--branch", "reason": "GitCode fork sync has no branch selection"},
+        {"name": "--force", "reason": "GitCode fork sync has no force mode"},
+        {"name": "-s", "reason": "GitCode fork sync always uses the upstream parent"},
+        {"name": "--source", "reason": "GitCode fork sync always uses the upstream parent"}
+      ],
+      "view": [
+        {"name": "-b", "reason": "per-branch README selection is not implemented by gc repo view"},
+        {"name": "--branch", "reason": "per-branch README selection is not implemented by gc repo view"}
       ]
     }
   }

@@ -33,10 +33,12 @@ src/gitcode_cli/
 ├── commands/       # Click subcommand groups
 │   ├── auth.py     # gc auth login
 │   ├── issue.py    # gc issue list/view/create/close/comment
-│   └── pr.py       # gc pr list/view/create/close/merge/comment/review
+│   ├── pr.py       # gc pr list/view/create/close/merge/comment/review
+│   └── repo.py     # gc repo view/list/create/clone/fork/edit/rename/delete/sync
 └── services/       # Thin GitCode API wrappers
     ├── issues.py   # IssueService: CRUD + comments
-    └── pulls.py    # PullRequestService: CRUD + merge + comments + review
+    ├── pulls.py    # PullRequestService: CRUD + merge + comments + review
+    └── repos.py    # RepoService: repo CRUD + fork + sync (sends private-token header too)
 ```
 
 **Request flow**: `commands/*.py` → resolves repo via `repo.resolve_repo()` → instantiates service with `AppContext.client()` → service calls `GitCodeClient` which hits `https://api.gitcode.com/api/v5/`.
@@ -57,3 +59,4 @@ src/gitcode_cli/
 - Auth: `access_token` query parameter on every request
 - Issue paths: `/repos/:owner/:repo/issues`, `/repos/:owner/issues` (create/update includes `repo` in body)
 - PR paths: `/repos/:owner/:repo/pulls`, `/repos/:owner/:repo/pulls/:number/merge`, etc.
+- Repo paths: `/repos/:owner/:repo` (GET/PATCH/DELETE), `/user/repos` + `/orgs/:org/repos` (create/list), `/repos/:owner/:repo/forks`, `/repos/:owner/:repo/sync_repo` (fork sync, PUT); repo endpoints also send the token as a `private-token` header

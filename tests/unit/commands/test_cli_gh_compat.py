@@ -15,7 +15,7 @@ COVERAGE_PATH = FIXTURES_DIR / "coverage.json"
 GH_COMMANDS = json.loads(GH_COMMANDS_PATH.read_text(encoding="utf-8"))
 COVERAGE = json.loads(COVERAGE_PATH.read_text(encoding="utf-8"))
 
-SUPPORTED_TOP_LEVEL_COMMANDS = {"auth", "issue", "pr"}
+SUPPORTED_TOP_LEVEL_COMMANDS = {"auth", "issue", "pr", "repo"}
 IGNORED_FLAGS = {"--help"}
 
 

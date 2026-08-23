@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- 新增 `gc repo` 命令组，补齐 `gh` 仓库命令缺口：`repo view`（含 README 展示与 `--json/-q/-t`）、`repo list`（分页及可见性/语言/fork/source 客户端过滤）、`repo create`（支持 org 创建、`--public/--private`、`--add-readme`、模板与 `--clone`）、`repo clone`、`repo fork`（`--clone`/`--org`）、`repo edit`、`repo rename`（同步更新本地 origin 远端）、`repo delete`、`repo sync`（基于 GitCode fork 同步 API） ([#145](https://github.com/codeasier/gitcode-cli/pull/145))
+- gh proxy 现支持 `repo` 子命令的位置参数主机路由，并将已实现的 repo 子命令纳入 GitCode 目标白名单；`archive`/`unarchive`/`deploy-key`/`set-default` 等在注册表中按 GitCode API 实况标记为不可用并注明原因 ([#145](https://github.com/codeasier/gitcode-cli/pull/145))
+
 ## [0.1.4] - 2026-08-10
 
 本次发布继续完善 `gc pr` 的 `gh` 兼容行为，补齐关联 issue 查询与评论分页，并将兼容状态纳入仓库统一维护，使命令能力与兼容性进度更清晰、可靠。

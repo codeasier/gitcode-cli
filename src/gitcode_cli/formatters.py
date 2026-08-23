@@ -111,6 +111,73 @@ def format_pr_detail(item: dict) -> str:
     return _format_detail(item, author_keys=("user", "author", "creator"), branch=branch)
 
 
+def repo_visibility(item: dict) -> str:
+    if item.get("isPrivate") or item.get("private"):
+        return "private"
+    if item.get("internal"):
+        return "internal"
+    return "public"
+
+
+def repo_full_name(item: dict) -> str:
+    full_name = item.get("full_name") or item.get("nameWithOwner")
+    if full_name:
+        return str(full_name)
+    namespace = item.get("namespace")
+    owner = item.get("owner")
+    owner_path = None
+    if isinstance(namespace, dict):
+        owner_path = namespace.get("path") or namespace.get("name")
+    elif isinstance(owner, dict):
+        owner_path = owner.get("login") or owner.get("name")
+    elif isinstance(owner, str):
+        owner_path = owner
+    name = item.get("path") or item.get("name")
+    if owner_path and name:
+        return f"{owner_path}/{name}"
+    return str(name or "")
+
+
+def format_repo_list(items: list[dict]) -> str:
+    rows = []
+    for item in items:
+        rows.append(
+            "\t".join(
+                [
+                    repo_full_name(item),
+                    repo_visibility(item),
+                    str(item.get("description") or ""),
+                ]
+            )
+        )
+    return "\n".join(rows)
+
+
+def format_repo_detail(item: dict) -> str:
+    lines = [repo_full_name(item)]
+    description = item.get("description")
+    if description:
+        lines.append(str(description))
+    lines.append("")
+    lines.append(f"Visibility:\t{repo_visibility(item)}")
+    default_branch = item.get("default_branch") or item.get("defaultBranch")
+    if default_branch:
+        lines.append(f"Default Branch:\t{default_branch}")
+    homepage = item.get("homepage")
+    if homepage:
+        lines.append(f"Homepage:\t{homepage}")
+    license_name = item.get("license")
+    if isinstance(license_name, dict):
+        license_name = license_name.get("name") or license_name.get("key")
+    if license_name:
+        lines.append(f"License:\t{license_name}")
+    lines.append(f"Stars:\t{item.get('stargazers_count', item.get('stargazers', 0))}")
+    lines.append(f"Forks:\t{item.get('forks_count', item.get('forks', 0))}")
+    open_issues = item.get("open_issues_count", item.get("openIssues", 0))
+    lines.append(f"Open Issues:\t{open_issues}")
+    return "\n".join(lines)
+
+
 def _parse_jq_output(stdout: str):
     output = stdout.strip()
     if not output:

@@ -37,6 +37,8 @@ gc issue view 42
 gc pr list
 gc pr create --fill
 gc pr merge 42 --squash
+gc repo view owner/repo
+gc repo clone owner/repo
 ```
 
 在 Windows PowerShell 中请优先使用 `gitcode`，因为 `gc` 是内置 `Get-Content` 别名。

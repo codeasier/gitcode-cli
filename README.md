@@ -37,6 +37,8 @@ gc issue view 42
 gc pr list
 gc pr create --fill
 gc pr merge 42 --squash
+gc repo view owner/repo
+gc repo clone owner/repo
 ```
 
 Use `gitcode` instead of `gc` on Windows PowerShell because `gc` is a built-in alias for `Get-Content`.

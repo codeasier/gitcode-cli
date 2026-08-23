@@ -10,6 +10,7 @@ from gitcode_cli.gh_proxy import (
     ProxyError,
     _exec,
     _explicit_repo,
+    _positional_repo_host,
     dispatch,
     find_real_gh,
     select_target,
@@ -79,6 +80,46 @@ def test_unqualified_repo_uses_remote(monkeypatch):
     assert select_target(["-R", "o/r", "issue", "list"], {}) == "gitcode"
 
 
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["repo", "view", "github.com/o/r"], "github.com"),
+        (["repo", "view", "gitcode.com/o/r"], "gitcode.com"),
+        (["repo", "clone", "https://github.com/o/r"], "github.com"),
+        (["repo", "clone", "https://gitcode.com/o/r.git"], "gitcode.com"),
+        (["repo", "fork", "git@gitcode.com:o/r.git"], "gitcode.com"),
+        (["repo", "edit", "github.com/o/r", "-d", "x"], "github.com"),
+        (["repo", "delete", "gitcode.com/o/r"], "gitcode.com"),
+        (["repo", "sync", "github.com/o/r"], "github.com"),
+        # Positionals that cannot carry a host return None
+        (["repo", "view", "o/r"], None),
+        (["repo", "list", "owner"], None),
+        (["repo", "rename", "new-name"], None),
+        (["issue", "view", "github.com/o/r"], None),
+        (["repo", "view"], None),
+    ],
+)
+def test_positional_repo_host_extracts_host_from_repository_arg(args, expected):
+    assert _positional_repo_host(args) == expected
+
+
+def test_positional_repo_host_routes_before_origin(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "gitcode.com")
+    assert select_target(["repo", "view", "github.com/o/r"], {}) == "github"
+    assert select_target(["repo", "clone", "gitcode.com/o/r"], {}) == "gitcode"
+
+
+def test_positional_owner_repo_falls_back_to_origin(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "github.com")
+    assert select_target(["repo", "view", "o/r"], {}) == "github"
+    assert select_target(["repo", "clone", "o/r"], {}) == "github"
+
+
+def test_explicit_repo_flag_beats_positional(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    assert select_target(["repo", "view", "github.com/o/r", "-R", "gitcode.com/a/b"], {}) == "gitcode"
+
+
 def test_unknown_context_defaults_to_github(monkeypatch):
     monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
     assert select_target(["issue", "list"], {}) == "github"
@@ -91,6 +132,17 @@ def test_unknown_context_defaults_to_github(monkeypatch):
         ["issue", "ls"],
         ["pr", "new"],
         ["auth", "login"],
+        ["repo"],
+        ["repo", "view"],
+        ["repo", "list"],
+        ["repo", "list", "owner"],
+        ["repo", "clone", "o/r"],
+        ["repo", "fork", "o/r"],
+        ["repo", "edit", "o/r", "-d", "desc"],
+        ["repo", "delete", "o/r", "--yes"],
+        ["repo", "rename", "o/r", "new-name", "-y"],
+        ["repo", "sync", "o/r"],
+        ["repo", "create", "name", "--public"],
         ["help"],
         ["help", "issue"],
         ["issue", "--help"],
@@ -101,7 +153,9 @@ def test_supported_gitcode_commands(args):
     validate_gitcode_command(args)
 
 
-@pytest.mark.parametrize("args", [["api", "repos/o/r"], ["issue", "lock", "1"], ["repo", "clone", "o/r"]])
+@pytest.mark.parametrize(
+    "args", [["api", "repos/o/r"], ["issue", "lock", "1"], ["repo", "deploy-key", "list"], ["repo", "autolink", "list"]]
+)
 def test_unsupported_gitcode_commands_fail_closed(args):
     with pytest.raises(ProxyError, match="refusing to fall back"):
         validate_gitcode_command(args)

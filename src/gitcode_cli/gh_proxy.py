@@ -75,6 +75,28 @@ def _origin_host() -> str | None:
         return None
 
 
+# Repo subcommands whose first positional argument names a repository
+# ([HOST/]OWNER/REPO or a full URL). `repo rename <new-name>` and
+# `repo list <owner>` are deliberately excluded: their positionals do not
+# carry host information.
+_REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
+
+
+def _positional_repo_host(argv: Sequence[str]) -> str | None:
+    """Extract a host from the repository positional of a repo subcommand."""
+    tokens = _command_tokens(argv)
+    if len(tokens) < 3 or tokens[0] != "repo" or tokens[1] not in _REPO_POSITIONAL_COMMANDS:
+        return None
+    candidate = tokens[2]
+    for parser in (parse_remote_url_with_host, parse_repo_with_host):
+        try:
+            host, _, _ = parser(candidate)
+        except RepoResolutionError:
+            continue
+        return host if host else None
+    return None
+
+
 def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None) -> str:
     env = os.environ if environ is None else environ
     override = env.get("GC_GH_TARGET")
@@ -92,6 +114,10 @@ def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None)
             raise ProxyError(str(exc)) from exc
         if host:
             return _target_for_host(host, env)
+
+    positional_host = _positional_repo_host(argv)
+    if positional_host:
+        return _target_for_host(positional_host, env)
 
     host = _origin_host()
     if host:
@@ -123,7 +149,7 @@ def validate_gitcode_command(argv: Sequence[str]) -> None:
     tokens = _command_tokens(argv)
     if not tokens:
         return
-    if len(tokens) == 1 and tokens[0] in {"auth", "issue", "pr"}:
+    if len(tokens) == 1 and tokens[0] in {"auth", "issue", "pr", "repo"}:
         return
 
     aliases = {"ls": "list", "new": "create"}

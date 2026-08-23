@@ -25,6 +25,12 @@ CAPABILITY_MESSAGES = {
         "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
     ),
     "PR_STATUS_GH_SEMANTICS": ("GitCode API approximation -- user-specific filtering is not available"),
+    "REPO_CREATE_INTERNAL": "GitCode repositories are either public or private; --internal is not supported.",
+    "REPO_FORK_DEFAULT_BRANCH_ONLY": (
+        "GitCode fork API always copies every branch from the upstream repository; "
+        "--default-branch-only is not supported."
+    ),
+    "REPO_FORK_NAME": "GitCode fork API does not support renaming the fork; --fork-name cannot be used.",
 }
 
 

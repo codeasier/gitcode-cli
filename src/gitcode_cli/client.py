@@ -23,19 +23,23 @@ class GitCodeClient:
         *,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         accept: str = "application/json",
         response_format: Literal["json", "text"] = "json",
     ) -> Any | None:
         merged_params: dict[str, Any] = {"access_token": self.token}
         if params:
             merged_params.update({k: v for k, v in params.items() if v is not None})
+        merged_headers = {"Accept": accept}
+        if headers:
+            merged_headers.update(headers)
         try:
             response = self._client.request(
                 method,
                 urljoin(self.base_url, path.lstrip("/")),
                 params=merged_params,
                 json=json,
-                headers={"Accept": accept},
+                headers=merged_headers,
             )
         except httpx.TimeoutException as exc:
             raise NetworkError(f"Request timed out: {exc}") from exc
@@ -63,23 +67,47 @@ class GitCodeClient:
             return response.text
         return response.json()
 
-    def get(self, path: str, *, params: dict[str, Any] | None = None) -> Any | None:
-        return self.request("GET", path, params=params)
+    def get(
+        self, path: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+    ) -> Any | None:
+        return self.request("GET", path, params=params, headers=headers)
 
     def post(
-        self, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any | None:
-        return self.request("POST", path, params=params, json=json)
+        return self.request("POST", path, params=params, json=json, headers=headers)
 
     def patch(
-        self, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any | None:
-        return self.request("PATCH", path, params=params, json=json)
+        return self.request("PATCH", path, params=params, json=json, headers=headers)
 
-    def put(self, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None) -> Any | None:
-        return self.request("PUT", path, params=params, json=json)
+    def put(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any | None:
+        return self.request("PUT", path, params=params, json=json, headers=headers)
 
     def delete(
-        self, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any | None:
-        return self.request("DELETE", path, params=params, json=json)
+        return self.request("DELETE", path, params=params, json=json, headers=headers)

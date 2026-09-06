@@ -15,6 +15,7 @@ from gitcode_cli.formatters import (
     dump_json,
     format_issue_detail,
     format_issue_list,
+    format_pr_audit_list,
     format_pr_detail,
     format_pr_list,
     output_result,
@@ -144,6 +145,24 @@ class TestListAndDetailFormatters:
         ]
 
         assert format_pr_list(items) == "#7\topen\tAdd feature\tbob"
+
+    def test_format_pr_audit_list_prints_failure_reasons(self):
+        items = [
+            {
+                "verdict": "FAIL",
+                "number": 1028,
+                "loc": 496,
+                "title": "Add thread state",
+                "reasons": ["R3: loc 496 > 100, no diff_comment, and no test-path files"],
+            },
+            {"verdict": "PASS", "number": 1081, "loc": 144, "title": "Fix swimlane", "reasons": []},
+        ]
+
+        assert format_pr_audit_list(items).splitlines() == [
+            "FAIL\t#1028\tloc 496\tAdd thread state",
+            "  R3: loc 496 > 100, no diff_comment, and no test-path files",
+            "PASS\t#1081\tloc 144\tFix swimlane",
+        ]
 
     def test_format_issue_detail_includes_metadata_lines(self):
         item = {

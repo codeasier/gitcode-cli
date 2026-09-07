@@ -140,7 +140,7 @@ class TestEvaluateAuditReasons:
         assert tested["hasTest"] is True
 
     def test_r3_recognizes_common_test_basenames(self):
-        for path in ("test_foo.py", "src/test_auth.py", "TestFoo.java"):
+        for path in ("test_foo.py", "src/test_auth.py", "TestFoo.java", "lib/Test.cpp", "src/test.cpp"):
             result = evaluate_audit(
                 pr=_pr(milestone={"title": "m"}),
                 issues=[],
@@ -150,6 +150,19 @@ class TestEvaluateAuditReasons:
             )
             assert result["r3"] is True, path
             assert result["hasTest"] is True, path
+
+    def test_r3_does_not_treat_docs_or_testdata_as_test_paths(self):
+        for path in ("docs/testing-guide.md", "assets/testdata.json", "src/testflow.js", "contest.cpp"):
+            result = evaluate_audit(
+                pr=_pr(milestone={"title": "m"}),
+                issues=[],
+                comments=[],
+                loc=190,
+                file_paths=[path],
+            )
+            assert result["hasTest"] is False, path
+            assert result["r3"] is False, path
+            assert result["reasons"] == ["R3: loc 190 > 100, no diff_comment, and no test-path files"]
 
     def test_r4_passes_when_string_label_contains_keyword(self):
         result = evaluate_audit(
@@ -224,6 +237,24 @@ class TestLocHelpers:
         diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n+added\n-removed\n context\n"
         assert loc_from_diff(diff) == 2
         assert paths_from_diff(diff) == ["a"]
+
+    def test_loc_from_diff_counts_deleted_dash_prefix_lines(self):
+        diff = "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n---- item\n+added\n"
+        assert loc_from_diff(diff) == 2
+
+    def test_loc_from_diff_skips_git_binary_patch_lines(self):
+        diff = (
+            "diff --git a/foo.bin b/foo.bin\n"
+            "GIT binary patch\n"
+            "literal 12\n"
+            "+abc\n"
+            "-def\n"
+            "diff --git a/bar.py b/bar.py\n"
+            "--- a/bar.py\n"
+            "+++ b/bar.py\n"
+            "+x\n"
+        )
+        assert loc_from_diff(diff) == 1
 
     def test_paths_from_diff_uses_new_path_for_renames(self):
         diff = "diff --git a/tests/x.py b/src/x.py\n"

@@ -6,9 +6,11 @@ from typing import Any
 
 from .services import PullRequestService
 
+# Directory/basename patterns are case-insensitive; PascalCase TestX stays sensitive
+# so docs/testing-guide.md and testdata.json are not treated as tests.
 TEST_PATH_RE = re.compile(
-    r"(^|/)(test|tests|__tests__|spec|__mocks__)/|(^|/)test_|_test\.|\.test\.|\.spec\.|(^|/)Test[A-Z]|Test\.cpp",
-    re.I,
+    r"(?i:(^|/)(test|tests|__tests__|spec|__mocks__)/|(^|/)test_|_test\.|\.test\.|\.spec\.|(^|/)test\.cpp)"
+    r"|(^|/)Test[A-Z]"
 )
 
 AUDIT_JSON_FIELDS = [
@@ -80,13 +82,24 @@ def loc_from_list_item(item: dict[str, Any] | None) -> int | None:
     return None
 
 
+_DIFF_FILE_HEADER_RE = re.compile(r"^(---|\+\+\+) (?:[ab]/|/dev/null|\")")
+
+
 def loc_from_diff(diff_text: str) -> int:
-    return sum(
-        1
-        for line in diff_text.splitlines()
-        if (line.startswith("+") and not line.startswith("+++"))
-        or (line.startswith("-") and not line.startswith("---"))
-    )
+    loc = 0
+    skipping_binary = False
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            skipping_binary = False
+            continue
+        if line.startswith("GIT binary patch"):
+            skipping_binary = True
+            continue
+        if skipping_binary or _DIFF_FILE_HEADER_RE.match(line):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            loc += 1
+    return loc
 
 
 _DIFF_B_PATH_RE = re.compile(r' (?:b/(\S+)|"b/([^"]+)")$')

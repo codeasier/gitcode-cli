@@ -81,6 +81,13 @@ def _pr_ref_name(value: object) -> object:
     return value.get("ref") if isinstance(value, dict) else value
 
 
+def _pr_ref_oid(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    sha = value.get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
 def _normalize_pr_view_fields(item: dict) -> dict:
     result = _normalize_pr_fields(item)
     assignees = item.get("assignees")
@@ -91,8 +98,10 @@ def _normalize_pr_view_fields(item: dict) -> dict:
                 [_normalize_pr_actor(assignee) for assignee in assignees] if isinstance(assignees, list) else assignees
             ),
             "baseRefName": item.get("baseRefName") or _pr_ref_name(item.get("base")),
+            "baseRefOid": item.get("baseRefOid") or _pr_ref_oid(item.get("base")),
             "createdAt": item.get("createdAt") or item.get("created_at"),
             "headRefName": item.get("headRefName") or _pr_ref_name(item.get("head")),
+            "headRefOid": item.get("headRefOid") or _pr_ref_oid(item.get("head")),
             "updatedAt": item.get("updatedAt") or item.get("updated_at"),
             "url": item.get("html_url") or item.get("url"),
         }
@@ -970,11 +979,13 @@ set_gc_help(
         "author",
         "assignees",
         "baseRefName",
+        "baseRefOid",
         "body",
         "closingIssuesReferences",
         "comments",
         "createdAt",
         "headRefName",
+        "headRefOid",
         "labels",
         "mergedAt",
         "number",

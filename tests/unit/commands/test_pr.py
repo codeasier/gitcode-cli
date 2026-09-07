@@ -324,8 +324,8 @@ class TestPrList:
                 "body": "PR body",
                 "user": {"id": "7", "login": "alice", "name": "Alice"},
                 "assignees": [{"id": "8", "login": "bob", "name": "Bob"}],
-                "base": {"ref": "main"},
-                "head": {"ref": "feature"},
+                "base": {"ref": "main", "sha": "aaa111base"},
+                "head": {"ref": "feature", "sha": "bbb222head"},
                 "labels": [{"id": 1, "name": "bug", "color": "ff0000"}],
                 "created_at": "2026-08-01T10:00:00+08:00",
                 "updated_at": "2026-08-02T10:00:00+08:00",
@@ -337,8 +337,8 @@ class TestPrList:
         ]
 
         fields = (
-            "author,assignees,baseRefName,body,comments,createdAt,headRefName,labels,mergedAt,number,state,"
-            "title,updatedAt,url"
+            "author,assignees,baseRefName,baseRefOid,body,comments,createdAt,headRefName,headRefOid,labels,"
+            "mergedAt,number,state,title,updatedAt,url"
         )
         result = runner.invoke(main, ["pr", "view", "42", "--json", fields])
 
@@ -347,10 +347,12 @@ class TestPrList:
             "author": {"id": "7", "is_bot": False, "login": "alice", "name": "Alice"},
             "assignees": [{"id": "8", "is_bot": False, "login": "bob", "name": "Bob"}],
             "baseRefName": "main",
+            "baseRefOid": "aaa111base",
             "body": "PR body",
             "comments": [{"id": 9, "body": "Looks good", "user": {"login": "carol"}}],
             "createdAt": "2026-08-01T10:00:00+08:00",
             "headRefName": "feature",
+            "headRefOid": "bbb222head",
             "labels": [{"id": 1, "name": "bug", "color": "ff0000"}],
             "mergedAt": "2026-08-02T09:00:00+08:00",
             "number": 42,
@@ -372,11 +374,48 @@ class TestPrList:
         assert result.exit_code == 0
         mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42")
 
+    def test_pr_view_json_maps_ref_oids_for_same_branch_pr(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {
+            "number": 76,
+            "state": "open",
+            "base": {"ref": "master", "sha": "43e5b9d1ec0f18fbe97cab721d194ab9d25919bb"},
+            "head": {"ref": "master", "sha": "974db1ff6e10881fbdd3504ffec867c28a7b6bb1"},
+        }
+
+        result = runner.invoke(
+            main,
+            ["pr", "view", "76", "--json", "baseRefOid,headRefOid,baseRefName,headRefName,number,state"],
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == {
+            "baseRefOid": "43e5b9d1ec0f18fbe97cab721d194ab9d25919bb",
+            "headRefOid": "974db1ff6e10881fbdd3504ffec867c28a7b6bb1",
+            "baseRefName": "master",
+            "headRefName": "master",
+            "number": 76,
+            "state": "OPEN",
+        }
+
+    def test_pr_view_json_treats_empty_ref_sha_as_missing(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {
+            "number": 76,
+            "base": {"ref": "master", "sha": ""},
+            "head": {"ref": "feature"},
+        }
+
+        result = runner.invoke(main, ["pr", "view", "76", "--json", "baseRefOid,headRefOid"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == {"baseRefOid": None, "headRefOid": None}
+
     def test_pr_view_help_lists_closing_issue_references(self, runner):
         result = runner.invoke(main, ["pr", "view", "--help"])
 
         assert result.exit_code == 0
         assert "closingIssuesReferences" in result.output
+        assert "baseRefOid" in result.output
+        assert "headRefOid" in result.output
 
     def test_pr_view_without_identifier_uses_current_branch(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [

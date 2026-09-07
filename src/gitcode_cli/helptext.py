@@ -100,11 +100,16 @@ def _display_command_path(ctx: click.Context) -> str:
 
 
 def _argument_metavar(param: click.Argument, ctx: click.Context) -> str:
-    make_metavar = param.make_metavar
-    try:
-        return make_metavar(ctx)
-    except TypeError:
-        return str(getattr(param, "metavar", None) or param.name or "")
+    make_metavar = getattr(param, "make_metavar", None)
+    if callable(make_metavar):
+        try:
+            return str(make_metavar(ctx))
+        except TypeError:
+            try:
+                return str(make_metavar())
+            except TypeError:
+                pass
+    return str(getattr(param, "metavar", None) or param.name or "")
 
 
 def _command_sections(command: click.Group) -> list[tuple[str, list[tuple[str, str]]]]:

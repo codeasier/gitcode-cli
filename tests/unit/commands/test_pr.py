@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import main
-from gitcode_cli.errors import APIError
+from gitcode_cli.errors import APIError, NetworkError
 
 
 @pytest.fixture
@@ -1512,6 +1512,77 @@ class TestPrAudit:
         assert "FAIL\t#2\tloc unknown\tRate limited" in result.output
         assert "audit error: rate limited" in result.output
         assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+
+    def test_pr_audit_list_aborts_on_network_error(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return [
+                    {
+                        "number": 1,
+                        "title": "Healthy",
+                        "added_lines": 10,
+                        "removed_lines": 2,
+                        "milestone": {"title": "m"},
+                    },
+                    {"number": 2, "title": "Offline", "added_lines": 4, "removed_lines": 1},
+                    {
+                        "number": 3,
+                        "title": "Never reached",
+                        "added_lines": 8,
+                        "removed_lines": 0,
+                        "milestone": {"title": "m"},
+                    },
+                ]
+            if path == "/repos/owner/repo/pulls/2":
+                raise NetworkError("Connection failed")
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return {
+                    "number": 1,
+                    "title": "Healthy",
+                    "milestone": {"title": "m"},
+                    "body": "",
+                    "labels": [],
+                    "mergeable_state": {"resolve_discussion_passed": True},
+                }
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tOffline" in result.output
+        assert "audit error: Connection failed" in result.output
+        assert "#3" not in result.output
+
+    def test_pr_audit_strips_minutes_keyword(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Huge",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "评审纪要: ok",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "tests/foo_test.py", "additions": 2000, "deletions": 20}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1", "--minutes-keyword", " 评审纪要 "])
+
+        assert result.exit_code == 0
+        assert "PASS\t#1" in result.output
 
     def test_pr_audit_help_lists_reason_fields(self, runner):
         result = runner.invoke(main, ["pr", "audit", "--help"])

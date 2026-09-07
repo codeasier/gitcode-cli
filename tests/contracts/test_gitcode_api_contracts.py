@@ -38,6 +38,7 @@ def issue_service() -> tuple[IssueService, MagicMock]:
 @pytest.fixture
 def pull_service() -> tuple[PullRequestService, MagicMock]:
     client = MagicMock()
+    client.get.return_value = []
     return PullRequestService(client), client
 
 

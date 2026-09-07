@@ -27,14 +27,16 @@ class PullRequestService:
                 params.update({key: value for key, value in extra_params.items() if value is not None})
             result = self.client.get(path, params=params)
             if not isinstance(result, list):
-                if page > 1:
-                    raise APIError(f"Unexpected pagination response for {path} page {page}")
-                return items if items else result
+                if result is None and page == 1 and not items:
+                    return None
+                raise APIError(f"Unexpected pagination response for {path} page {page}")
             if previous is not None and result == previous:
-                return items
+                raise APIError(f"Repeated pagination response for {path} page {page}")
             items.extend(result)
-            if len(result) < per_page or page >= 100:
+            if len(result) < per_page:
                 return items
+            if page >= 100:
+                raise APIError(f"Pagination limit exceeded for {path}")
             previous = result
             page += 1
 

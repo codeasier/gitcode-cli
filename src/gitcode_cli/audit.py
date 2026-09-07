@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .errors import APIError, AuthError, NetworkError
 from .services import PullRequestService
 
 # Directory/basename patterns are case-insensitive; PascalCase TestX stays sensitive
@@ -121,7 +122,24 @@ def _path_from_diff_header(line: str) -> str | None:
 
 
 def paths_from_diff(diff_text: str) -> list[str]:
-    return [path for line in diff_text.splitlines() if (path := _path_from_diff_header(line))]
+    paths: list[str] = []
+    current: str | None = None
+    deleted = False
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            if current and not deleted:
+                paths.append(current)
+            current = _path_from_diff_header(line)
+            deleted = False
+            continue
+        if line.startswith("deleted file mode"):
+            deleted = True
+            continue
+        if line.startswith("+++ /dev/null") or line.startswith('+++ "/dev/null"'):
+            deleted = True
+    if current and not deleted:
+        paths.append(current)
+    return paths
 
 
 def _current_file_path(item: dict[str, Any]) -> str | None:
@@ -305,13 +323,13 @@ def audit_error_result(
         "r2": False,
         "r3": False,
         "r4": False,
-        "failedRules": [],
+        "failedRules": ["R1", "R2", "R3", "R4"],
         "reasons": [reason],
         "rules": {
-            "R1": {"pass": False, "reasons": []},
-            "R2": {"pass": False, "reasons": []},
-            "R3": {"pass": False, "reasons": []},
-            "R4": {"pass": False, "reasons": []},
+            "R1": {"pass": False, "reasons": [reason]},
+            "R2": {"pass": False, "reasons": [reason]},
+            "R3": {"pass": False, "reasons": [reason]},
+            "R4": {"pass": False, "reasons": [reason]},
         },
         "milestone": None,
         "issues": [],
@@ -320,6 +338,12 @@ def audit_error_result(
         "hasTest": None,
         "hasMinutes": False,
     }
+
+
+def is_fatal_audit_error(exc: BaseException) -> bool:
+    if isinstance(exc, (AuthError, NetworkError)):
+        return True
+    return isinstance(exc, APIError) and exc.status_code in {401, 403}
 
 
 def resolve_loc_and_paths(
@@ -336,6 +360,7 @@ def resolve_loc_and_paths(
     if loc is None:
         loc = loc_from_list_item(loc_item)
     paths: list[str] | None = None
+    files_have_counts = False
     needs_paths = loc is None or (
         loc > thresholds.th1
         and not any(isinstance(comment, dict) and comment.get("comment_type") == "diff_comment" for comment in comments)
@@ -343,9 +368,10 @@ def resolve_loc_and_paths(
     if loc is None or needs_paths:
         files = _as_list(service.list_files(owner, repo, number))
         file_loc, paths = loc_and_paths_from_files(files)
+        files_have_counts = file_loc is not None
         if loc is None:
             loc = file_loc
-    if loc is None or (needs_paths and not paths):
+    if loc is None or (needs_paths and not paths and not files_have_counts):
         diff_text = service.diff(owner, repo, number)
         if loc is None:
             loc = loc_from_diff(diff_text) if diff_text else None

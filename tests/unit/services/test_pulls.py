@@ -81,17 +81,34 @@ class TestPullRequestService:
             call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
         ]
 
-    def test_list_files_stops_when_page_repeats(self, service, mock_client):
+    def test_list_files_raises_when_page_repeats(self, service, mock_client):
         repeated = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
         mock_client.get.side_effect = [repeated, repeated]
 
-        result = service.list_files("owner", "repo", 42)
+        with pytest.raises(APIError, match="Repeated pagination response"):
+            service.list_files("owner", "repo", 42)
 
-        assert result == repeated
         assert mock_client.get.call_args_list == [
             call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
             call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
         ]
+
+    def test_list_files_raises_when_first_page_is_not_a_list(self, service, mock_client):
+        mock_client.get.return_value = {"message": "oops"}
+
+        with pytest.raises(APIError, match="Unexpected pagination response"):
+            service.list_files("owner", "repo", 42)
+
+    def test_list_files_raises_when_page_limit_reached(self, service, mock_client):
+        mock_client.get.side_effect = [
+            [{"filename": f"p{page}_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
+            for page in range(1, 101)
+        ]
+
+        with pytest.raises(APIError, match="Pagination limit exceeded"):
+            service.list_files("owner", "repo", 42)
+
+        assert mock_client.get.call_count == 100
 
     def test_create(self, service, mock_client):
         mock_client.post.return_value = {"number": 42}

@@ -262,6 +262,20 @@ class TestLocHelpers:
         diff = "diff --git a/tests/x.py b/src/x.py\n"
         assert paths_from_diff(diff) == ["src/x.py"]
 
+    def test_paths_from_diff_skips_deleted_files(self):
+        diff = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n"
+            "deleted file mode 100644\n"
+            "--- a/tests/foo.py\n"
+            "+++ /dev/null\n"
+            "-old\n"
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "+new\n"
+        )
+        assert paths_from_diff(diff) == ["src/main.py"]
+
     def test_loc_and_paths_from_files_coerces_string_counts(self):
         loc, paths = loc_and_paths_from_files(
             [
@@ -459,6 +473,50 @@ class TestAuditPullRequest:
         assert result["hasTest"] is False
         assert result["r3"] is False
 
+    def test_deleted_test_file_does_not_pass_r3_via_diff_fallback(self):
+        deleted_diff = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n"
+            "deleted file mode 100644\n"
+            "--- a/tests/foo.py\n"
+            "+++ /dev/null\n"
+            "-line\n"
+        )
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [
+            {
+                "filename": "tests/foo.py",
+                "additions": 0,
+                "deletions": 150,
+                "patch": {"old_path": "tests/foo.py"},
+            }
+        ]
+        service.diff.return_value = deleted_diff
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 150
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+        service.diff.assert_not_called()
+
+    def test_deleted_test_file_diff_paths_do_not_count_when_file_counts_missing(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"}, added_lines=0, removed_lines=150)
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "tests/foo.py", "patch": {"old_path": "tests/foo.py"}}]
+        service.diff.return_value = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n--- a/tests/foo.py\n+++ /dev/null\n-line\n"
+        )
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+
     def test_uses_detail_line_counts_in_number_mode(self):
         service = MagicMock()
         service.get.return_value = _pr(milestone={"title": "m"}, added_lines=12, removed_lines=3)
@@ -481,3 +539,5 @@ class TestAuditPullRequest:
         assert result["number"] == 7
         assert result["title"] == "Big PR"
         assert result["reasons"] == ["audit error: rate limited"]
+        assert result["failedRules"] == ["R1", "R2", "R3", "R4"]
+        assert result["rules"]["R3"]["reasons"] == ["audit error: rate limited"]

@@ -8,7 +8,7 @@ import click
 
 from ..adapters import PullRequestAdapter
 from ..adapters.capabilities import unsupported
-from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request
+from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request, is_fatal_audit_error
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
@@ -949,10 +949,12 @@ def pr_audit(
     adapter = PullRequestAdapter(service)
     if th1 > th2:
         raise click.UsageError("--th1 must be less than or equal to --th2.")
-    if not minutes_keyword.strip():
+    minutes_keyword = minutes_keyword.strip()
+    if not minutes_keyword:
         raise click.UsageError("--minutes-keyword must not be empty.")
     thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
     results: list[dict] = []
+    fatal = False
     if identifier:
         resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
         owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -981,6 +983,9 @@ def pr_audit(
                 )
             except GCError as exc:
                 results.append(audit_error_result(int(number), exc, listed=item))
+                if is_fatal_audit_error(exc):
+                    fatal = True
+                    break
     if only_fail:
         results = [item for item in results if not item.get("overall")]
 
@@ -1001,7 +1006,7 @@ def pr_audit(
             template,
             default_formatter=default_formatter,
         )
-    if fail_exit and any(not item.get("overall") for item in results):
+    if fatal or (fail_exit and any(not item.get("overall") for item in results)):
         ctx.exit(1)
 
 

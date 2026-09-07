@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from unittest.mock import MagicMock, call, patch
 
@@ -7,6 +8,26 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import main
+from gitcode_cli.errors import APIError, NetworkError
+
+
+def _cli_runner() -> CliRunner:
+    """Unmixed streams so audit tests can read stdout/stderr on Click 8.0/8.1."""
+    params = inspect.signature(CliRunner.__init__).parameters
+    if "mix_stderr" in params:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
+
+
+def _stderr_text(result) -> str:
+    try:
+        return result.stderr or ""
+    except ValueError:
+        return ""
+
+
+def _output_text(result) -> str:
+    return f"{result.stdout or ''}{_stderr_text(result)}"
 
 
 @pytest.fixture
@@ -341,7 +362,7 @@ class TestPrList:
         }
         assert mock_client.get.call_args_list == [
             call("/repos/owner/repo/pulls/42"),
-            call("/repos/owner/repo/pulls/42/issues"),
+            call("/repos/owner/repo/pulls/42/issues", params={"page": 1, "per_page": 100}),
         ]
 
     def test_pr_view_json_normalizes_advertised_fields_and_fetches_comments(self, runner, mock_client, mock_repo):
@@ -1331,3 +1352,499 @@ class TestPrCreateMissingHtmlUrl:
         )
         assert result.exit_code == 0
         assert "Created pull request" in result.output
+
+
+class TestPrAudit:
+    @pytest.fixture
+    def runner(self):
+        return _cli_runner()
+
+    def _wire_audit_client(self, mock_client, pulls_by_number: dict):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return [
+                    {
+                        "number": number,
+                        "title": payload["detail"].get("title"),
+                        "added_lines": payload["detail"].get("added_lines"),
+                        "removed_lines": payload["detail"].get("removed_lines"),
+                        "milestone": payload["detail"].get("milestone"),
+                        "body": payload["detail"].get("body"),
+                        "labels": payload["detail"].get("labels"),
+                    }
+                    for number, payload in pulls_by_number.items()
+                ]
+            for number, payload in pulls_by_number.items():
+                if path == f"/repos/owner/repo/pulls/{number}":
+                    return payload["detail"]
+                if path == f"/repos/owner/repo/pulls/{number}/issues":
+                    return payload.get("issues", [])
+                if path == f"/repos/owner/repo/pulls/{number}/comments":
+                    return payload.get("comments", [])
+                if path == f"/repos/owner/repo/pulls/{number}/files":
+                    return payload.get("files", [])
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+    def test_pr_audit_prints_failure_reasons(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1028: {
+                    "detail": {
+                        "number": 1028,
+                        "title": "Add thread state",
+                        "milestone": {"title": "MindStudio 26.2.0"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [{"number": 533}],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 400, "deletions": 96}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1028"])
+
+        assert result.exit_code == 0
+        assert "FAIL\t#1028\tloc 496\tAdd thread state" in result.output
+        assert "R3: loc 496 > 100, no diff_comment, and no test-path files" in result.output
+
+    def test_pr_audit_json_includes_reasons_and_failed_rules(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1094: {
+                    "detail": {
+                        "number": 1094,
+                        "title": "Fix memory snapshot",
+                        "milestone": None,
+                        "labels": [],
+                        "body": "Fixes #481",
+                        "html_url": "https://gitcode.com/owner/repo/merge_requests/1094",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "tests/foo_test.py", "additions": 300, "deletions": 112}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1094", "--json", "number,verdict,failedRules,reasons"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload == {
+            "number": 1094,
+            "verdict": "FAIL",
+            "failedRules": ["R1"],
+            "reasons": ["R1: no milestone and no officially linked issues"],
+        }
+
+    def test_pr_audit_only_fail_and_fail_exit(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Healthy",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "",
+                        "added_lines": 10,
+                        "removed_lines": 2,
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [],
+                },
+                2: {
+                    "detail": {
+                        "number": 2,
+                        "title": "Unlinked",
+                        "milestone": None,
+                        "labels": [],
+                        "body": "",
+                        "added_lines": 3,
+                        "removed_lines": 1,
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [],
+                },
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "--only-fail", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "#2" in result.output
+        assert "R1: no milestone and no officially linked issues" in result.output
+        assert "#1" not in result.output
+
+    def test_pr_audit_only_fail_hides_passing_identifier(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Healthy",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 10, "deletions": 2}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1", "--only-fail"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    def test_pr_audit_accepts_merge_request_url(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1028: {
+                    "detail": {
+                        "number": 1028,
+                        "title": "Add thread state",
+                        "milestone": {"title": "MindStudio 26.2.0"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [{"number": 533}],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 400, "deletions": 96}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "https://gitcode.com/owner/repo/merge_requests/1028"])
+
+        assert result.exit_code == 0
+        assert "FAIL\t#1028\tloc 496\tAdd thread state" in result.output
+
+    def test_pr_audit_rejects_inverted_thresholds(self, runner, mock_repo):
+        result = runner.invoke(main, ["pr", "audit", "--th1", "200", "--th2", "50"])
+        assert result.exit_code != 0
+        assert "--th1 must be less than or equal to --th2" in _output_text(result)
+
+    def test_pr_audit_rejects_empty_minutes_keyword(self, runner, mock_repo):
+        result = runner.invoke(main, ["pr", "audit", "--minutes-keyword", ""])
+        assert result.exit_code != 0
+        assert "--minutes-keyword must not be empty" in _output_text(result)
+
+    def test_pr_audit_list_isolates_per_pr_api_errors(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return [
+                    {
+                        "number": 1,
+                        "title": "Healthy",
+                        "added_lines": 10,
+                        "removed_lines": 2,
+                        "milestone": {"title": "m"},
+                    },
+                    {"number": 2, "title": "Rate limited", "added_lines": 4, "removed_lines": 1},
+                    {
+                        "number": 3,
+                        "title": "Also healthy",
+                        "added_lines": 8,
+                        "removed_lines": 0,
+                        "milestone": {"title": "m"},
+                    },
+                ]
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("rate limited", 429)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return {
+                    "number": 1,
+                    "title": "Healthy",
+                    "milestone": {"title": "m"},
+                    "body": "",
+                    "labels": [],
+                    "mergeable_state": {"resolve_discussion_passed": True},
+                }
+            if path == "/repos/owner/repo/pulls/3":
+                return {
+                    "number": 3,
+                    "title": "Also healthy",
+                    "milestone": {"title": "m"},
+                    "body": "",
+                    "labels": [],
+                    "mergeable_state": {"resolve_discussion_passed": True},
+                }
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tRate limited" in result.output
+        assert "audit error: rate limited" in result.output
+        assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+
+    def _list_three_prs(self):
+        return [
+            {
+                "number": 1,
+                "title": "Healthy",
+                "added_lines": 10,
+                "removed_lines": 2,
+                "milestone": {"title": "m"},
+            },
+            {"number": 2, "title": "Broken", "added_lines": 4, "removed_lines": 1},
+            {
+                "number": 3,
+                "title": "Also healthy",
+                "added_lines": 8,
+                "removed_lines": 0,
+                "milestone": {"title": "m"},
+            },
+        ]
+
+    def _healthy_detail(self, number: int, title: str) -> dict:
+        return {
+            "number": number,
+            "title": title,
+            "milestone": {"title": "m"},
+            "body": "",
+            "labels": [],
+            "mergeable_state": {"resolve_discussion_passed": True},
+        }
+
+    def test_pr_audit_list_isolates_network_errors(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise NetworkError("Connection failed")
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/3":
+                return self._healthy_detail(3, "Also healthy")
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 0
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tBroken" in result.output
+        assert "audit error: Connection failed" in result.output
+        assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+        assert "aborted" not in _stderr_text(result)
+
+    def test_pr_audit_list_network_error_fail_exit(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise NetworkError("Connection failed")
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/3":
+                return self._healthy_detail(3, "Also healthy")
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tBroken" in result.output
+        assert "audit error: Connection failed" in result.output
+        assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+        assert "aborted" not in _stderr_text(result)
+
+    def test_pr_audit_list_isolates_paginate_errors(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2/comments":
+                raise APIError("Unexpected pagination response", 200)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path.endswith("/pulls/1"):
+                return self._healthy_detail(1, "Healthy")
+            if path.endswith("/pulls/2"):
+                return self._healthy_detail(2, "Broken")
+            if path.endswith("/pulls/3"):
+                return self._healthy_detail(3, "Also healthy")
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 0
+        assert "PASS\t#1" in result.output
+        assert "audit error: Unexpected pagination response" in result.output
+        assert "PASS\t#3" in result.output
+
+    def test_pr_audit_list_aborts_on_401_with_json_only_fail(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("Authentication failed", 401)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit", "--only-fail", "--json", "number,verdict,reasons"])
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout) == [
+            {"number": 2, "verdict": "FAIL", "reasons": ["audit error: Authentication failed"]},
+        ]
+        assert "aborted audit at #2: 1 of 3 pull requests not audited" in _stderr_text(result)
+        assert "Authentication failed" in _stderr_text(result)
+
+    def test_pr_audit_list_aborts_on_401(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("Authentication failed", 401)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tBroken" in result.output
+        assert "audit error: Authentication failed" in result.output
+        assert "#3" not in result.output
+        assert "aborted audit at #2: 1 of 3 pull requests not audited" in _stderr_text(result)
+        assert "Authentication failed" in _stderr_text(result)
+
+    def test_pr_audit_list_aborts_on_401_for_last_item(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/3":
+                raise APIError("Authentication failed", 401)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/2":
+                return self._healthy_detail(2, "Broken")
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "PASS\t#2" in result.output
+        assert "FAIL\t#3\tloc unknown\tAlso healthy" in result.output
+        assert "aborted audit at #3: Authentication failed" in _stderr_text(result)
+        assert "not audited" not in _stderr_text(result)
+        assert "0 of" not in _stderr_text(result)
+
+    def test_pr_audit_list_isolates_403(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("forbidden", 403)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/3":
+                return self._healthy_detail(3, "Also healthy")
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 0
+        assert "PASS\t#1" in result.output
+        assert "audit error: forbidden" in result.output
+        assert "PASS\t#3" in result.output
+        assert "aborted" not in _stderr_text(result)
+
+    def test_pr_audit_strips_minutes_keyword(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Huge",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "评审纪要: ok",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "tests/foo_test.py", "additions": 2000, "deletions": 20}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1", "--minutes-keyword", " 评审纪要 "])
+
+        assert result.exit_code == 0
+        assert "PASS\t#1" in result.output
+
+    def test_pr_audit_help_lists_reason_fields(self, runner):
+        result = runner.invoke(main, ["pr", "audit", "--help"])
+        assert result.exit_code == 0
+        assert "reasons" in result.output
+        assert "failedRules" in result.output
+        assert "R1-R4" in result.output
+        assert "401" in result.output
+        assert "regardless of this flag" in result.output
+        assert "other than HTTP 401" in result.output
+        assert "--fail-exit" in result.output

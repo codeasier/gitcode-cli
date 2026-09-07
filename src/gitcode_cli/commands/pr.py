@@ -8,13 +8,15 @@ import click
 
 from ..adapters import PullRequestAdapter
 from ..adapters.capabilities import unsupported
+from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request, is_fatal_audit_error
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
     get_fill_info,
     resolve_pr_identifier_or_current_branch,
 )
-from ..formatters import format_pr_detail, format_pr_list, output_result
+from ..errors import GCError
+from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services import PullRequestService
@@ -909,6 +911,131 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
         safe_echo("  No open pull requests")
 
 
+def _format_audit_abort(number: int | None, skipped: int, total: int, exc: BaseException) -> str:
+    if skipped:
+        return f"error: aborted audit at #{number}: {skipped} of {total} pull requests not audited ({exc})"
+    return f"error: aborted audit at #{number}: {exc}"
+
+
+@pr_group.command("audit")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.argument("identifier", required=False)
+@click.option("-s", "--state", default="open", show_default=True, help="Filter by state: open, closed, merged, all.")
+@click.option("-L", "--limit", type=click.IntRange(min=1), default=100, show_default=True, help="Max PRs to audit.")
+@click.option(
+    "--th1",
+    type=click.IntRange(min=0),
+    default=100,
+    show_default=True,
+    help="R3 size threshold (added + removed lines).",
+)
+@click.option(
+    "--th2",
+    type=click.IntRange(min=0),
+    default=1000,
+    show_default=True,
+    help="R4 size threshold (added + removed lines).",
+)
+@click.option("--minutes-keyword", default="评审纪要", show_default=True, help="R4 review-minutes keyword.")
+@click.option("--only-fail", is_flag=True, help="Show only pull requests that fail the audit.")
+@click.option(
+    "--fail-exit",
+    is_flag=True,
+    help="Exit 1 if any audited PR fails. HTTP 401 aborts the remaining list and exits 1, regardless of this flag.",
+)
+@click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
+@click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
+@click.option("-t", "--template", help="Format output using a Go template string.")
+@click.pass_context
+def pr_audit(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    state: str | None,
+    limit: int | None,
+    th1: int,
+    th2: int,
+    minutes_keyword: str,
+    only_fail: bool,
+    fail_exit: bool,
+    json_fields: str | None,
+    jq_query: str | None,
+    template: str | None,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    adapter = PullRequestAdapter(service)
+    if th1 > th2:
+        raise click.UsageError("--th1 must be less than or equal to --th2.")
+    minutes_keyword = minutes_keyword.strip()
+    if not minutes_keyword:
+        raise click.UsageError("--minutes-keyword must not be empty.")
+    thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
+    results: list[dict] = []
+    fatal_error: GCError | None = None
+    fatal_number: int | None = None
+    audit_total = 0
+    if identifier:
+        resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+        owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+        results.append(audit_pull_request(service, owner, repo, int(number), thresholds=thresholds))
+    else:
+        listed_items = adapter.list_prs(
+            owner,
+            repo,
+            state=state,
+            author=None,
+            base=None,
+            assignee=None,
+            draft=None,
+            head=None,
+            labels=None,
+            search=None,
+            limit=limit,
+        )
+        candidates = [item for item in listed_items if item.get("number") is not None]
+        audit_total = len(candidates)
+        for item in candidates:
+            number = int(item["number"])
+            try:
+                results.append(
+                    audit_pull_request(service, owner, repo, int(number), listed=item, thresholds=thresholds)
+                )
+            except GCError as exc:
+                results.append(audit_error_result(int(number), exc, listed=item))
+                if is_fatal_audit_error(exc):
+                    fatal_error = exc
+                    fatal_number = number
+                    break
+    audited = len(results)
+    if only_fail:
+        results = [item for item in results if not item.get("overall")]
+
+    output_data: dict | list[dict] | None = results if not identifier else (results[0] if results else None)
+
+    def default_formatter(data) -> None:
+        if not data:
+            return
+        output = format_pr_audit_list(data if isinstance(data, list) else [data])
+        if output:
+            safe_echo(output)
+
+    if output_data is not None:
+        output_result(
+            output_data,
+            json_fields,
+            jq_query,
+            template,
+            default_formatter=default_formatter,
+        )
+    if fatal_error is not None:
+        skipped = max(audit_total - audited, 0)
+        safe_echo(_format_audit_abort(fatal_number, skipped, audit_total, fatal_error), err=True)
+    if fatal_error is not None or (fail_exit and any(not item.get("overall") for item in results)):
+        ctx.exit(1)
+
+
 pr_group.add_command(pr_list, name="ls")
 pr_group.add_command(pr_create, name="new")
 
@@ -916,7 +1043,7 @@ set_gc_help(
     pr_group,
     gc_usage="gc pr <command> [flags]",
     gc_command_sections=[
-        ("GENERAL COMMANDS", ["create", "list", "status"]),
+        ("GENERAL COMMANDS", ["audit", "create", "list", "status"]),
         (
             "TARGETED COMMANDS",
             ["checkout", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
@@ -1010,3 +1137,19 @@ pr_ready.short_help = "Mark a pull request as ready for review"
 pr_ready.help = "Mark a pull request as ready for review."
 pr_status.short_help = "Show status of relevant pull requests"
 pr_status.help = "Show status of relevant pull requests."
+pr_audit.short_help = "Audit pull requests against merge-readiness rules"
+pr_audit.help = (
+    "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "
+    "reason for every failed rule. List-mode errors other than HTTP 401 are recorded per PR "
+    "and exit 0 unless --fail-exit is set. HTTP 401 aborts the remaining list and exits 1."
+)
+set_gc_help(
+    pr_audit,
+    gc_usage="gc pr audit [<number> | <url>] [flags]",
+    gc_json_fields=AUDIT_JSON_FIELDS,
+    gc_examples=[
+        "gc pr audit -R owner/repo",
+        "gc pr audit 1028",
+        "gc pr audit --only-fail --json number,verdict,reasons",
+    ],
+)

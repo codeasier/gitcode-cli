@@ -36,10 +36,13 @@ gc issue list
 gc issue view 42
 gc pr list
 gc pr create --fill
+gc pr audit
 gc pr merge 42 --squash
 ```
 
 在 Windows PowerShell 中请优先使用 `gitcode`，因为 `gc` 是内置 `Get-Content` 别名。
+
+`gc pr audit` 会为每条未通过的 R1-R4 合并就绪规则打印原因。列表模式下，除 HTTP 401 以外的错误会记在对应 PR 上，默认退出码为 0（加 `--fail-exit` 则为 1）。HTTP 401 会中止剩余列表并退出 1，与 `--fail-exit` 无关。
 
 ## 文档
 

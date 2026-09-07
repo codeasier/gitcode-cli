@@ -36,10 +36,13 @@ gc issue list
 gc issue view 42
 gc pr list
 gc pr create --fill
+gc pr audit
 gc pr merge 42 --squash
 ```
 
 Use `gitcode` instead of `gc` on Windows PowerShell because `gc` is a built-in alias for `Get-Content`.
+
+`gc pr audit` prints a reason for every failed R1-R4 merge-readiness rule. List-mode errors other than HTTP 401 are recorded per PR and exit 0 unless `--fail-exit` is set. HTTP 401 aborts the remaining list and exits 1, regardless of this flag.
 
 ## Documentation
 

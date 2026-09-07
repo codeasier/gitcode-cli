@@ -16,15 +16,13 @@ class PullRequestService:
     def get(self, owner: str, repo: str, number: int) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}")
 
-    def _paginate(self, path: str, extra_params: dict[str, Any] | None = None) -> Any | None:
+    def _paginate(self, path: str) -> Any | None:
         per_page = 100
         page = 1
         items: list[Any] = []
         previous: list[Any] | None = None
         while True:
             params: dict[str, Any] = {"page": page, "per_page": per_page}
-            if extra_params:
-                params.update({key: value for key, value in extra_params.items() if value is not None})
             result = self.client.get(path, params=params)
             if not isinstance(result, list):
                 if result is None and page == 1 and not items:

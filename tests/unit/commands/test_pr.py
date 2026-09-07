@@ -12,6 +12,7 @@ from gitcode_cli.errors import APIError, NetworkError
 
 
 def _cli_runner() -> CliRunner:
+    """Unmixed streams so audit tests can read stdout/stderr on Click 8.0/8.1."""
     params = inspect.signature(CliRunner.__init__).parameters
     if "mix_stderr" in params:
         return CliRunner(mix_stderr=False)
@@ -25,9 +26,13 @@ def _stderr_text(result) -> str:
         return ""
 
 
+def _output_text(result) -> str:
+    return f"{result.stdout or ''}{_stderr_text(result)}"
+
+
 @pytest.fixture
 def runner():
-    return _cli_runner()
+    return CliRunner()
 
 
 @pytest.fixture
@@ -1282,6 +1287,10 @@ class TestPrCreateMissingHtmlUrl:
 
 
 class TestPrAudit:
+    @pytest.fixture
+    def runner(self):
+        return _cli_runner()
+
     def _wire_audit_client(self, mock_client, pulls_by_number: dict):
         def fake_get(path, params=None):
             if path == "/repos/owner/repo/pulls":
@@ -1466,12 +1475,12 @@ class TestPrAudit:
     def test_pr_audit_rejects_inverted_thresholds(self, runner, mock_repo):
         result = runner.invoke(main, ["pr", "audit", "--th1", "200", "--th2", "50"])
         assert result.exit_code != 0
-        assert "--th1 must be less than or equal to --th2" in result.output
+        assert "--th1 must be less than or equal to --th2" in _output_text(result)
 
     def test_pr_audit_rejects_empty_minutes_keyword(self, runner, mock_repo):
         result = runner.invoke(main, ["pr", "audit", "--minutes-keyword", ""])
         assert result.exit_code != 0
-        assert "--minutes-keyword must not be empty" in result.output
+        assert "--minutes-keyword must not be empty" in _output_text(result)
 
     def test_pr_audit_list_isolates_per_pr_api_errors(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
@@ -1683,6 +1692,33 @@ class TestPrAudit:
         assert "#3" not in result.output
         assert "aborted audit at #2: 1 of 3 pull requests not audited" in _stderr_text(result)
         assert "Authentication failed" in _stderr_text(result)
+
+    def test_pr_audit_list_aborts_on_401_for_last_item(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/3":
+                raise APIError("Authentication failed", 401)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/2":
+                return self._healthy_detail(2, "Broken")
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "PASS\t#2" in result.output
+        assert "FAIL\t#3\tloc unknown\tAlso healthy" in result.output
+        assert "aborted audit at #3: Authentication failed" in _stderr_text(result)
+        assert "not audited" not in _stderr_text(result)
+        assert "0 of" not in _stderr_text(result)
 
     def test_pr_audit_list_isolates_403(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):

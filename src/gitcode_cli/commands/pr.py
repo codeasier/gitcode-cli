@@ -902,6 +902,12 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
         safe_echo("  No open pull requests")
 
 
+def _format_audit_abort(number: int | None, skipped: int, total: int, exc: BaseException) -> str:
+    if skipped:
+        return f"error: aborted audit at #{number}: {skipped} of {total} pull requests not audited ({exc})"
+    return f"error: aborted audit at #{number}: {exc}"
+
+
 @pr_group.command("audit")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
@@ -1016,11 +1022,7 @@ def pr_audit(
         )
     if fatal_error is not None:
         skipped = max(audit_total - audited, 0)
-        safe_echo(
-            f"error: aborted audit at #{fatal_number}: "
-            f"{skipped} of {audit_total} pull requests not audited ({fatal_error})",
-            err=True,
-        )
+        safe_echo(_format_audit_abort(fatal_number, skipped, audit_total, fatal_error), err=True)
     if fatal_error is not None or (fail_exit and any(not item.get("overall") for item in results)):
         ctx.exit(1)
 

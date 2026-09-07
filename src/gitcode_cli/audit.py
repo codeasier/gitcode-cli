@@ -72,6 +72,10 @@ def _resolve_discussion_passed(pr: dict[str, Any]) -> bool:
     return bool(resolve_pass)
 
 
+def _mergeable_state_known(pr: dict[str, Any]) -> bool:
+    return isinstance(pr.get("mergeable_state"), dict)
+
+
 def loc_from_list_item(item: dict[str, Any] | None) -> int | None:
     if not item:
         return None
@@ -120,6 +124,21 @@ def paths_from_diff(diff_text: str) -> list[str]:
     return [path for line in diff_text.splitlines() if (path := _path_from_diff_header(line))]
 
 
+def _current_file_path(item: dict[str, Any]) -> str | None:
+    status = str(item.get("status") or item.get("change_type") or "").lower()
+    if status in {"removed", "deleted", "delete"}:
+        return None
+    patch = item.get("patch")
+    if isinstance(patch, dict):
+        new_path = patch.get("new_path")
+        if new_path and str(new_path) not in {"/dev/null", "dev/null"}:
+            return str(new_path)
+        if patch.get("old_path"):
+            return None
+    filename = item.get("filename")
+    return str(filename) if filename else None
+
+
 def loc_and_paths_from_files(files: list[Any]) -> tuple[int | None, list[str]]:
     paths: list[str] = []
     loc = 0
@@ -127,15 +146,9 @@ def loc_and_paths_from_files(files: list[Any]) -> tuple[int | None, list[str]]:
     for item in files:
         if not isinstance(item, dict):
             continue
-        filename = item.get("filename")
-        if filename:
-            paths.append(str(filename))
-        patch = item.get("patch") or {}
-        if isinstance(patch, dict):
-            for key in ("new_path", "old_path"):
-                path = patch.get(key)
-                if path:
-                    paths.append(str(path))
+        path = _current_file_path(item)
+        if path:
+            paths.append(path)
         if "additions" not in item and "deletions" not in item:
             continue
         additions = _optional_int(item["additions"]) if "additions" in item else None
@@ -211,6 +224,8 @@ def evaluate_audit(
         if not resolve_pass:
             parts.append("mergeable_state.resolve_discussion_passed=false")
         r2_reasons.append("R2: " + "; ".join(parts))
+    elif not _mergeable_state_known(pr):
+        r2_reasons.append("R2: merge state unknown")
 
     review_cnt = sum(
         1 for comment in comments if isinstance(comment, dict) and comment.get("comment_type") == "diff_comment"
@@ -272,6 +287,41 @@ def evaluate_audit(
     }
 
 
+def audit_error_result(
+    number: int,
+    exc: BaseException,
+    listed: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    listed = listed or {}
+    reason = f"audit error: {exc}"
+    return {
+        "number": listed.get("number", number),
+        "title": listed.get("title") or "",
+        "url": listed.get("html_url") or listed.get("url"),
+        "overall": False,
+        "verdict": "FAIL",
+        "loc": None,
+        "r1": False,
+        "r2": False,
+        "r3": False,
+        "r4": False,
+        "failedRules": [],
+        "reasons": [reason],
+        "rules": {
+            "R1": {"pass": False, "reasons": []},
+            "R2": {"pass": False, "reasons": []},
+            "R3": {"pass": False, "reasons": []},
+            "R4": {"pass": False, "reasons": []},
+        },
+        "milestone": None,
+        "issues": [],
+        "unresolved": 0,
+        "reviewCnt": 0,
+        "hasTest": None,
+        "hasMinutes": False,
+    }
+
+
 def resolve_loc_and_paths(
     service: PullRequestService,
     owner: str,
@@ -280,8 +330,11 @@ def resolve_loc_and_paths(
     listed: dict[str, Any] | None,
     comments: list[Any],
     thresholds: AuditThresholds,
+    loc_item: dict[str, Any] | None = None,
 ) -> tuple[int | None, list[str] | None]:
     loc = loc_from_list_item(listed)
+    if loc is None:
+        loc = loc_from_list_item(loc_item)
     paths: list[str] | None = None
     needs_paths = loc is None or (
         loc > thresholds.th1
@@ -329,7 +382,7 @@ def audit_pull_request(
 
     issues = _as_list(service.list_issues(owner, repo, number))
     comments = _as_list(service.list_comments(owner, repo, number))
-    loc, file_paths = resolve_loc_and_paths(service, owner, repo, number, listed, comments, thresholds)
+    loc, file_paths = resolve_loc_and_paths(service, owner, repo, number, listed, comments, thresholds, loc_item=detail)
     return evaluate_audit(
         pr=detail,
         issues=issues,

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from gitcode_cli.audit import (
     AuditThresholds,
+    audit_error_result,
     audit_pull_request,
     evaluate_audit,
     loc_and_paths_from_files,
@@ -11,6 +12,7 @@ from gitcode_cli.audit import (
     loc_from_list_item,
     paths_from_diff,
 )
+from gitcode_cli.errors import APIError
 
 
 def _pr(**overrides):
@@ -408,7 +410,7 @@ class TestAuditPullRequest:
         )
         assert result["r2"] is True
         assert result["hasMinutes"] is False
-        assert result["reasons"] == []
+        assert result["reasons"] == ["R2: merge state unknown"]
 
     def test_treats_null_resolve_discussion_as_passed(self):
         result = evaluate_audit(
@@ -420,3 +422,62 @@ class TestAuditPullRequest:
         )
         assert result["r2"] is True
         assert result["reasons"] == []
+
+    def test_r2_notes_unknown_merge_state_without_failing(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state=None),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["overall"] is True
+        assert result["failedRules"] == []
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_deleted_test_path_does_not_count_as_has_test(self):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {
+                    "filename": "tests/foo_test.py",
+                    "additions": 0,
+                    "deletions": 200,
+                    "patch": {"old_path": "tests/foo_test.py"},
+                }
+            ]
+        )
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=loc,
+            file_paths=paths,
+        )
+        assert loc == 200
+        assert paths == []
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+
+    def test_uses_detail_line_counts_in_number_mode(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"}, added_lines=12, removed_lines=3)
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 15
+        assert result["r3"] is True
+        service.list_files.assert_not_called()
+        service.diff.assert_not_called()
+
+    def test_audit_error_result_is_fail_with_reason(self):
+        result = audit_error_result(7, APIError("rate limited", 429), listed={"number": 7, "title": "Big PR"})
+        assert result["verdict"] == "FAIL"
+        assert result["overall"] is False
+        assert result["number"] == 7
+        assert result["title"] == "Big PR"
+        assert result["reasons"] == ["audit error: rate limited"]

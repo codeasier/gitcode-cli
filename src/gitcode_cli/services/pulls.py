@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..client import GitCodeClient
+from ..errors import APIError
 
 
 class PullRequestService:
@@ -26,6 +27,8 @@ class PullRequestService:
                 params.update({key: value for key, value in extra_params.items() if value is not None})
             result = self.client.get(path, params=params)
             if not isinstance(result, list):
+                if page > 1:
+                    raise APIError(f"Unexpected pagination response for {path} page {page}")
                 return items if items else result
             if previous is not None and result == previous:
                 return items

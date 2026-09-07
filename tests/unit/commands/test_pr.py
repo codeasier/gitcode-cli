@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.cli import main
+from gitcode_cli.errors import APIError
 
 
 @pytest.fixture
@@ -1451,6 +1452,66 @@ class TestPrAudit:
         result = runner.invoke(main, ["pr", "audit", "--th1", "200", "--th2", "50"])
         assert result.exit_code != 0
         assert "--th1 must be less than or equal to --th2" in result.output
+
+    def test_pr_audit_rejects_empty_minutes_keyword(self, runner, mock_repo):
+        result = runner.invoke(main, ["pr", "audit", "--minutes-keyword", ""])
+        assert result.exit_code != 0
+        assert "--minutes-keyword must not be empty" in result.output
+
+    def test_pr_audit_list_isolates_per_pr_api_errors(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return [
+                    {
+                        "number": 1,
+                        "title": "Healthy",
+                        "added_lines": 10,
+                        "removed_lines": 2,
+                        "milestone": {"title": "m"},
+                    },
+                    {"number": 2, "title": "Rate limited", "added_lines": 4, "removed_lines": 1},
+                    {
+                        "number": 3,
+                        "title": "Also healthy",
+                        "added_lines": 8,
+                        "removed_lines": 0,
+                        "milestone": {"title": "m"},
+                    },
+                ]
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("rate limited", 429)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return {
+                    "number": 1,
+                    "title": "Healthy",
+                    "milestone": {"title": "m"},
+                    "body": "",
+                    "labels": [],
+                    "mergeable_state": {"resolve_discussion_passed": True},
+                }
+            if path == "/repos/owner/repo/pulls/3":
+                return {
+                    "number": 3,
+                    "title": "Also healthy",
+                    "milestone": {"title": "m"},
+                    "body": "",
+                    "labels": [],
+                    "mergeable_state": {"resolve_discussion_passed": True},
+                }
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tRate limited" in result.output
+        assert "audit error: rate limited" in result.output
+        assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
 
     def test_pr_audit_help_lists_reason_fields(self, runner):
         result = runner.invoke(main, ["pr", "audit", "--help"])

@@ -8,13 +8,14 @@ import click
 
 from ..adapters import PullRequestAdapter
 from ..adapters.capabilities import unsupported
-from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_pull_request
+from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
     get_fill_info,
     resolve_pr_identifier_or_current_branch,
 )
+from ..errors import GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
@@ -948,6 +949,8 @@ def pr_audit(
     adapter = PullRequestAdapter(service)
     if th1 > th2:
         raise click.UsageError("--th1 must be less than or equal to --th2.")
+    if not minutes_keyword.strip():
+        raise click.UsageError("--minutes-keyword must not be empty.")
     thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
     results: list[dict] = []
     if identifier:
@@ -972,7 +975,12 @@ def pr_audit(
             number = item.get("number")
             if number is None:
                 continue
-            results.append(audit_pull_request(service, owner, repo, int(number), listed=item, thresholds=thresholds))
+            try:
+                results.append(
+                    audit_pull_request(service, owner, repo, int(number), listed=item, thresholds=thresholds)
+                )
+            except GCError as exc:
+                results.append(audit_error_result(int(number), exc, listed=item))
     if only_fail:
         results = [item for item in results if not item.get("overall")]
 

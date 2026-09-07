@@ -139,6 +139,18 @@ class TestEvaluateAuditReasons:
         assert tested["r3"] is True
         assert tested["hasTest"] is True
 
+    def test_r3_recognizes_common_test_basenames(self):
+        for path in ("test_foo.py", "src/test_auth.py", "TestFoo.java"):
+            result = evaluate_audit(
+                pr=_pr(milestone={"title": "m"}),
+                issues=[],
+                comments=[],
+                loc=190,
+                file_paths=[path],
+            )
+            assert result["r3"] is True, path
+            assert result["hasTest"] is True, path
+
     def test_r4_passes_when_string_label_contains_keyword(self):
         result = evaluate_audit(
             pr=_pr(milestone={"title": "m"}, labels=["评审纪要"]),
@@ -176,6 +188,31 @@ class TestEvaluateAuditReasons:
             "R4: loc 2104 > 1000, and '评审纪要' not found in body, comments, or labels",
         ]
 
+    def test_r1_ignores_empty_milestone_and_malformed_issues(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={}),
+            issues=["skip", {"title": "no number"}],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r1"] is False
+        assert result["milestone"] is None
+        assert result["issues"] == []
+
+    def test_unavailable_loc_fails_size_rules(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=None,
+            file_paths=[],
+        )
+        assert result["loc"] is None
+        assert result["r3"] is False
+        assert result["r4"] is False
+        assert result["reasons"] == ["R3: loc unavailable", "R4: loc unavailable"]
+
 
 class TestLocHelpers:
     def test_loc_from_list_item_requires_integer_counts(self):
@@ -186,7 +223,11 @@ class TestLocHelpers:
     def test_loc_from_diff_skips_file_headers(self):
         diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n+added\n-removed\n context\n"
         assert loc_from_diff(diff) == 2
-        assert paths_from_diff(diff) == ["diff --git a/a b/a"]
+        assert paths_from_diff(diff) == ["a"]
+
+    def test_paths_from_diff_uses_new_path_for_renames(self):
+        diff = "diff --git a/tests/x.py b/src/x.py\n"
+        assert paths_from_diff(diff) == ["src/x.py"]
 
     def test_loc_and_paths_from_files_coerces_string_counts(self):
         loc, paths = loc_and_paths_from_files(
@@ -310,6 +351,21 @@ class TestAuditPullRequest:
 
         assert result["loc"] == 2
         service.diff.assert_called_once_with("owner", "repo", 42)
+
+    def test_keeps_loc_unavailable_when_diff_is_empty(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] is None
+        assert result["r3"] is False
+        assert result["r4"] is False
+        assert "R3: loc unavailable" in result["reasons"]
 
     def test_tolerates_non_dict_mergeable_state_and_non_string_body(self):
         result = evaluate_audit(

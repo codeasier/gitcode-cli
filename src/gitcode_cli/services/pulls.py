@@ -19,6 +19,7 @@ class PullRequestService:
         per_page = 100
         page = 1
         items: list[Any] = []
+        previous: list[Any] | None = None
         while True:
             params: dict[str, Any] = {"page": page, "per_page": per_page}
             if extra_params:
@@ -26,9 +27,12 @@ class PullRequestService:
             result = self.client.get(path, params=params)
             if not isinstance(result, list):
                 return items if items else result
-            items.extend(result)
-            if len(result) < per_page:
+            if previous is not None and result == previous:
                 return items
+            items.extend(result)
+            if len(result) < per_page or page >= 100:
+                return items
+            previous = result
             page += 1
 
     def list_issues(self, owner: str, repo: str, number: int) -> Any | None:

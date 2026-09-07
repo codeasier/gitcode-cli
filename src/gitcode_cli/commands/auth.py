@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import sys
+from typing import IO, cast
 
 import click
 
@@ -23,7 +23,7 @@ def auth_group() -> None:
 @click.option("--with-token", is_flag=True, help="Read token from stdin.")
 def auth_login(with_token: bool) -> None:
     if with_token:
-        token = sys.stdin.read().strip()
+        token = cast(IO[str], click.get_text_stream("stdin")).read().strip()
         if not token:
             raise click.ClickException("No token provided on stdin.")
     else:

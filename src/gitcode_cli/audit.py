@@ -7,7 +7,7 @@ from typing import Any
 from .services import PullRequestService
 
 TEST_PATH_RE = re.compile(
-    r"(^|/)(test|tests|__tests__|spec|__mocks__)/|_test\.|\.test\.|\.spec\.|Test\.cpp",
+    r"(^|/)(test|tests|__tests__|spec|__mocks__)/|(^|/)test_|_test\.|\.test\.|\.spec\.|(^|/)Test[A-Z]|Test\.cpp",
     re.I,
 )
 
@@ -89,8 +89,22 @@ def loc_from_diff(diff_text: str) -> int:
     )
 
 
+_DIFF_B_PATH_RE = re.compile(r' (?:b/(\S+)|"b/([^"]+)")$')
+_DIFF_A_PATH_RE = re.compile(r' (?:a/(\S+)|"a/([^"]+)")')
+
+
+def _path_from_diff_header(line: str) -> str | None:
+    if not line.startswith("diff --git "):
+        return None
+    rest = line[len("diff --git") :]
+    match = _DIFF_B_PATH_RE.search(rest) or _DIFF_A_PATH_RE.search(rest)
+    if not match:
+        return None
+    return match.group(1) or match.group(2)
+
+
 def paths_from_diff(diff_text: str) -> list[str]:
-    return [line for line in diff_text.splitlines() if line.startswith("diff --git ")]
+    return [path for line in diff_text.splitlines() if (path := _path_from_diff_header(line))]
 
 
 def loc_and_paths_from_files(files: list[Any]) -> tuple[int | None, list[str]]:
@@ -153,16 +167,16 @@ def evaluate_audit(
     pr: dict[str, Any],
     issues: list[Any],
     comments: list[Any],
-    loc: int,
+    loc: int | None,
     file_paths: list[str] | None,
     thresholds: AuditThresholds | None = None,
 ) -> dict[str, Any]:
     thresholds = thresholds or AuditThresholds()
     keyword = thresholds.minutes_keyword
 
-    has_milestone = pr.get("milestone") is not None
-    has_issue = bool(issues)
-    r1 = has_milestone or has_issue
+    issue_numbers = _issue_numbers(issues)
+    milestone = _milestone_title(pr.get("milestone"))
+    r1 = milestone is not None or bool(issue_numbers)
     r1_reasons: list[str] = []
     if not r1:
         r1_reasons.append("R1: no milestone and no officially linked issues")
@@ -189,20 +203,30 @@ def evaluate_audit(
         1 for comment in comments if isinstance(comment, dict) and comment.get("comment_type") == "diff_comment"
     )
     has_test = None if file_paths is None else any(TEST_PATH_RE.search(_as_text(path)) for path in file_paths)
-    r3 = loc <= thresholds.th1 or review_cnt > 0 or bool(has_test)
     r3_reasons: list[str] = []
-    if not r3:
-        r3_reasons.append(f"R3: loc {loc} > {thresholds.th1}, no diff_comment, and no test-path files")
+    if loc is None:
+        r3 = False
+        r3_reasons.append("R3: loc unavailable")
+    else:
+        r3 = loc <= thresholds.th1 or review_cnt > 0 or bool(has_test)
+        if not r3:
+            r3_reasons.append(f"R3: loc {loc} > {thresholds.th1}, no diff_comment, and no test-path files")
 
     has_minutes = (
         keyword in _as_text(pr.get("body"))
         or any(keyword in _as_text(comment.get("body") if isinstance(comment, dict) else "") for comment in comments)
         or any(keyword in name for name in _label_names(pr.get("labels")))
     )
-    r4 = loc <= thresholds.th2 or has_minutes
     r4_reasons: list[str] = []
-    if not r4:
-        r4_reasons.append(f"R4: loc {loc} > {thresholds.th2}, and '{keyword}' not found in body, comments, or labels")
+    if loc is None:
+        r4 = False
+        r4_reasons.append("R4: loc unavailable")
+    else:
+        r4 = loc <= thresholds.th2 or has_minutes
+        if not r4:
+            r4_reasons.append(
+                f"R4: loc {loc} > {thresholds.th2}, and '{keyword}' not found in body, comments, or labels"
+            )
 
     overall = r1 and r2 and r3 and r4
     reasons = [*r1_reasons, *r2_reasons, *r3_reasons, *r4_reasons]
@@ -226,8 +250,8 @@ def evaluate_audit(
             "R3": {"pass": r3, "reasons": r3_reasons},
             "R4": {"pass": r4, "reasons": r4_reasons},
         },
-        "milestone": _milestone_title(pr.get("milestone")),
-        "issues": _issue_numbers(issues),
+        "milestone": milestone,
+        "issues": issue_numbers,
         "unresolved": len(unresolved),
         "reviewCnt": review_cnt,
         "hasTest": has_test,
@@ -243,7 +267,7 @@ def resolve_loc_and_paths(
     listed: dict[str, Any] | None,
     comments: list[Any],
     thresholds: AuditThresholds,
-) -> tuple[int, list[str] | None]:
+) -> tuple[int | None, list[str] | None]:
     loc = loc_from_list_item(listed)
     paths: list[str] | None = None
     needs_paths = loc is None or (
@@ -258,10 +282,10 @@ def resolve_loc_and_paths(
     if loc is None or (needs_paths and not paths):
         diff_text = service.diff(owner, repo, number)
         if loc is None:
-            loc = loc_from_diff(diff_text)
-        if not paths:
+            loc = loc_from_diff(diff_text) if diff_text else None
+        if not paths and diff_text:
             paths = paths_from_diff(diff_text)
-    return loc or 0, paths
+    return loc, paths
 
 
 def audit_pull_request(

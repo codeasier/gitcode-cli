@@ -78,12 +78,14 @@ def format_pr_audit_list(items: list[dict]) -> str:
         if not item:
             continue
         verdict = item.get("verdict") or ("PASS" if item.get("overall") else "FAIL")
+        loc = item.get("loc")
+        loc_text = "unknown" if loc is None else loc
         lines.append(
             "\t".join(
                 [
                     str(verdict),
                     f"#{item.get('number', '')}",
-                    f"loc {item.get('loc', '')}",
+                    f"loc {loc_text}",
                     str(item.get("title") or ""),
                 ]
             )

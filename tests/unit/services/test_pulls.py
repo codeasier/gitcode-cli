@@ -80,6 +80,18 @@ class TestPullRequestService:
             call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
         ]
 
+    def test_list_files_stops_when_page_repeats(self, service, mock_client):
+        repeated = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
+        mock_client.get.side_effect = [repeated, repeated]
+
+        result = service.list_files("owner", "repo", 42)
+
+        assert result == repeated
+        assert mock_client.get.call_args_list == [
+            call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
+            call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
+        ]
+
     def test_create(self, service, mock_client):
         mock_client.post.return_value = {"number": 42}
         result = service.create("owner", "repo", title="Feature", head="dev", base="master", body=None)

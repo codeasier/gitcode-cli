@@ -167,6 +167,11 @@ class TestListAndDetailFormatters:
     def test_format_pr_audit_list_skips_empty_items(self):
         assert format_pr_audit_list([{}]) == ""
 
+    def test_format_pr_audit_list_prints_unknown_loc(self):
+        assert format_pr_audit_list([{"verdict": "FAIL", "number": 1, "loc": None, "title": "x"}]) == (
+            "FAIL\t#1\tloc unknown\tx"
+        )
+
     def test_format_issue_detail_includes_metadata_lines(self):
         item = {
             "number": "42",

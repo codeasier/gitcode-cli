@@ -905,9 +905,21 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-s", "--state", default="open", show_default=True, help="Filter by state: open, closed, merged, all.")
-@click.option("-L", "--limit", type=int, default=100, show_default=True, help="Max PRs to audit.")
-@click.option("--th1", type=int, default=100, show_default=True, help="R3 size threshold (added + removed lines).")
-@click.option("--th2", type=int, default=1000, show_default=True, help="R4 size threshold (added + removed lines).")
+@click.option("-L", "--limit", type=click.IntRange(min=1), default=100, show_default=True, help="Max PRs to audit.")
+@click.option(
+    "--th1",
+    type=click.IntRange(min=0),
+    default=100,
+    show_default=True,
+    help="R3 size threshold (added + removed lines).",
+)
+@click.option(
+    "--th2",
+    type=click.IntRange(min=0),
+    default=1000,
+    show_default=True,
+    help="R4 size threshold (added + removed lines).",
+)
 @click.option("--minutes-keyword", default="评审纪要", show_default=True, help="R4 review-minutes keyword.")
 @click.option("--only-fail", is_flag=True, help="Show only pull requests that fail the audit.")
 @click.option("--fail-exit", is_flag=True, help="Exit with status 1 if any audited pull request fails.")
@@ -934,6 +946,8 @@ def pr_audit(
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
+    if th1 > th2:
+        raise click.UsageError("--th1 must be less than or equal to --th2.")
     thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
     results: list[dict] = []
     if identifier:

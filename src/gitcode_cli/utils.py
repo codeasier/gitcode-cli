@@ -83,7 +83,7 @@ def safe_number(item: Any, fallback: int | str) -> int | str:
 # --- Issue / PR identifier resolvers ---
 
 ISSUE_URL_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/issues/(?P<number>\d+)")
-PR_URL_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pulls?/(?P<number>\d+)")
+PR_URL_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?:pulls?|merge_requests)/(?P<number>\d+)")
 
 
 def parse_issue_url(url: str) -> tuple[str, str, str] | None:

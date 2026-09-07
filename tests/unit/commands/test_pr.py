@@ -1422,6 +1422,36 @@ class TestPrAudit:
         assert result.exit_code == 0
         assert result.output == ""
 
+    def test_pr_audit_accepts_merge_request_url(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1028: {
+                    "detail": {
+                        "number": 1028,
+                        "title": "Add thread state",
+                        "milestone": {"title": "MindStudio 26.2.0"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [{"number": 533}],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 400, "deletions": 96}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "https://gitcode.com/owner/repo/merge_requests/1028"])
+
+        assert result.exit_code == 0
+        assert "FAIL\t#1028\tloc 496\tAdd thread state" in result.output
+
+    def test_pr_audit_rejects_inverted_thresholds(self, runner, mock_repo):
+        result = runner.invoke(main, ["pr", "audit", "--th1", "200", "--th2", "50"])
+        assert result.exit_code != 0
+        assert "--th1 must be less than or equal to --th2" in result.output
+
     def test_pr_audit_help_lists_reason_fields(self, runner):
         result = runner.invoke(main, ["pr", "audit", "--help"])
         assert result.exit_code == 0

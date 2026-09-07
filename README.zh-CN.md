@@ -36,6 +36,7 @@ gc issue list
 gc issue view 42
 gc pr list
 gc pr create --fill
+gc pr audit
 gc pr merge 42 --squash
 ```
 

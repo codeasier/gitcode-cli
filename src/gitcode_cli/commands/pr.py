@@ -959,6 +959,8 @@ def pr_audit(
     thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
     results: list[dict] = []
     fatal_error: GCError | None = None
+    fatal_number: int | None = None
+    audit_total = 0
     if identifier:
         resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
         owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -977,10 +979,10 @@ def pr_audit(
             search=None,
             limit=limit,
         )
-        for item in listed_items:
-            number = item.get("number")
-            if number is None:
-                continue
+        candidates = [item for item in listed_items if item.get("number") is not None]
+        audit_total = len(candidates)
+        for item in candidates:
+            number = int(item["number"])
             try:
                 results.append(
                     audit_pull_request(service, owner, repo, int(number), listed=item, thresholds=thresholds)
@@ -989,7 +991,9 @@ def pr_audit(
                 results.append(audit_error_result(int(number), exc, listed=item))
                 if is_fatal_audit_error(exc):
                     fatal_error = exc
+                    fatal_number = number
                     break
+    audited = len(results)
     if only_fail:
         results = [item for item in results if not item.get("overall")]
 
@@ -1011,7 +1015,12 @@ def pr_audit(
             default_formatter=default_formatter,
         )
     if fatal_error is not None:
-        safe_echo(f"error: aborted remaining pull requests: {fatal_error}", err=True)
+        skipped = max(audit_total - audited, 0)
+        safe_echo(
+            f"error: aborted audit at #{fatal_number}: "
+            f"{skipped} of {audit_total} pull requests not audited ({fatal_error})",
+            err=True,
+        )
     if fatal_error is not None or (fail_exit and any(not item.get("overall") for item in results)):
         ctx.exit(1)
 
@@ -1116,8 +1125,8 @@ pr_status.help = "Show status of relevant pull requests."
 pr_audit.short_help = "Audit pull requests against merge-readiness rules"
 pr_audit.help = (
     "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "
-    "reason for every failed rule. List-mode network or 403 errors are recorded per PR and "
-    "exit 0 unless --fail-exit is set. HTTP 401 aborts the remaining list and exits 1."
+    "reason for every failed rule. List-mode errors other than HTTP 401 are recorded per PR "
+    "and exit 0 unless --fail-exit is set. HTTP 401 aborts the remaining list and exits 1."
 )
 set_gc_help(
     pr_audit,

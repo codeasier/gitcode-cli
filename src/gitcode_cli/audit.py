@@ -365,6 +365,7 @@ def audit_error_result(
 
 
 def is_fatal_audit_error(exc: BaseException) -> bool:
+    # HTTP 401 is raised as APIError(..., 401); the client never raises AuthError.
     return isinstance(exc, APIError) and exc.status_code == 401
 
 

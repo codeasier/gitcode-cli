@@ -33,7 +33,7 @@ src/gitcode_cli/
 ├── commands/       # Click subcommand groups
 │   ├── auth.py     # gc auth login
 │   ├── issue.py    # gc issue list/view/create/close/comment
-│   └── pr.py       # gc pr list/view/create/close/merge/comment/review
+│   └── pr.py       # gc pr list/view/create/close/merge/comment/review/audit
 └── services/       # Thin GitCode API wrappers
     ├── issues.py   # IssueService: CRUD + comments
     └── pulls.py    # PullRequestService: CRUD + merge + comments + review

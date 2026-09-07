@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from unittest.mock import MagicMock, call, patch
 
@@ -10,9 +11,23 @@ from gitcode_cli.cli import main
 from gitcode_cli.errors import APIError, NetworkError
 
 
+def _cli_runner() -> CliRunner:
+    params = inspect.signature(CliRunner.__init__).parameters
+    if "mix_stderr" in params:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
+
+
+def _stderr_text(result) -> str:
+    try:
+        return result.stderr or ""
+    except ValueError:
+        return ""
+
+
 @pytest.fixture
 def runner():
-    return CliRunner()
+    return _cli_runner()
 
 
 @pytest.fixture
@@ -1566,6 +1581,33 @@ class TestPrAudit:
         assert "FAIL\t#2\tloc unknown\tBroken" in result.output
         assert "audit error: Connection failed" in result.output
         assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+        assert "aborted" not in _stderr_text(result)
+
+    def test_pr_audit_list_network_error_fail_exit(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise NetworkError("Connection failed")
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            if path == "/repos/owner/repo/pulls/3":
+                return self._healthy_detail(3, "Also healthy")
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tBroken" in result.output
+        assert "audit error: Connection failed" in result.output
+        assert "PASS\t#3\tloc 8\tAlso healthy" in result.output
+        assert "aborted" not in _stderr_text(result)
 
     def test_pr_audit_list_isolates_paginate_errors(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
@@ -1614,8 +1656,8 @@ class TestPrAudit:
         assert json.loads(result.stdout) == [
             {"number": 2, "verdict": "FAIL", "reasons": ["audit error: Authentication failed"]},
         ]
-        assert "aborted remaining pull requests" in result.stderr
-        assert "Authentication failed" in result.stderr
+        assert "aborted audit at #2: 1 of 3 pull requests not audited" in _stderr_text(result)
+        assert "Authentication failed" in _stderr_text(result)
 
     def test_pr_audit_list_aborts_on_401(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
@@ -1639,8 +1681,8 @@ class TestPrAudit:
         assert "FAIL\t#2\tloc unknown\tBroken" in result.output
         assert "audit error: Authentication failed" in result.output
         assert "#3" not in result.output
-        assert "aborted remaining pull requests" in result.stderr
-        assert "Authentication failed" in result.stderr
+        assert "aborted audit at #2: 1 of 3 pull requests not audited" in _stderr_text(result)
+        assert "Authentication failed" in _stderr_text(result)
 
     def test_pr_audit_list_isolates_403(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
@@ -1665,6 +1707,7 @@ class TestPrAudit:
         assert "PASS\t#1" in result.output
         assert "audit error: forbidden" in result.output
         assert "PASS\t#3" in result.output
+        assert "aborted" not in _stderr_text(result)
 
     def test_pr_audit_strips_minutes_keyword(self, runner, mock_client, mock_repo):
         self._wire_audit_client(
@@ -1699,4 +1742,5 @@ class TestPrAudit:
         assert "R1-R4" in result.output
         assert "401" in result.output
         assert "regardless of this flag" in result.output
+        assert "other than HTTP 401" in result.output
         assert "--fail-exit" in result.output

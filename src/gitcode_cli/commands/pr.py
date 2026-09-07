@@ -926,7 +926,7 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
 @click.option(
     "--fail-exit",
     is_flag=True,
-    help="Exit 1 if any audited PR fails. A 401/auth error also aborts the remaining list and exits 1.",
+    help="Exit 1 if any audited PR fails. HTTP 401 aborts the remaining list and exits 1, regardless of this flag.",
 )
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
@@ -958,7 +958,7 @@ def pr_audit(
         raise click.UsageError("--minutes-keyword must not be empty.")
     thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
     results: list[dict] = []
-    fatal = False
+    fatal_error: GCError | None = None
     if identifier:
         resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
         owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -988,7 +988,7 @@ def pr_audit(
             except GCError as exc:
                 results.append(audit_error_result(int(number), exc, listed=item))
                 if is_fatal_audit_error(exc):
-                    fatal = True
+                    fatal_error = exc
                     break
     if only_fail:
         results = [item for item in results if not item.get("overall")]
@@ -1010,7 +1010,9 @@ def pr_audit(
             template,
             default_formatter=default_formatter,
         )
-    if fatal or (fail_exit and any(not item.get("overall") for item in results)):
+    if fatal_error is not None:
+        safe_echo(f"error: aborted remaining pull requests: {fatal_error}", err=True)
+    if fatal_error is not None or (fail_exit and any(not item.get("overall") for item in results)):
         ctx.exit(1)
 
 
@@ -1114,7 +1116,8 @@ pr_status.help = "Show status of relevant pull requests."
 pr_audit.short_help = "Audit pull requests against merge-readiness rules"
 pr_audit.help = (
     "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "
-    "reason for every failed rule."
+    "reason for every failed rule. List-mode network or 403 errors are recorded per PR and "
+    "exit 0 unless --fail-exit is set. HTTP 401 aborts the remaining list and exits 1."
 )
 set_gc_help(
     pr_audit,

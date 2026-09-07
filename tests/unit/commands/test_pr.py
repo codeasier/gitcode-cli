@@ -1542,7 +1542,7 @@ class TestPrAudit:
             "mergeable_state": {"resolve_discussion_passed": True},
         }
 
-    def test_pr_audit_list_isolates_network_and_403_errors(self, runner, mock_client, mock_repo):
+    def test_pr_audit_list_isolates_network_errors(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
             if path == "/repos/owner/repo/pulls":
                 return self._list_three_prs()
@@ -1611,9 +1611,36 @@ class TestPrAudit:
         result = runner.invoke(main, ["pr", "audit", "--only-fail", "--json", "number,verdict,reasons"])
 
         assert result.exit_code == 1
-        assert json.loads(result.output) == [
+        assert json.loads(result.stdout) == [
             {"number": 2, "verdict": "FAIL", "reasons": ["audit error: Authentication failed"]},
         ]
+        assert "aborted remaining pull requests" in result.stderr
+        assert "Authentication failed" in result.stderr
+
+    def test_pr_audit_list_aborts_on_401(self, runner, mock_client, mock_repo):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return self._list_three_prs()
+            if path == "/repos/owner/repo/pulls/2":
+                raise APIError("Authentication failed", 401)
+            if path.endswith("/issues") or path.endswith("/comments") or path.endswith("/files"):
+                return []
+            if path == "/repos/owner/repo/pulls/1":
+                return self._healthy_detail(1, "Healthy")
+            raise AssertionError(f"unexpected get {path}")
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+        result = runner.invoke(main, ["pr", "audit"])
+
+        assert result.exit_code == 1
+        assert "PASS\t#1\tloc 12\tHealthy" in result.output
+        assert "FAIL\t#2\tloc unknown\tBroken" in result.output
+        assert "audit error: Authentication failed" in result.output
+        assert "#3" not in result.output
+        assert "aborted remaining pull requests" in result.stderr
+        assert "Authentication failed" in result.stderr
 
     def test_pr_audit_list_isolates_403(self, runner, mock_client, mock_repo):
         def fake_get(path, params=None):
@@ -1670,4 +1697,6 @@ class TestPrAudit:
         assert "reasons" in result.output
         assert "failedRules" in result.output
         assert "R1-R4" in result.output
-        assert "401/auth error also aborts" in result.output
+        assert "401" in result.output
+        assert "regardless of this flag" in result.output
+        assert "--fail-exit" in result.output

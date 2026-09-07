@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import APIError, AuthError
+from .errors import APIError
 from .services import PullRequestService
 
 # Directory/basename patterns are case-insensitive; PascalCase TestX stays sensitive
@@ -365,8 +365,6 @@ def audit_error_result(
 
 
 def is_fatal_audit_error(exc: BaseException) -> bool:
-    if isinstance(exc, AuthError):
-        return True
     return isinstance(exc, APIError) and exc.status_code == 401
 
 

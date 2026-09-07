@@ -564,9 +564,9 @@ class TestAuditPullRequest:
         assert result["failedRules"] == ["R1", "R2", "R3", "R4"]
         assert result["rules"]["R3"]["reasons"] == ["audit error: rate limited"]
 
-    def test_only_auth_and_401_are_fatal_audit_errors(self):
-        assert is_fatal_audit_error(AuthError("no token"))
+    def test_only_http_401_is_a_fatal_audit_error(self):
         assert is_fatal_audit_error(APIError("Authentication failed", 401))
+        assert not is_fatal_audit_error(AuthError("no token"))
         assert not is_fatal_audit_error(APIError("forbidden", 403))
         assert not is_fatal_audit_error(APIError("rate limited", 429))
         assert not is_fatal_audit_error(NetworkError("timeout"))

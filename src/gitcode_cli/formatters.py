@@ -72,6 +72,27 @@ def format_pr_list(items: list[dict]) -> str:
     return "\n".join(_list_row(item, author_keys=("user", "author", "creator")) for item in items)
 
 
+def format_pr_audit_list(items: list[dict]) -> str:
+    lines: list[str] = []
+    for item in items:
+        if not item:
+            continue
+        verdict = item.get("verdict") or ("PASS" if item.get("overall") else "FAIL")
+        lines.append(
+            "\t".join(
+                [
+                    str(verdict),
+                    f"#{item.get('number', '')}",
+                    f"loc {item.get('loc', '')}",
+                    str(item.get("title") or ""),
+                ]
+            )
+        )
+        for reason in item.get("reasons") or []:
+            lines.append(f"  {reason}")
+    return "\n".join(lines)
+
+
 def _format_detail(item: dict, *, author_keys: tuple[str, ...], branch: str | None = None) -> str:
     number = item.get("number", "")
     title = item.get("title") or ""

@@ -312,7 +312,7 @@ class TestPrList:
         }
         assert mock_client.get.call_args_list == [
             call("/repos/owner/repo/pulls/42"),
-            call("/repos/owner/repo/pulls/42/issues"),
+            call("/repos/owner/repo/pulls/42/issues", params={"page": 1, "per_page": 100}),
         ]
 
     def test_pr_view_json_normalizes_advertised_fields_and_fetches_comments(self, runner, mock_client, mock_repo):
@@ -1263,3 +1263,168 @@ class TestPrCreateMissingHtmlUrl:
         )
         assert result.exit_code == 0
         assert "Created pull request" in result.output
+
+
+class TestPrAudit:
+    def _wire_audit_client(self, mock_client, pulls_by_number: dict):
+        def fake_get(path, params=None):
+            if path == "/repos/owner/repo/pulls":
+                return [
+                    {
+                        "number": number,
+                        "title": payload["detail"].get("title"),
+                        "added_lines": payload["detail"].get("added_lines"),
+                        "removed_lines": payload["detail"].get("removed_lines"),
+                        "milestone": payload["detail"].get("milestone"),
+                        "body": payload["detail"].get("body"),
+                        "labels": payload["detail"].get("labels"),
+                    }
+                    for number, payload in pulls_by_number.items()
+                ]
+            for number, payload in pulls_by_number.items():
+                if path == f"/repos/owner/repo/pulls/{number}":
+                    return payload["detail"]
+                if path == f"/repos/owner/repo/pulls/{number}/issues":
+                    return payload.get("issues", [])
+                if path == f"/repos/owner/repo/pulls/{number}/comments":
+                    return payload.get("comments", [])
+                if path == f"/repos/owner/repo/pulls/{number}/files":
+                    return payload.get("files", [])
+            return []
+
+        mock_client.get.side_effect = fake_get
+        mock_client.request.return_value = ""
+
+    def test_pr_audit_prints_failure_reasons(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1028: {
+                    "detail": {
+                        "number": 1028,
+                        "title": "Add thread state",
+                        "milestone": {"title": "MindStudio 26.2.0"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [{"number": 533}],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 400, "deletions": 96}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1028"])
+
+        assert result.exit_code == 0
+        assert "FAIL\t#1028\tloc 496\tAdd thread state" in result.output
+        assert "R3: loc 496 > 100, no diff_comment, and no test-path files" in result.output
+
+    def test_pr_audit_json_includes_reasons_and_failed_rules(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1094: {
+                    "detail": {
+                        "number": 1094,
+                        "title": "Fix memory snapshot",
+                        "milestone": None,
+                        "labels": [],
+                        "body": "Fixes #481",
+                        "html_url": "https://gitcode.com/owner/repo/merge_requests/1094",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "tests/foo_test.py", "additions": 300, "deletions": 112}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1094", "--json", "number,verdict,failedRules,reasons"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload == {
+            "number": 1094,
+            "verdict": "FAIL",
+            "failedRules": ["R1"],
+            "reasons": ["R1: no milestone and no officially linked issues"],
+        }
+
+    def test_pr_audit_only_fail_and_fail_exit(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Healthy",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "",
+                        "added_lines": 10,
+                        "removed_lines": 2,
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [],
+                },
+                2: {
+                    "detail": {
+                        "number": 2,
+                        "title": "Unlinked",
+                        "milestone": None,
+                        "labels": [],
+                        "body": "",
+                        "added_lines": 3,
+                        "removed_lines": 1,
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [],
+                },
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "--only-fail", "--fail-exit"])
+
+        assert result.exit_code == 1
+        assert "#2" in result.output
+        assert "R1: no milestone and no officially linked issues" in result.output
+        assert "#1" not in result.output
+
+    def test_pr_audit_only_fail_hides_passing_identifier(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Healthy",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 10, "deletions": 2}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1", "--only-fail"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    def test_pr_audit_help_lists_reason_fields(self, runner):
+        result = runner.invoke(main, ["pr", "audit", "--help"])
+        assert result.exit_code == 0
+        assert "reasons" in result.output
+        assert "failedRules" in result.output
+        assert "R1-R4" in result.output

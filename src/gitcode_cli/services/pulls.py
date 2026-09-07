@@ -15,8 +15,27 @@ class PullRequestService:
     def get(self, owner: str, repo: str, number: int) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}")
 
+    def _paginate(self, path: str, extra_params: dict[str, Any] | None = None) -> Any | None:
+        per_page = 100
+        page = 1
+        items: list[Any] = []
+        while True:
+            params: dict[str, Any] = {"page": page, "per_page": per_page}
+            if extra_params:
+                params.update({key: value for key, value in extra_params.items() if value is not None})
+            result = self.client.get(path, params=params)
+            if not isinstance(result, list):
+                return items if items else result
+            items.extend(result)
+            if len(result) < per_page:
+                return items
+            page += 1
+
     def list_issues(self, owner: str, repo: str, number: int) -> Any | None:
-        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/issues")
+        return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/issues")
+
+    def list_files(self, owner: str, repo: str, number: int) -> Any | None:
+        return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/files")
 
     def create(self, owner: str, repo: str, **data: Any) -> Any | None:
         return self.client.post(f"/repos/{owner}/{repo}/pulls", json={k: v for k, v in data.items() if v is not None})
@@ -44,24 +63,11 @@ class PullRequestService:
         filtered_payload = {k: v for k, v in payload.items() if v is not None}
         return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json=filtered_payload)
 
-    def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
-        per_page = 100
-        page = 1
-        comments: list[Any] = []
-
-        while True:
-            result = self.client.get(
-                f"/repos/{owner}/{repo}/pulls/{number}/comments",
-                params={"page": page, "per_page": per_page},
-            )
-            if not isinstance(result, list):
-                return comments if comments else result
-
-            comments.extend(result)
-            if len(result) < per_page:
-                return comments
-
-            page += 1
+    def list_comments(self, owner: str, repo: str, number: int, comment_type: str | None = None) -> Any | None:
+        return self._paginate(
+            f"/repos/{owner}/{repo}/pulls/{number}/comments",
+            extra_params={"comment_type": comment_type},
+        )
 
     def diff(self, owner: str, repo: str, number: int) -> str:
         response = self.client.request(

@@ -102,7 +102,7 @@ def _display_command_path(ctx: click.Context) -> str:
 def _argument_metavar(param: click.Argument, ctx: click.Context) -> str:
     make_metavar = param.make_metavar
     try:
-        return make_metavar(ctx)
+        return make_metavar(ctx)  # pyright: ignore[reportCallIssue]
     except TypeError:
         return str(getattr(param, "metavar", None) or param.name or "")
 

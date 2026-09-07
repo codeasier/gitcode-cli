@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import textwrap
 from typing import Any
 
@@ -100,16 +101,17 @@ def _display_command_path(ctx: click.Context) -> str:
 
 
 def _argument_metavar(param: click.Argument, ctx: click.Context) -> str:
+    fallback = str(getattr(param, "metavar", None) or param.name or "")
     make_metavar = getattr(param, "make_metavar", None)
-    if callable(make_metavar):
-        try:
-            return str(make_metavar(ctx))
-        except TypeError:
-            try:
-                return str(make_metavar())
-            except TypeError:
-                pass
-    return str(getattr(param, "metavar", None) or param.name or "")
+    if not callable(make_metavar):
+        return fallback
+    try:
+        signature = inspect.signature(make_metavar)
+    except (TypeError, ValueError):
+        return fallback
+    if signature.parameters:
+        return str(make_metavar(ctx))
+    return str(make_metavar())
 
 
 def _command_sections(command: click.Group) -> list[tuple[str, list[tuple[str, str]]]]:

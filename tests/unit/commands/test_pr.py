@@ -136,6 +136,35 @@ class TestPrList:
         assert '"number": 1' in result.output
         assert '"title": "First PR"' in result.output
 
+    def test_pr_list_json_maps_ref_names_and_oids(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {
+                "number": 1,
+                "base": {"ref": "main", "sha": "aaa111base"},
+                "head": {"ref": "feature", "sha": "bbb222head"},
+            },
+        ]
+        result = runner.invoke(
+            main,
+            ["pr", "list", "--json", "number,baseRefName,headRefName,baseRefOid,headRefOid"],
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output) == [
+            {
+                "number": 1,
+                "baseRefName": "main",
+                "headRefName": "feature",
+                "baseRefOid": "aaa111base",
+                "headRefOid": "bbb222head",
+            }
+        ]
+
+    def test_pr_list_help_lists_ref_oid_fields(self, runner):
+        result = runner.invoke(main, ["pr", "list", "--help"])
+        assert result.exit_code == 0
+        assert "baseRefOid" in result.output
+        assert "headRefOid" in result.output
+
     def test_pr_list_json_includes_merged_at_alias(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": 1, "merged_at": "2026-05-28T16:00:00+08:00"},

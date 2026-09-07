@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-09-07
+
+本次发布聚焦于补齐 `issue`/`pr` 在分页与数据映射上的兼容缺口，新增 PR 合并就绪度审计与可选的 `gh` 命令代理集成，让大规模仓库与 `gh` 混合使用场景更可控。
+
+### Added
+
+- 新增 `gc pr audit` 命令，基于合并就绪规则对 PR 进行审计，支持 `--limit`、`--only-fail` 与 `--fail-exit` 等选项，便于在 CI 中对 PR 做合并前检查 ([#146](https://github.com/codeasier/gitcode-cli/pull/146))
+- 新增 `gc setup gh-proxy` 可选集成，安装受管代理后可将 `gh` 命令按仓库 host/origin 自动路由到 GitCode 或原生 GitHub，并支持 `--configure` 配置 shell PATH 与 OpenCode 指令 ([#141](https://github.com/codeasier/gitcode-cli/pull/141))
+
+### Fixed
+
+- 修复 `issue list` 仅获取首页导致超出 API 默认页（20 条）的结果不可达的问题，现在会跨页拉取直到满足 `--limit` 或返回空页，多标签 AND 过滤时 `--limit` 仍按匹配项计数 ([#142](https://github.com/codeasier/gitcode-cli/pull/142), [#143](https://github.com/codeasier/gitcode-cli/pull/143))
+- 修复 `pr view --json` 缺少 commit OID 字段的问题，将 GitCode 返回的 SHA 映射为与 `gh` 一致的 `headRefOid`/`baseRefOid` 等字段 ([#147](https://github.com/codeasier/gitcode-cli/pull/147), [#148](https://github.com/codeasier/gitcode-cli/pull/148))
+
 ## [0.1.4] - 2026-08-10
 
 本次发布继续完善 `gc pr` 的 `gh` 兼容行为，补齐关联 issue 查询与评论分页，并将兼容状态纳入仓库统一维护，使命令能力与兼容性进度更清晰、可靠。

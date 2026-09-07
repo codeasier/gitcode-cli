@@ -86,6 +86,17 @@ class TestEvaluateAuditReasons:
         assert result["unresolved"] == 2
         assert result["reasons"] == ["R2: 2 unresolved diff_comment(s)"]
 
+    def test_r2_does_not_treat_missing_resolved_as_unresolved(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[{"comment_type": "diff_comment"}],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["unresolved"] == 0
+
     def test_r2_reports_resolve_discussion_gate(self):
         result = evaluate_audit(
             pr=_pr(milestone={"title": "m"}, mergeable_state={"resolve_discussion_passed": False}),
@@ -193,8 +204,13 @@ class TestLocHelpers:
 
     def test_loc_and_paths_from_files_skips_invalid_entries(self):
         loc, paths = loc_and_paths_from_files(["skip", {"additions": object(), "deletions": 1}])
-        assert loc is None
+        assert loc == 1
         assert paths == []
+
+    def test_loc_and_paths_from_files_missing_counts_return_none(self):
+        loc, paths = loc_and_paths_from_files([{"filename": "src/main.py"}])
+        assert loc is None
+        assert paths == ["src/main.py"]
 
 
 class TestAuditPullRequest:
@@ -215,6 +231,7 @@ class TestAuditPullRequest:
         )
 
         assert result["reasons"] == ["R1: no milestone and no officially linked issues"]
+        assert result["hasTest"] is None
         service.list_files.assert_not_called()
         service.diff.assert_not_called()
 
@@ -266,6 +283,45 @@ class TestAuditPullRequest:
         assert result["loc"] == 1
         assert result["hasMinutes"] is True
         assert result["overall"] is True
+
+    def test_uses_list_files_counts_when_list_item_has_no_loc(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py", "additions": 12, "deletions": 3}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 15
+        assert result["hasTest"] is False
+        service.diff.assert_not_called()
+
+    def test_falls_back_to_diff_when_file_counts_are_missing(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = "diff --git a/src/main.py b/src/main.py\n+one\n+two\n"
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 2
+        service.diff.assert_called_once_with("owner", "repo", 42)
+
+    def test_tolerates_non_dict_mergeable_state_and_non_string_body(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state="clean", body=12),
+            issues=[],
+            comments=[{"comment_type": "pr_comment", "body": None}],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["hasMinutes"] is False
+        assert result["reasons"] == []
 
     def test_treats_null_resolve_discussion_as_passed(self):
         result = evaluate_audit(

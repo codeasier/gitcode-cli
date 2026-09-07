@@ -75,6 +75,8 @@ def format_pr_list(items: list[dict]) -> str:
 def format_pr_audit_list(items: list[dict]) -> str:
     lines: list[str] = []
     for item in items:
+        if not item:
+            continue
         verdict = item.get("verdict") or ("PASS" if item.get("overall") else "FAIL")
         lines.append(
             "\t".join(

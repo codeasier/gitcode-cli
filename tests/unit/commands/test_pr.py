@@ -1397,6 +1397,31 @@ class TestPrAudit:
         assert "R1: no milestone and no officially linked issues" in result.output
         assert "#1" not in result.output
 
+    def test_pr_audit_only_fail_hides_passing_identifier(self, runner, mock_client, mock_repo):
+        self._wire_audit_client(
+            mock_client,
+            {
+                1: {
+                    "detail": {
+                        "number": 1,
+                        "title": "Healthy",
+                        "milestone": {"title": "m"},
+                        "labels": [],
+                        "body": "",
+                        "mergeable_state": {"resolve_discussion_passed": True},
+                    },
+                    "issues": [],
+                    "comments": [],
+                    "files": [{"filename": "src/main.py", "additions": 10, "deletions": 2}],
+                }
+            },
+        )
+
+        result = runner.invoke(main, ["pr", "audit", "1", "--only-fail"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
     def test_pr_audit_help_lists_reason_fields(self, runner):
         result = runner.invoke(main, ["pr", "audit", "--help"])
         assert result.exit_code == 0

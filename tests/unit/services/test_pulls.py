@@ -61,8 +61,24 @@ class TestPullRequestService:
         mock_client.get.return_value = [{"filename": "tests/foo_test.py", "additions": "3", "deletions": "1"}]
         result = service.list_files("owner", "repo", 42)
 
-        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
+        mock_client.get.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/files",
+            params={"page": 1, "per_page": 100},
+        )
         assert result[0]["filename"] == "tests/foo_test.py"
+
+    def test_list_files_fetches_all_pages(self, service, mock_client):
+        first_page = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
+        second_page = [{"filename": "tests/foo_test.py", "additions": 2, "deletions": 1}]
+        mock_client.get.side_effect = [first_page, second_page]
+
+        result = service.list_files("owner", "repo", 42)
+
+        assert result == [*first_page, *second_page]
+        assert mock_client.get.call_args_list == [
+            call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
+            call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
+        ]
 
     def test_create(self, service, mock_client):
         mock_client.post.return_value = {"number": 42}

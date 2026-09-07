@@ -164,6 +164,9 @@ class TestListAndDetailFormatters:
             "PASS\t#1081\tloc 144\tFix swimlane",
         ]
 
+    def test_format_pr_audit_list_skips_empty_items(self):
+        assert format_pr_audit_list([{}]) == ""
+
     def test_format_issue_detail_includes_metadata_lines(self):
         item = {
             "number": "42",

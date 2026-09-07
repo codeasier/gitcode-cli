@@ -47,6 +47,29 @@ def _as_list(value: Any) -> list[Any]:
     return []
 
 
+def _as_text(value: Any) -> str:
+    return value if isinstance(value, str) else ("" if value is None else str(value))
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_discussion_passed(pr: dict[str, Any]) -> bool:
+    mergeable_state = pr.get("mergeable_state")
+    if not isinstance(mergeable_state, dict):
+        return True
+    resolve_pass = mergeable_state.get("resolve_discussion_passed", True)
+    if resolve_pass is None:
+        return True
+    return bool(resolve_pass)
+
+
 def loc_from_list_item(item: dict[str, Any] | None) -> int | None:
     if not item:
         return None
@@ -86,11 +109,14 @@ def loc_and_paths_from_files(files: list[Any]) -> tuple[int | None, list[str]]:
                 path = patch.get(key)
                 if path:
                     paths.append(str(path))
-        try:
-            loc += int(item.get("additions") or 0) + int(item.get("deletions") or 0)
-            have_counts = True
-        except (TypeError, ValueError):
-            pass
+        if "additions" not in item and "deletions" not in item:
+            continue
+        additions = _optional_int(item["additions"]) if "additions" in item else None
+        deletions = _optional_int(item["deletions"]) if "deletions" in item else None
+        if additions is None and deletions is None:
+            continue
+        loc += (additions or 0) + (deletions or 0)
+        have_counts = True
     return (loc if have_counts else None), paths
 
 
@@ -128,7 +154,7 @@ def evaluate_audit(
     issues: list[Any],
     comments: list[Any],
     loc: int,
-    file_paths: list[str],
+    file_paths: list[str] | None,
     thresholds: AuditThresholds | None = None,
 ) -> dict[str, Any]:
     thresholds = thresholds or AuditThresholds()
@@ -148,10 +174,8 @@ def evaluate_audit(
         and comment.get("comment_type") == "diff_comment"
         and comment.get("resolved") is False
     ]
-    resolve_pass = (pr.get("mergeable_state") or {}).get("resolve_discussion_passed", True)
-    if resolve_pass is None:
-        resolve_pass = True
-    r2 = len(unresolved) == 0 and bool(resolve_pass)
+    resolve_pass = _resolve_discussion_passed(pr)
+    r2 = len(unresolved) == 0 and resolve_pass
     r2_reasons: list[str] = []
     if not r2:
         parts: list[str] = []
@@ -164,16 +188,15 @@ def evaluate_audit(
     review_cnt = sum(
         1 for comment in comments if isinstance(comment, dict) and comment.get("comment_type") == "diff_comment"
     )
-    has_test = any(TEST_PATH_RE.search(path or "") for path in file_paths)
-    r3 = loc <= thresholds.th1 or review_cnt > 0 or has_test
+    has_test = None if file_paths is None else any(TEST_PATH_RE.search(_as_text(path)) for path in file_paths)
+    r3 = loc <= thresholds.th1 or review_cnt > 0 or bool(has_test)
     r3_reasons: list[str] = []
     if not r3:
         r3_reasons.append(f"R3: loc {loc} > {thresholds.th1}, no diff_comment, and no test-path files")
 
-    body = pr.get("body") or ""
     has_minutes = (
-        keyword in body
-        or any(keyword in ((comment.get("body") if isinstance(comment, dict) else "") or "") for comment in comments)
+        keyword in _as_text(pr.get("body"))
+        or any(keyword in _as_text(comment.get("body") if isinstance(comment, dict) else "") for comment in comments)
         or any(keyword in name for name in _label_names(pr.get("labels")))
     )
     r4 = loc <= thresholds.th2 or has_minutes
@@ -220,9 +243,9 @@ def resolve_loc_and_paths(
     listed: dict[str, Any] | None,
     comments: list[Any],
     thresholds: AuditThresholds,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str] | None]:
     loc = loc_from_list_item(listed)
-    paths: list[str] = []
+    paths: list[str] | None = None
     needs_paths = loc is None or (
         loc > thresholds.th1
         and not any(isinstance(comment, dict) and comment.get("comment_type") == "diff_comment" for comment in comments)

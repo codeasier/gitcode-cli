@@ -962,18 +962,23 @@ def pr_audit(
     if only_fail:
         results = [item for item in results if not item.get("overall")]
 
+    output_data: dict | list[dict] | None = results if not identifier else (results[0] if results else None)
+
     def default_formatter(data) -> None:
+        if not data:
+            return
         output = format_pr_audit_list(data if isinstance(data, list) else [data])
         if output:
             safe_echo(output)
 
-    output_result(
-        results if not identifier else (results[0] if results else {}),
-        json_fields,
-        jq_query,
-        template,
-        default_formatter=default_formatter,
-    )
+    if output_data is not None:
+        output_result(
+            output_data,
+            json_fields,
+            jq_query,
+            template,
+            default_formatter=default_formatter,
+        )
     if fail_exit and any(not item.get("overall") for item in results):
         ctx.exit(1)
 

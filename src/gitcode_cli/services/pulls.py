@@ -35,7 +35,7 @@ class PullRequestService:
         return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/issues")
 
     def list_files(self, owner: str, repo: str, number: int) -> Any | None:
-        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/files")
+        return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/files")
 
     def create(self, owner: str, repo: str, **data: Any) -> Any | None:
         return self.client.post(f"/repos/{owner}/{repo}/pulls", json={k: v for k, v in data.items() if v is not None})

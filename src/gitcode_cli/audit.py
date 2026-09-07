@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import APIError, AuthError, NetworkError
+from .errors import APIError, AuthError
 from .services import PullRequestService
 
 # Directory/basename patterns are case-insensitive; PascalCase TestX stays sensitive
@@ -74,7 +74,10 @@ def _resolve_discussion_passed(pr: dict[str, Any]) -> bool:
 
 
 def _mergeable_state_known(pr: dict[str, Any]) -> bool:
-    return isinstance(pr.get("mergeable_state"), dict)
+    mergeable_state = pr.get("mergeable_state")
+    if not isinstance(mergeable_state, dict):
+        return False
+    return mergeable_state.get("resolve_discussion_passed") is not None
 
 
 def loc_from_list_item(item: dict[str, Any] | None) -> int | None:
@@ -93,14 +96,21 @@ _DIFF_FILE_HEADER_RE = re.compile(r"^(---|\+\+\+) (?:[ab]/|/dev/null|\")")
 def loc_from_diff(diff_text: str) -> int:
     loc = 0
     skipping_binary = False
+    in_hunk = False
     for line in diff_text.splitlines():
         if line.startswith("diff --git "):
             skipping_binary = False
+            in_hunk = False
             continue
         if line.startswith("GIT binary patch"):
             skipping_binary = True
             continue
-        if skipping_binary or _DIFF_FILE_HEADER_RE.match(line):
+        if skipping_binary:
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk and _DIFF_FILE_HEADER_RE.match(line):
             continue
         if line.startswith("+") or line.startswith("-"):
             loc += 1
@@ -121,21 +131,35 @@ def _path_from_diff_header(line: str) -> str | None:
     return match.group(1) or match.group(2)
 
 
+def _is_plus_dev_null_header(line: str) -> bool:
+    return line.startswith("+++ /dev/null") or line.startswith('+++ "/dev/null"')
+
+
 def paths_from_diff(diff_text: str) -> list[str]:
     paths: list[str] = []
     current: str | None = None
     deleted = False
+    in_hunk = False
+    seen_minus_header = False
     for line in diff_text.splitlines():
         if line.startswith("diff --git "):
             if current and not deleted:
                 paths.append(current)
             current = _path_from_diff_header(line)
             deleted = False
+            in_hunk = False
+            seen_minus_header = False
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
             continue
         if line.startswith("deleted file mode"):
             deleted = True
             continue
-        if line.startswith("+++ /dev/null") or line.startswith('+++ "/dev/null"'):
+        if line.startswith("--- "):
+            seen_minus_header = True
+            continue
+        if not in_hunk and seen_minus_header and _is_plus_dev_null_header(line):
             deleted = True
     if current and not deleted:
         paths.append(current)
@@ -341,9 +365,9 @@ def audit_error_result(
 
 
 def is_fatal_audit_error(exc: BaseException) -> bool:
-    if isinstance(exc, (AuthError, NetworkError)):
+    if isinstance(exc, AuthError):
         return True
-    return isinstance(exc, APIError) and exc.status_code in {401, 403}
+    return isinstance(exc, APIError) and exc.status_code == 401
 
 
 def resolve_loc_and_paths(

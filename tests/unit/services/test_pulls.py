@@ -99,6 +99,12 @@ class TestPullRequestService:
         with pytest.raises(APIError, match="Unexpected pagination response"):
             service.list_files("owner", "repo", 42)
 
+    def test_list_files_raises_when_first_page_is_empty_object(self, service, mock_client):
+        mock_client.get.return_value = {}
+
+        with pytest.raises(APIError, match="Unexpected pagination response"):
+            service.list_files("owner", "repo", 42)
+
     def test_list_files_raises_when_page_limit_reached(self, service, mock_client):
         mock_client.get.side_effect = [
             [{"filename": f"p{page}_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]

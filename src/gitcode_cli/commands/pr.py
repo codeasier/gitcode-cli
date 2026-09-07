@@ -923,7 +923,11 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
 )
 @click.option("--minutes-keyword", default="评审纪要", show_default=True, help="R4 review-minutes keyword.")
 @click.option("--only-fail", is_flag=True, help="Show only pull requests that fail the audit.")
-@click.option("--fail-exit", is_flag=True, help="Exit with status 1 if any audited pull request fails.")
+@click.option(
+    "--fail-exit",
+    is_flag=True,
+    help="Exit 1 if any audited PR fails. A 401/auth error also aborts the remaining list and exits 1.",
+)
 @click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
 @click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
 @click.option("-t", "--template", help="Format output using a Go template string.")

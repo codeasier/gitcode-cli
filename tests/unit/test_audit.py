@@ -7,12 +7,13 @@ from gitcode_cli.audit import (
     audit_error_result,
     audit_pull_request,
     evaluate_audit,
+    is_fatal_audit_error,
     loc_and_paths_from_files,
     loc_from_diff,
     loc_from_list_item,
     paths_from_diff,
 )
-from gitcode_cli.errors import APIError
+from gitcode_cli.errors import APIError, AuthError, NetworkError
 
 
 def _pr(**overrides):
@@ -276,6 +277,15 @@ class TestLocHelpers:
         )
         assert paths_from_diff(diff) == ["src/main.py"]
 
+    def test_paths_from_diff_skips_quoted_deleted_files(self):
+        diff = 'diff --git "a/tests/foo.py" "b/tests/foo.py"\n--- "a/tests/foo.py"\n+++ "/dev/null"\n-old\n'
+        assert paths_from_diff(diff) == []
+
+    def test_paths_from_diff_keeps_file_when_added_line_looks_like_dev_null(self):
+        diff = "diff --git a/setup.sh b/setup.sh\n--- a/setup.sh\n+++ b/setup.sh\n@@ -0,0 +1,1 @@\n+++ /dev/null\n"
+        assert paths_from_diff(diff) == ["setup.sh"]
+        assert loc_from_diff(diff) == 1
+
     def test_loc_and_paths_from_files_coerces_string_counts(self):
         loc, paths = loc_and_paths_from_files(
             [
@@ -435,7 +445,19 @@ class TestAuditPullRequest:
             file_paths=[],
         )
         assert result["r2"] is True
-        assert result["reasons"] == []
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_empty_mergeable_state_is_unknown_without_failing(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state={}),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["overall"] is True
+        assert result["reasons"] == ["R2: merge state unknown"]
 
     def test_r2_notes_unknown_merge_state_without_failing(self):
         result = evaluate_audit(
@@ -541,3 +563,10 @@ class TestAuditPullRequest:
         assert result["reasons"] == ["audit error: rate limited"]
         assert result["failedRules"] == ["R1", "R2", "R3", "R4"]
         assert result["rules"]["R3"]["reasons"] == ["audit error: rate limited"]
+
+    def test_only_auth_and_401_are_fatal_audit_errors(self):
+        assert is_fatal_audit_error(AuthError("no token"))
+        assert is_fatal_audit_error(APIError("Authentication failed", 401))
+        assert not is_fatal_audit_error(APIError("forbidden", 403))
+        assert not is_fatal_audit_error(APIError("rate limited", 429))
+        assert not is_fatal_audit_error(NetworkError("timeout"))

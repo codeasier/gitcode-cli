@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.6] - 2026-09-12
+
+本次发布修复 `pr comment --line` 的行内评论锚定问题，并新增回复已有 review discussion 的能力，让 PR 评论交互更准确完整。
+
+### Added
+
+- `pr comment` 新增 `--discussion-id` 选项，通过 GitCode 专属回复接口对已有 review discussion 发表回复，输出新评论的 `noteId`，且禁止与 `--path`/`--position`/`--line`/`--side`/`--commit-id`/`--commit`/`--web` 同时使用 ([#153](https://github.com/codeasier/gitcode-cli/pull/153))
 
 ### Fixed
 

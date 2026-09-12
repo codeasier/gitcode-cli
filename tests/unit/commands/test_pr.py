@@ -879,6 +879,39 @@ class TestPrMerge:
         mock_client.request.assert_not_called()
         mock_client.put.assert_not_called()
 
+    @pytest.mark.parametrize("response", [None, {}, {"id": "thread-123"}, {"noteId": None}])
+    def test_pr_comment_reply_without_note_id(self, runner, mock_client, mock_repo, response):
+        mock_client.post.return_value = response
+
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", "thread-123", "-b", "Fixed"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == "Reply posted.\n"
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/discussions/thread-123/comments", json={"body": "Fixed"}
+        )
+
+    def test_pr_comment_reply_trims_discussion_id(self, runner, mock_client, mock_repo):
+        mock_client.post.return_value = {"noteId": 456}
+
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", "  thread-123 \t", "-b", "Fixed"])
+
+        assert result.exit_code == 0, result.output
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/discussions/thread-123/comments", json={"body": "Fixed"}
+        )
+
+    @pytest.mark.parametrize("discussion_id", [".", "..", "a/b", "a?b", "a#b", "a\\b", "%2e%2e", "../other"])
+    def test_pr_comment_reply_rejects_unsafe_discussion_id(self, runner, mock_client, mock_repo, discussion_id):
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", discussion_id])
+
+        assert result.exit_code == 2
+        assert "--discussion-id must be a single path segment" in result.output
+        assert "Body:" not in result.output
+        mock_client.get.assert_not_called()
+        mock_client.post.assert_not_called()
+        mock_client.request.assert_not_called()
+
     @pytest.mark.parametrize(
         "args",
         [

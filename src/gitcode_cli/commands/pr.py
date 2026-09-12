@@ -341,8 +341,11 @@ def pr_comment(
     if yes:
         _pending_gh_compat("pr comment --yes")
     if discussion_id is not None:
-        if not discussion_id.strip():
+        discussion_id = discussion_id.strip()
+        if not discussion_id:
             raise click.UsageError("--discussion-id must not be empty")
+        if discussion_id in {".", ".."} or any(char in discussion_id for char in "/\\?#%"):
+            raise click.UsageError("--discussion-id must be a single path segment without URL-reserved characters")
         if (
             path is not None
             or position is not None
@@ -371,8 +374,8 @@ def pr_comment(
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
     if discussion_id is not None:
-        item = service.reply(owner, repo, number, discussion_id, body=body)
-        safe_echo(str(item["noteId"]))
+        item = service.reply(owner, repo, number, discussion_id, body=body) or {}
+        safe_echo(str(item.get("noteId") or "Reply posted."))
         return
     resolved_position = (
         position

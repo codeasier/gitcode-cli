@@ -70,6 +70,11 @@ class PullRequestService:
         filtered_payload = {k: v for k, v in payload.items() if v is not None}
         return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/review", json=filtered_payload)
 
+    def reply(self, owner: str, repo: str, number: int, discussion_id: str, body: str) -> Any | None:
+        return self.client.post(
+            f"/repos/{owner}/{repo}/pulls/{number}/discussions/{discussion_id}/comments", json={"body": body}
+        )
+
     def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
         return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/comments")
 

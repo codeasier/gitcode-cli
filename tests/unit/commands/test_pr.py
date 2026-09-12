@@ -946,14 +946,15 @@ class TestPrMerge:
         assert error in result.output
         mock_client.post.assert_not_called()
 
-    def test_pr_comment_passes_explicit_position_unchanged(self, runner, mock_client, mock_repo):
+    @pytest.mark.parametrize("position", [0, 186])
+    def test_pr_comment_passes_explicit_position_unchanged(self, runner, mock_client, mock_repo, position):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(
             main,
-            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--position", "186"],
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--position", str(position)],
         )
         assert result.exit_code == 0, result.output
-        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 186}
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": position}
         mock_client.request.assert_not_called()
 
     def test_pr_comment_line_requires_path(self, runner, mock_client, mock_repo):

@@ -184,6 +184,7 @@ def _validate_diff_line(diff_text: str, path: str, line: int, side: str) -> None
             new_line = None
             in_target_file = False
             continue
+        # TODO: Handle Git-quoted paths and deleted files whose +++ header is /dev/null.
         if raw_line.startswith("+++ b/"):
             in_target_file = raw_line[6:] == path
             saw_target_file = saw_target_file or in_target_file
@@ -298,7 +299,12 @@ def pr_merge(
 @click.option("--path")
 @click.option("--position", type=int, help="Pass an absolute file line number directly to GitCode.")
 @click.option("--line", type=int, help="Absolute file line number; validated against the pull request diff.")
-@click.option("--side", default="RIGHT", show_default=True, help="Diff side used to validate --line: LEFT or RIGHT.")
+@click.option(
+    "--side",
+    default="RIGHT",
+    show_default=True,
+    help="Side used only to validate --line: LEFT or RIGHT. GitCode receives no side; LEFT anchoring is best-effort.",
+)
 @click.option("--commit-id")
 @click.option("--commit", "commit_id")
 @click.option("--yes", is_flag=True)
@@ -345,7 +351,11 @@ def pr_comment(
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
-    resolved_position = position or _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    resolved_position = (
+        position
+        if position is not None
+        else _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    )
     item = service.comment(owner, repo, number, body=body, path=path, position=resolved_position)
     safe_echo(str(item["id"]))
 

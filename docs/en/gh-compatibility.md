@@ -46,7 +46,7 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | --- | --- |
 | Authentication | GitCode uses an `access_token` query parameter rather than GitHub's API authentication model. |
 | Issue create/update API | GitCode issue create/update sends `repo` in the request body instead of encoding it only in the URL path. |
-| PR inline comments | GitCode uses `path + position`; GitHub-style `line`, `side`, and `commit` review coordinates are not equivalent. |
+| PR inline comments | GitCode uses `path + position`, where `position` is an absolute file line. `--line` validates against the PR diff and passes the line through; `--position` bypasses diff validation. `--side` only selects the validation side and is not sent to GitCode, so LEFT anchoring is best-effort. Selecting a commit is unsupported. |
 | PR review changes | `gc pr review --request-changes` is approximated with a PR comment because GitCode's review API differs from GitHub's. |
 | Issue deletion | `gc issue delete` relies on GitCode issue deletion behavior that is not documented in the public API and may change. |
 | Draft/readiness operations | `gc pr ready --undo` toggles draft state through the GitCode PR update capability; behavior may differ from GitHub draft PR semantics. |

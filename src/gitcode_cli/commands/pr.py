@@ -155,27 +155,26 @@ def _extract_search_filters(
 
 
 def _advance_diff_line(
-    raw_line: str, old_line: int, new_line: int, target_line: int, target_side: str, position: int
-) -> tuple[int | None, int, int]:
+    raw_line: str, old_line: int, new_line: int, target_line: int, target_side: str
+) -> tuple[bool, int, int]:
     prefix = raw_line[:1]
     if prefix == "-":
-        return (position if target_side == "LEFT" and old_line == target_line else None), old_line + 1, new_line
+        return target_side == "LEFT" and old_line == target_line, old_line + 1, new_line
     if prefix == "+":
-        return (position if target_side == "RIGHT" and new_line == target_line else None), old_line, new_line + 1
+        return target_side == "RIGHT" and new_line == target_line, old_line, new_line + 1
     matched = (target_side == "LEFT" and old_line == target_line) or (
         target_side == "RIGHT" and new_line == target_line
     )
-    return (position if matched else None), old_line + 1, new_line + 1
+    return matched, old_line + 1, new_line + 1
 
 
-def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> int:
+def _validate_diff_line(diff_text: str, path: str, line: int, side: str) -> None:
     target_side = side.upper()
     if target_side not in {"LEFT", "RIGHT"}:
         raise click.UsageError("--side must be LEFT or RIGHT")
 
     old_line = None
     new_line = None
-    position = 0
     in_target_file = False
     saw_target_file = False
 
@@ -183,9 +182,9 @@ def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> 
         if raw_line.startswith("diff --git "):
             old_line = None
             new_line = None
-            position = 0
             in_target_file = False
             continue
+        # TODO: Handle Git-quoted paths and deleted files whose +++ header is /dev/null.
         if raw_line.startswith("+++ b/"):
             in_target_file = raw_line[6:] == path
             saw_target_file = saw_target_file or in_target_file
@@ -200,12 +199,9 @@ def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> 
         if old_line is None or new_line is None or raw_line.startswith("\\"):
             continue
 
-        position += 1
-        matched_position, old_line, new_line = _advance_diff_line(
-            raw_line, old_line, new_line, line, target_side, position
-        )
-        if matched_position is not None:
-            return matched_position
+        matched, old_line, new_line = _advance_diff_line(raw_line, old_line, new_line, line, target_side)
+        if matched:
+            return
 
     if not saw_target_file:
         raise click.ClickException(f"Path '{path}' was not found in the pull request diff.")
@@ -220,7 +216,9 @@ def _resolve_comment_position_from_line(
     if path is None:
         raise click.UsageError("--path is required when using --line")
     diff_text = service.diff(owner, repo, number)
-    return _diff_position_for_line(diff_text, path, line, side)
+    _validate_diff_line(diff_text, path, line, side)
+    # GitCode position is an absolute file line, not an ordinal within the diff.
+    return line
 
 
 @click.group("pr", cls=GCSectionGroup, help="Work with GitCode pull requests.")
@@ -299,9 +297,14 @@ def pr_merge(
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option("--path")
-@click.option("--position", type=int)
-@click.option("--line", type=int)
-@click.option("--side", default="RIGHT", show_default=True)
+@click.option("--position", type=int, help="Pass an absolute file line number directly to GitCode.")
+@click.option("--line", type=int, help="Absolute file line number; validated against the pull request diff.")
+@click.option(
+    "--side",
+    default="RIGHT",
+    show_default=True,
+    help="Side used only to validate --line: LEFT or RIGHT. GitCode receives no side; LEFT anchoring is best-effort.",
+)
 @click.option("--commit-id")
 @click.option("--commit", "commit_id")
 @click.option("--yes", is_flag=True)
@@ -348,7 +351,11 @@ def pr_comment(
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
-    resolved_position = position or _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    resolved_position = (
+        position
+        if position is not None
+        else _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    )
     item = service.comment(owner, repo, number, body=body, path=path, position=resolved_position)
     safe_echo(str(item["id"]))
 

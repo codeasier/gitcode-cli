@@ -47,7 +47,7 @@ src/gitcode_cli/
 - **Token priority**: `--token` flag > `GC_TOKEN` env var > config file (`~/.config/gc/config.json`).
 - **Repo resolution**: explicit `-R OWNER/REPO` or auto-detect from `git remote get-url origin` (supports HTTPS and SSH URLs).
 - **Issue create/update** uses `/repos/:owner/issues` with `repo` in the request body (not in the URL path like PRs).
-- **PR comment** uses GitCode's `path + position` model (not GitHub's `line/side/commit`).
+- **PR comment** uses GitCode's `path + position` model, where `position` is an absolute file line. `--line` validates against the diff then passes the line through; `--position` bypasses diff validation. `--side` only selects the validation side, is not sent to GitCode, and LEFT anchoring is best-effort. Selecting a commit is unsupported.
 - **PR review** currently only supports `--approve`; GitCode's review API differs from `gh`.
 - Most list commands support `--json` for machine-readable output; default is human-readable tabular/text.
 

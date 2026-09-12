@@ -877,7 +877,7 @@ class TestPrMerge:
             ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", "12"],
         )
         assert result.exit_code == 0
-        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 4}
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 12}
 
     def test_pr_comment_maps_left_line_to_gitcode_position(self, runner, mock_client, mock_repo):
         mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
@@ -895,7 +895,67 @@ class TestPrMerge:
             ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", "11", "--side", "LEFT"],
         )
         assert result.exit_code == 0
-        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 2}
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": 11}
+
+    @pytest.mark.parametrize("line,side", [(10, "RIGHT"), (186, "RIGHT"), (185, "LEFT"), (187, "right")])
+    def test_pr_comment_preserves_absolute_line_across_hunks(self, runner, mock_client, mock_repo, line, side):
+        mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -10 +10 @@
+ context
+@@ -184,3 +184,4 @@
+ context
+-old
++new
++added
+ unchanged
+"""
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--line", str(line), "--side", side],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/comments", json={"body": "hi", "path": "src/app.py", "position": line}
+        )
+
+    @pytest.mark.parametrize(
+        "path,line,side,error",
+        [
+            ("missing.py", "10", "RIGHT", "was not found"),
+            ("src/app.py", "9", "RIGHT", "is not in"),
+            ("src/app.py", "11", "LEFT", "is not in"),
+            ("src/app.py", "10", "INVALID", "--side must be LEFT or RIGHT"),
+        ],
+    )
+    def test_pr_comment_rejects_invalid_line_coordinates(self, runner, mock_client, mock_repo, path, line, side, error):
+        mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -10 +10,2 @@
+ context
++added
+"""
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", path, "--line", line, "--side", side],
+        )
+        assert result.exit_code != 0
+        assert error in result.output
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("position", [0, 186])
+    def test_pr_comment_passes_explicit_position_unchanged(self, runner, mock_client, mock_repo, position):
+        mock_client.post.return_value = {"id": 123}
+        result = runner.invoke(
+            main,
+            ["pr", "comment", "42", "--body", "hi", "--path", "src/app.py", "--position", str(position)],
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_client.post.call_args.kwargs["json"] == {"body": "hi", "path": "src/app.py", "position": position}
+        mock_client.request.assert_not_called()
 
     def test_pr_comment_line_requires_path(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "comment", "42", "--body", "hi", "--line", "12"])

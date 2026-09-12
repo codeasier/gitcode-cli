@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- 修复 `pr comment --line` 将绝对文件行号误换算为 diff 序号导致行内评论位置错误的问题，改为校验后原样发送行号；同时保留显式 `--position 0`，避免静默退化为普通评论。`--side` 仅用于 diff 校验，LEFT 侧锚定不保证准确 ([#152](https://github.com/codeasier/gitcode-cli/pull/152))
+
 ## [0.1.5] - 2026-09-07
 
 本次发布聚焦于补齐 `issue`/`pr` 在分页与数据映射上的兼容缺口，新增 PR 合并就绪度审计与可选的 `gh` 命令代理集成，让大规模仓库与 `gh` 混合使用场景更可控。

@@ -861,6 +861,65 @@ class TestPrMerge:
         assert result.exit_code == 0
         assert "123" in result.output
 
+    @pytest.mark.parametrize(
+        ("body_args", "stdin"),
+        [(["--body", "Fixed"], None), (["--body-file", "-"], "Fixed"), ([], "Fixed\n")],
+    )
+    def test_pr_comment_reply(self, runner, mock_client, mock_repo, body_args, stdin):
+        mock_client.post.return_value = {"id": "thread-123", "noteId": 456, "body": "Fixed"}
+
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", "thread-123", *body_args], input=stdin)
+
+        assert result.exit_code == 0, result.output
+        assert result.output.rstrip().endswith("456")
+        assert "thread-123" not in result.output
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/discussions/thread-123/comments", json={"body": "Fixed"}
+        )
+        mock_client.request.assert_not_called()
+        mock_client.put.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--path", "src/app.py"],
+            ["--position", "0"],
+            ["--line", "12"],
+            ["--side", "LEFT"],
+            ["--side", "RIGHT"],
+            ["--commit-id", "abc"],
+            ["--commit", "abc"],
+            ["--web"],
+        ],
+    )
+    def test_pr_comment_reply_rejects_conflicting_options(self, runner, mock_client, mock_repo, args):
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", "thread-123", *args])
+
+        assert result.exit_code == 2
+        assert "--discussion-id cannot be used with" in result.output
+        mock_client.get.assert_not_called()
+        mock_client.request.assert_not_called()
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.parametrize("discussion_id", ["", "   "])
+    def test_pr_comment_reply_rejects_empty_discussion(self, runner, mock_client, mock_repo, discussion_id):
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", discussion_id, "-b", "Fixed"])
+
+        assert result.exit_code == 2
+        assert "--discussion-id must not be empty" in result.output
+        mock_client.post.assert_not_called()
+
+    def test_pr_comment_reply_error_does_not_fall_back_to_new_comment(self, runner, mock_client, mock_repo):
+        mock_client.post.side_effect = APIError("Discussion not found")
+
+        result = runner.invoke(main, ["pr", "comment", "42", "--discussion-id", "thread-123", "-b", "Fixed"])
+
+        assert result.exit_code != 0
+        assert "Discussion not found" in result.output
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/discussions/thread-123/comments", json={"body": "Fixed"}
+        )
+
     def test_pr_comment_maps_right_line_to_gitcode_position(self, runner, mock_client, mock_repo):
         mock_client.request.return_value = """diff --git a/src/app.py b/src/app.py
 --- a/src/app.py

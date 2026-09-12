@@ -296,6 +296,10 @@ def pr_merge(
 @click.option("--edit-last", is_flag=True)
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
+@click.option(
+    "--discussion-id",
+    help="Reply to an existing discussion (gc extension). Find discussion_id with pr view --json comments.",
+)
 @click.option("--path")
 @click.option("--position", type=int, help="Pass an absolute file line number directly to GitCode.")
 @click.option("--line", type=int, help="Absolute file line number; validated against the pull request diff.")
@@ -320,6 +324,7 @@ def pr_comment(
     edit_last: bool,
     editor: bool,
     web: bool,
+    discussion_id: str | None,
     path: str | None,
     position: int | None,
     line: int | None,
@@ -335,6 +340,20 @@ def pr_comment(
         _pending_gh_compat("pr comment --edit-last")
     if yes:
         _pending_gh_compat("pr comment --yes")
+    if discussion_id is not None:
+        if not discussion_id.strip():
+            raise click.UsageError("--discussion-id must not be empty")
+        if (
+            path is not None
+            or position is not None
+            or line is not None
+            or ctx.get_parameter_source("side") != click.core.ParameterSource.DEFAULT
+            or commit_id is not None
+            or web
+        ):
+            raise click.UsageError(
+                "--discussion-id cannot be used with --path, --position, --line, --side, --commit-id/--commit, or --web"
+            )
     if commit_id:
         raise click.ClickException("GitCode PR comments do not support selecting a commit for line comments.")
     if line is not None and position is not None:
@@ -351,6 +370,10 @@ def pr_comment(
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
+    if discussion_id is not None:
+        item = service.reply(owner, repo, number, discussion_id, body=body)
+        safe_echo(str(item["noteId"]))
+        return
     resolved_position = (
         position
         if position is not None

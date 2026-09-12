@@ -150,6 +150,16 @@ class TestPullRequestService:
         mock_client.post.assert_called_once_with("/repos/owner/repo/pulls/42/comments", json={"body": "LGTM"})
         assert result == {"id": 1}
 
+    def test_reply_uses_discussion_endpoint(self, service, mock_client):
+        mock_client.post.return_value = {"id": "thread-123", "noteId": 456, "body": "Fixed"}
+
+        result = service.reply("owner", "repo", 42, "thread-123", "Fixed")
+
+        mock_client.post.assert_called_once_with(
+            "/repos/owner/repo/pulls/42/discussions/thread-123/comments", json={"body": "Fixed"}
+        )
+        assert result == {"id": "thread-123", "noteId": 456, "body": "Fixed"}
+
     def test_comment_with_path_and_position(self, service, mock_client):
         mock_client.post.return_value = {"id": 2}
         result = service.comment("owner", "repo", 42, "Fix this", path="main.py", position=5)

@@ -125,3 +125,41 @@ jobs:
           docker run --rm --network=none --read-only --cap-drop=ALL \
             --security-opt=no-new-privileges "$image" python -I -c \
             'from importlib.metadata import distribution; d = distribution("codeasier-gitcode-mcp"); assert d.version == "0.3.0"; assert any(p.name == "LICENSE" and "codeasier" in d.locate_file(p).read_text().lower() for p in d.files)'
+
+  volume-migration:
+    name: MCP / Named-volume takeover and rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Check out the immutable pre-migration deployment
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: codeasier/codex-codeasier
+          ref: f93b67bb7048e556b44322d48664522f32651920
+          path: .mcp-legacy
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Build temporary old and new images (dependency downloads allowed; no publication)
+        run: |
+          set -euo pipefail
+          test "$(git -C .mcp-legacy rev-parse HEAD)" = f93b67bb7048e556b44322d48664522f32651920
+          docker build -f .mcp-legacy/deploy/gitcode-mcp/Dockerfile -t gitcode-mcp-volume-old:${{ github.sha }} .mcp-legacy
+          docker build -f deploy/gitcode-mcp/Dockerfile -t gitcode-mcp-volume-new:${{ github.sha }} .
+      - name: Exercise real Compose volume reuse with offline HTTP and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$PWD/packages/gitcode-mcp/scripts/volume_acceptance.py"
+          run_id="$(python -c 'import secrets; print(secrets.token_hex(8))')"
+          trap 'python -I "$script" cleanup "$run_id"' EXIT
+          # Only this synthetic acceptance is offline; image builds above may
+          # download public dependencies. No host ports, secrets or production
+          # volumes are used. No fixture/env-file/log artifact is uploaded.
+          python -I "$script" run "$PWD" "$PWD/.mcp-legacy" \
+            gitcode-mcp-volume-old:${{ github.sha }} \
+            gitcode-mcp-volume-new:${{ github.sha }} "$run_id"

@@ -1,0 +1,11 @@
+# Include only package metadata, source attribution and Python source for this image.
+**
+!packages/
+!packages/gitcode-mcp/
+!packages/gitcode-mcp/pyproject.toml
+!packages/gitcode-mcp/README.md
+!packages/gitcode-mcp/LICENSE
+!packages/gitcode-mcp/MIGRATION_SOURCE.json
+!packages/gitcode-mcp/src/
+!packages/gitcode-mcp/src/gitcode_mcp/
+!packages/gitcode-mcp/src/gitcode_mcp/*.py

@@ -44,6 +44,10 @@ Use `gitcode` instead of `gc` on Windows PowerShell because `gc` is a built-in a
 
 `gc pr audit` prints a reason for every failed R1-R4 merge-readiness rule. List-mode errors other than HTTP 401 are recorded per PR and exit 0 unless `--fail-exit` is set. HTTP 401 aborts the remaining list and exits 1, regardless of this flag.
 
+## GitCode MCP
+
+This repository also maintains the independently installable [`codeasier-gitcode-mcp`](packages/gitcode-mcp) runtime (Python 3.11+), with stdio, Streamable HTTP, OAuth, and 31 GitCode tools. It is a separate distribution: installing `pygitcode` does not install MCP, ASGI, or cryptography dependencies. See the [MCP documentation](docs/gitcode/README.md) and [migration guide](docs/gitcode/migration.md). Codex-specific plugin integration remains in [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode).
+
 ## Documentation
 
 - [Documentation index](docs/en/index.md)

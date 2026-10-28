@@ -1,0 +1,76 @@
+# Include this file exactly once from nginx's existing http {} context, for
+# example as /etc/nginx/conf.d/gitcode-mcp.conf. It is not a complete nginx.conf
+# and must not be pasted inside a server/location block.
+# Replace every mcp.example.com and certificate path before installing.
+# These zones limit the actual source IP, not an untrusted X-Forwarded-For value.
+limit_req_zone $binary_remote_addr zone=gitcode_oauth_browser:1m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=gitcode_oauth_token:1m rate=30r/m;
+
+# Use a separate virtual host; this file does not change existing sites.
+server {
+    listen 80;
+    server_name mcp.example.com;
+    access_log off;
+    error_log /var/log/nginx/gitcode-mcp-error.log crit;
+    return 308 https://mcp.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name mcp.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/mcp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    # Match the MCP HTTP request limit, including JSON-escaped file contents.
+    # OAuth form routes retain their smaller application-level limit.
+    client_max_body_size 2m;
+
+    # OAuth callbacks contain authorization codes and state in the query string.
+    # Keep access logging off, including any inherited upstream/CDN request logs.
+    access_log off;
+    # Avoid inheriting verbose request logs. Even critical errors can contain
+    # request details: restrict this sink and apply operator-managed redaction.
+    error_log /var/log/nginx/gitcode-mcp-error.log crit;
+
+    limit_req_status 429;
+    # Ordinary rate-limit messages include request URLs; suppress them at the
+    # error-log threshold above. Use sanitized monitoring for rejected requests.
+    limit_req_log_level notice;
+
+    # Shared proxy settings are inherited by all locations below.
+    proxy_http_version 1.1;
+    proxy_set_header Host mcp.example.com;
+    proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host mcp.example.com;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    location = /authorize {
+        limit_req zone=gitcode_oauth_browser burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8765;
+    }
+
+    location = /oauth/start {
+        limit_req zone=gitcode_oauth_browser burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8765;
+    }
+
+    location = /token {
+        limit_req zone=gitcode_oauth_token burst=20 nodelay;
+        proxy_pass http://127.0.0.1:8765;
+    }
+
+    # Forward MCP, OAuth endpoints and /.well-known/ discovery without URI rewriting.
+    # Discovery must remain reachable without a bearer token or browser login.
+    # Do not apply the authorization/token limits to /mcp or its long connections.
+    location / {
+        proxy_pass http://127.0.0.1:8765;
+    }
+}

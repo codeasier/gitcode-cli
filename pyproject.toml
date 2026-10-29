@@ -65,6 +65,13 @@ version = {attr = "gitcode_cli.__version__"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "e2e: process-level or cross-layer CLI behavior (offline unless also marked live)",
+    "compat: structured gc/gh compatibility checks",
+    "recorded: replay of sanitized, versioned API interactions",
+    "live: opt-in checks against an explicitly authorized GitCode sandbox",
+    "destructive: tests that mutate remote sandbox resources (requires a separate gate)",
+]
 addopts = [
     "--cov=gitcode_cli",
     "--cov-report=term-missing",
@@ -132,3 +139,4 @@ reportOptionalMemberAccess = false
 reportOptionalIterable = false
 reportOptionalOperand = false
 reportMissingImports = false
+

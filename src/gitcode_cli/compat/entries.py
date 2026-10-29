@@ -418,7 +418,7 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.IMPLEMENTED,
         "Native GitCode assignees (审查人); separate role endpoint",
     ),
-    _e("pr edit", "-l/--add-label", CompatStatus.IMPLEMENTED),
+    _e("pr edit", "-l/--add-label", CompatStatus.IMPLEMENTED, "Additive label endpoint; preserves unrelated labels"),
     _e(
         "pr edit",
         "-r/--add-reviewer",
@@ -426,7 +426,12 @@ ENTRIES: list[CompatEntry] = [
         "Native approval reviewers; additive, verified operation",
     ),
     _e("pr edit", "--remove-assignee", CompatStatus.IMPLEMENTED, "Native assignees; DELETE query parameter, verified"),
-    _e("pr edit", "--remove-label", CompatStatus.IMPLEMENTED),
+    _e(
+        "pr edit",
+        "--remove-label",
+        CompatStatus.IMPLEMENTED,
+        "Targeted DELETE, including last label; verified readback",
+    ),
     _e("pr edit", "--remove-reviewer", CompatStatus.IMPLEMENTED, "Native approval reviewers; DELETE JSON, verified"),
     _e("pr edit", "-m/--milestone", CompatStatus.IMPLEMENTED),
     _e("pr edit", "--remove-milestone", CompatStatus.IMPLEMENTED),

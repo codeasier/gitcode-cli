@@ -284,12 +284,14 @@ class TestPullRequestAdapter:
                 "id": 1042,
                 "assignees": [{"id": 3, "login": "carol"}],
                 "approval_reviewers": [{"id": 4, "login": "dave"}],
+                "labels": [{"id": 10, "name": "wip"}, {"id": 11, "name": "keep"}],
             },
             {
                 "number": 42,
                 "id": 1042,
                 "assignees": [{"id": 1, "login": "alice"}],
                 "approval_reviewers": [{"id": 2, "login": "bob"}],
+                "labels": [{"id": 12, "name": "bug"}, {"id": 11, "name": "keep"}],
                 "milestone": {"number": 1},
             },
         ]
@@ -316,11 +318,12 @@ class TestPullRequestAdapter:
             42,
             title="New title",
             body="Body",
-            labels="bug",
-            unset_labels="wip",
             milestone_number=1,
         )
         service.add_assignees.assert_called_once_with("owner", "repo", 42, "alice")
         service.remove_assignees.assert_called_once_with("owner", "repo", 42, "carol")
         service.add_reviewers.assert_called_once_with("owner", "repo", 42, "bob")
         service.remove_reviewers.assert_called_once_with("owner", "repo", 42, "dave")
+        service.add_labels.assert_called_once_with("owner", "repo", 42, ["bug"])
+        service.remove_label.assert_called_once_with("owner", "repo", 42, "wip")
+        assert service.get.call_count == 2

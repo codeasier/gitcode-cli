@@ -12,6 +12,7 @@ Translation between what a `gh` user asked for and what the GitCode API can actu
 | `capabilities.py` | `CAPABILITY_MESSAGES` — every user-visible "GitCode cannot do X" message, keyed by constants like `ISSUE_LIST_APP` or `PR_EDIT_BASE`, plus `unsupported(key)` which builds the `ClickException`. |
 | `issues.py` | `IssueAdapter(service, user_service=None)` — list (with pagination and client-side multi-label AND filtering), create (label existence check, milestone title→number resolution), close/reopen (idempotency checks against current state), comment history (edit/delete last own comment), edit (label/assignee merge logic), status (approximation), develop (browser no-op). |
 | `pulls.py` | `PullRequestAdapter(service)` — list (pagination + `--limit` normalization), create (incl. `--dry-run` payload echo), merge, review (see degradation below), edit, status (approximation). |
+| `repos.py` | `RepoAdapter(service)` — repository CRUD/fork/sync translation, paginated list with client-side visibility/language/fork filters, and best-effort base64 README decoding. README URL paths preserve encoded `?`, `#`, and `%` filename characters; do not unquote directly into an API path. |
 
 ## The `AdapterActionResult` protocol
 
@@ -30,6 +31,7 @@ Adding an unsupported behavior requires three coordinated additions: the `unsupp
 
 - **User-facing list limits live here; some service methods also paginate.** `PullRequestService.list_comments`, `list_issues` and `list_files` use guarded internal pagination. Adapter list loops choose page sizes capped at 100 and stop at a short page or the requested limit. `_normalize_limit` in `pulls.py` defines the `--limit` semantics commands rely on: `None` → default 30, negative → fetch everything at 100/page, `0` → empty result, positive → capped page size with exact truncation.
 - **`@me` resolution** (`issues.py`) needs `user_service`; adapters that receive `None` must raise a `ClickException` explaining the lookup is unavailable rather than silently skipping the filter.
+- Repository services remain credential-free: transport-specific query/header authentication belongs in the client, not the adapter or `RepoService`.
 - **Client-side filtering** is the escape hatch for API gaps: issue list labels use client-side AND filtering on returned items (the API's label filter is OR); issue edit re-reads current state via `service.get(...)` to compute replacement labels and assignees.
 - Ownership checks (`_find_last_owned_comment`) compare the current user's login against comment authors; when the login cannot be established they raise the `ISSUE_COMMENT_OWNERSHIP_UNVERIFIABLE` capability error instead of guessing — keep that refusal behavior.
 

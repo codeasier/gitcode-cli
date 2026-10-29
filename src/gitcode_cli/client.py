@@ -10,6 +10,24 @@ from .errors import APIError, NetworkError
 BASE_URL = "https://api.gitcode.com/api/v5/"
 
 
+def _requires_private_token(method: str, path: str) -> bool:
+    """CLI-only repository auth policy; shared services never handle credentials."""
+    parts = path.strip("/").split("/")
+    method = method.upper()
+    if parts == ["user", "repos"]:
+        return method in {"GET", "POST"}
+    if len(parts) == 3 and parts[0] in {"users", "orgs"} and parts[2] == "repos":
+        return method == "GET" or (parts[0] == "orgs" and method == "POST")
+    if len(parts) < 3 or parts[0] != "repos":
+        return False
+    if len(parts) == 3:
+        # POST /repos/:owner/issues is issue creation, not a repository call.
+        return method in {"GET", "PATCH", "DELETE"}
+    if parts[3] == "contents" and len(parts) > 4:
+        return method == "GET"
+    return len(parts) == 4 and (method, parts[3]) in {("POST", "forks"), ("PUT", "sync_repo")}
+
+
 class GitCodeClient:
     def __init__(self, token: str, base_url: str = BASE_URL):
         self.token = token
@@ -29,13 +47,16 @@ class GitCodeClient:
         merged_params: dict[str, Any] = {"access_token": self.token}
         if params:
             merged_params.update({k: v for k, v in params.items() if v is not None})
+        headers = {"Accept": accept}
+        if _requires_private_token(method, path):
+            headers["private-token"] = self.token
         try:
             response = self._client.request(
                 method,
                 urljoin(self.base_url, path.lstrip("/")),
                 params=merged_params,
                 json=json,
-                headers={"Accept": accept},
+                headers=headers,
             )
         except httpx.TimeoutException as exc:
             raise NetworkError(f"Request timed out: {exc}") from exc

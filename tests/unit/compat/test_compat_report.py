@@ -15,7 +15,7 @@ from gitcode_cli.compat import (
 
 def test_statistics_groups_by_top_level_command() -> None:
     stats = statistics()
-    assert set(stats.keys()) == {"auth", "issue", "pr"}
+    assert set(stats.keys()) == {"auth", "issue", "pr", "repo"}
     for bucket in stats.values():
         # Only status_kind keys, e.g. "implemented_subcommand" or
         # "not_in_cli_flag" — both status and kind are separated by an underscore.
@@ -46,6 +46,7 @@ def test_render_markdown_report_includes_legend_and_sections() -> None:
     assert "## auth" in md
     assert "## issue" in md
     assert "## pr" in md
+    assert "## repo" in md
     assert "Statistics" in md
     # Implementation status should dominate.
     assert "implemented" in md
@@ -84,7 +85,7 @@ def test_gc_compat_stats_runs_as_json() -> None:
     result = CliRunner().invoke(main, ["compat", "stats"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert set(payload.keys()) == {"auth", "issue", "pr"}
+    assert set(payload.keys()) == {"auth", "issue", "pr", "repo"}
 
 
 def test_gc_compat_list_filters_pending() -> None:

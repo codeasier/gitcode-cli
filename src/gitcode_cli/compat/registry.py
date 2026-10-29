@@ -98,7 +98,7 @@ def render_markdown_report() -> str:
         "| **not_in_cli**   | `gh` baseline exposes it but `gc` does not |",
         "",
     ]
-    for group in ("auth", "issue", "pr"):
+    for group in ("auth", "issue", "pr", "repo"):
         sub_entries = [e for e in iter_entries(groups=[group]) if e.flag is None]
         flag_entries = [e for e in iter_entries(groups=[group]) if e.flag is not None]
         if not sub_entries and not flag_entries:
@@ -127,7 +127,7 @@ def render_markdown_report() -> str:
     lines.append("| Group | implemented | pending | unsupported | not_in_cli | Total |")
     lines.append("|---|---|---|---|---|---|")
     grand = {"implemented": 0, "pending": 0, "unsupported": 0, "not_in_cli": 0}
-    for group in ("auth", "issue", "pr"):
+    for group in ("auth", "issue", "pr", "repo"):
         bucket = statistics().get(group, {})
         impl = bucket.get("implemented", 0)
         pend = bucket.get("pending", 0)

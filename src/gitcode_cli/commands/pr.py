@@ -18,6 +18,7 @@ from ..cli_compat import (
 from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
+from ..json_projection import project_pr
 from ..pr_git import checkout_head, delete_head
 from ..repo import resolve_repo
 from ..services import IssueService, PullRequestService, UserService
@@ -32,6 +33,7 @@ from ..utils import (
     safe_echo,
     safe_number,
 )
+from ._created_output import PR_FIELDS, created_output
 
 
 def _resolve_pr_repo(explicit: str | None, identifier: str | None) -> tuple[str, str]:
@@ -61,14 +63,7 @@ def _pr_ref_oid(value: object) -> str | None:
 
 
 def _normalize_pr_fields(item: dict) -> dict:
-    result = dict(item)
-    if "mergedAt" not in result:
-        result["mergedAt"] = _pr_merged_at(item)
-    result["baseRefName"] = item.get("baseRefName") or _pr_ref_name(item.get("base"))
-    result["baseRefOid"] = item.get("baseRefOid") or _pr_ref_oid(item.get("base"))
-    result["headRefName"] = item.get("headRefName") or _pr_ref_name(item.get("head"))
-    result["headRefOid"] = item.get("headRefOid") or _pr_ref_oid(item.get("head"))
-    return result
+    return project_pr(item)
 
 
 def _normalize_closing_issue(item: dict) -> dict:
@@ -103,22 +98,7 @@ def _normalize_pr_actor(value: object) -> object:
 
 
 def _normalize_pr_view_fields(item: dict) -> dict:
-    result = _normalize_pr_fields(item)
-    assignees = item.get("assignees")
-    result.update(
-        {
-            "author": _normalize_pr_actor(item.get("author") or item.get("user") or item.get("creator")),
-            "assignees": (
-                [_normalize_pr_actor(assignee) for assignee in assignees] if isinstance(assignees, list) else assignees
-            ),
-            "createdAt": item.get("createdAt") or item.get("created_at"),
-            "updatedAt": item.get("updatedAt") or item.get("updated_at"),
-            "url": item.get("html_url") or item.get("url"),
-        }
-    )
-    if isinstance(result.get("state"), str):
-        result["state"] = result["state"].upper()
-    return result
+    return project_pr(item)
 
 
 def _json_field_requested(json_fields: str | None, field: str) -> bool:
@@ -690,7 +670,8 @@ def pr_list(
     if merged_before is not None:
         list_kwargs["merged_before"] = merged_before
     items = adapter.list_prs(owner, repo, **list_kwargs)
-    items = [_normalize_pr_fields(item) for item in items]
+    if json_fields is not None or jq_query or template:
+        items = [_normalize_pr_fields(item) for item in items]
 
     def default_formatter(data):
         output = format_pr_list(data)
@@ -873,6 +854,16 @@ def pr_create(
         safe_echo(json.dumps(result.item or {}, indent=2, sort_keys=True))
         return
     item = result.item
+    if json_fields is not None or jq_query:
+        item = created_output(
+            item,
+            kind="PR",
+            json_fields=json_fields,
+            jq_query=jq_query,
+            project=project_pr,
+            read=lambda number: service.get(owner, repo, number),
+            readback_done=milestone is not None,
+        )
     output_result(
         item,
         json_fields,
@@ -1209,14 +1200,18 @@ set_gc_help(
     gc_json_fields=[
         "author",
         "assignees",
+        "base",
         "baseRefName",
         "baseRefOid",
         "body",
         "createdAt",
+        "draft",
+        "head",
         "headRefName",
         "headRefOid",
         "labels",
         "mergedAt",
+        "milestone",
         "number",
         "state",
         "title",
@@ -1237,16 +1232,20 @@ set_gc_help(
     gc_json_fields=[
         "author",
         "assignees",
+        "base",
         "baseRefName",
         "baseRefOid",
         "body",
         "closingIssuesReferences",
         "comments",
         "createdAt",
+        "draft",
+        "head",
         "headRefName",
         "headRefOid",
         "labels",
         "mergedAt",
+        "milestone",
         "number",
         "state",
         "title",
@@ -1256,7 +1255,7 @@ set_gc_help(
 )
 pr_create.short_help = "Create a pull request"
 pr_create.help = "Create a pull request."
-set_gc_help(pr_create, gc_aliases=["new"])
+set_gc_help(pr_create, gc_aliases=["new"], gc_json_fields=list(PR_FIELDS))
 pr_close.short_help = "Close pull request"
 pr_close.help = "Close pull request."
 pr_diff.short_help = "View changes in a pull request"

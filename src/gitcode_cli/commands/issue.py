@@ -7,6 +7,7 @@ from ..adapters.capabilities import capability_message, unsupported
 from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
+from ..json_projection import project_issue
 from ..repo import resolve_repo
 from ..services import IssueService, UserService
 from ..utils import (
@@ -18,6 +19,7 @@ from ..utils import (
     safe_echo,
     safe_number,
 )
+from ._created_output import COMMON_FIELDS, created_output
 
 
 def _echo_issue_summary(items: list[dict]) -> None:
@@ -104,11 +106,7 @@ def _normalize_issue_author(item: dict) -> object:
 
 
 def _normalize_issue_item(item: dict) -> dict:
-    normalized_item = dict(item)
-    normalized_item["number"] = _normalize_issue_number(normalized_item.get("number"))
-    normalized_item["state"] = _normalize_issue_state(normalized_item.get("state"))
-    normalized_item["author"] = _normalize_issue_author(normalized_item)
-    return normalized_item
+    return project_issue(item)
 
 
 def _normalize_issue_list_items(items: list[dict]) -> list[dict]:
@@ -389,6 +387,16 @@ def issue_create(
         labels=labels,
         milestone=milestone,
     )
+    if json_fields is not None or jq_query:
+        item = created_output(
+            item,
+            kind="Issue",
+            json_fields=json_fields,
+            jq_query=jq_query,
+            project=project_issue,
+            read=lambda number: service.get(owner, repo, str(number)),
+            requested_milestone=milestone is not None,
+        )
     output_result(
         item,
         json_fields,
@@ -722,7 +730,7 @@ issue_view.short_help = "View an issue"
 issue_view.help = "View an issue."
 issue_create.short_help = "Create a new issue"
 issue_create.help = "Create a new issue."
-set_gc_help(issue_create, gc_aliases=["new"])
+set_gc_help(issue_create, gc_aliases=["new"], gc_json_fields=list(COMMON_FIELDS))
 issue_close.short_help = "Close issue"
 issue_close.help = "Close issue."
 issue_comment.short_help = "Add a comment to an issue"

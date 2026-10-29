@@ -11,6 +11,7 @@ from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
 from ..helptext import GCSectionGroup, set_gc_help
+from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
@@ -117,17 +118,8 @@ def _is_archived(item: dict) -> bool:
 
 
 def _normalize_repo_fields(item: dict) -> dict:
-    namespace = item.get("namespace")
-    owner = item.get("owner")
-    owner_path = None
-    if isinstance(namespace, dict):
-        owner_path = namespace.get("path") or namespace.get("name")
-    elif isinstance(owner, dict):
-        owner_path = owner.get("login") or owner.get("name")
-    elif isinstance(owner, str):
-        owner_path = owner
     name = item.get("name")
-    name_with_owner = item.get("full_name") or (f"{owner_path}/{name}" if owner_path and name else name)
+    name_with_owner = repo_name_with_owner(item)
     return {
         "id": item.get("id"),
         "name": name,

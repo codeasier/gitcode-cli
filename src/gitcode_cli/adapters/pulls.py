@@ -7,6 +7,7 @@ import click
 
 from ..errors import GCError
 from ..services import IssueService, PullRequestService, UserService
+from ._current_user import resolve_me
 from ._milestones import milestone_number, resolve_pr_milestone
 from ._pr_labels import PRLabelPlan
 from ._pr_people import PRPeoplePlan
@@ -146,6 +147,10 @@ class PullRequestAdapter:
         merged_after: str | None = None,
         merged_before: str | None = None,
     ) -> Any:
+        per_page, remaining = _normalize_limit(limit)
+        if remaining == 0:
+            return []
+        author, assignee = resolve_me(self.user_service, author, assignee)
         params = {
             "state": state,
             "author": author,
@@ -161,10 +166,6 @@ class PullRequestAdapter:
             params["merged_after"] = merged_after
         if merged_before is not None:
             params["merged_before"] = merged_before
-
-        per_page, remaining = _normalize_limit(limit)
-        if remaining == 0:
-            return []
 
         items = []
         page = 1

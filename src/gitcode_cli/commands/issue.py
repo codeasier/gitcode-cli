@@ -250,7 +250,7 @@ def issue_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues")
         return
     service = IssueService(app_ctx.client())
-    adapter = IssueAdapter(service, UserService(app_ctx.client()))
+    adapter = IssueAdapter(service, UserService(service.client))
     items = adapter.list_issues(
         owner,
         repo,
@@ -377,7 +377,7 @@ def issue_create(
     if body is None:
         raise click.UsageError("--title and --body are required when not running interactively")
     service = IssueService(app.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(service.client))
     item = adapter.create_issue(
         owner,
         repo,
@@ -579,7 +579,7 @@ def issue_edit(
     ):
         raise click.UsageError("must specify at least one field to edit")
     service = IssueService(app.client())
-    adapter = IssueAdapter(service)
+    adapter = IssueAdapter(service, UserService(service.client))
     item = adapter.edit_issue(
         owner,
         repo,

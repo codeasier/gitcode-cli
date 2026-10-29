@@ -1062,7 +1062,26 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    item = service.update(owner, repo, int(number), draft=undo)
+    current = service.get(owner, repo, int(number))
+    draft = current.get("draft") if isinstance(current, dict) else None
+    if type(draft) is not bool:
+        raise click.ClickException("Cannot determine the pull request's draft state; no update was attempted.")
+    if draft is undo:
+        state = "a draft" if undo else "ready for review"
+        safe_echo(f"Pull request #{safe_number(current, number)} is already {state}")
+        return
+    service.update(owner, repo, int(number), draft=undo)
+    try:
+        item = service.get(owner, repo, int(number))
+    except (GCError, ValueError) as exc:
+        raise click.ClickException(
+            "The draft-state update may have succeeded, but its result could not be read. "
+            "Verify the pull request before retrying."
+        ) from exc
+    if not isinstance(item, dict) or item.get("draft") is not undo:
+        raise click.ClickException(
+            "The requested draft state was not confirmed after the update. Verify the pull request before retrying."
+        )
     if undo:
         safe_echo(f"Converted pull request #{safe_number(item, number)} to draft")
     else:

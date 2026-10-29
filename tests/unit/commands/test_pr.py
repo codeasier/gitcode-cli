@@ -1584,18 +1584,21 @@ class TestPrCheckout:
 
 class TestPrReady:
     def test_pr_ready(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"number": 42, "draft": True}, {"number": 42, "draft": False}]
         mock_client.patch.return_value = {"number": 42}
         result = runner.invoke(main, ["pr", "ready", "42"])
         assert result.exit_code == 0
         assert "Marked pull request #42 as ready for review" in result.output
 
     def test_pr_ready_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"draft": True}, {"draft": False}]
         mock_client.patch.return_value = {"iid": 42}
         result = runner.invoke(main, ["pr", "ready", "42"])
         assert result.exit_code == 0
         assert "Marked pull request #42 as ready for review" in result.output
 
     def test_pr_ready_undo_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"draft": False}, {"draft": True}]
         mock_client.patch.return_value = {"iid": 42}
         result = runner.invoke(main, ["pr", "ready", "42", "--undo"])
         assert result.exit_code == 0

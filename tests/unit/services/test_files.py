@@ -73,7 +73,10 @@ def test_single_request_preserves_values_and_response(operation, method):
     assert not hasattr(client, "_client")
 
 
-@pytest.mark.parametrize("path", ["README.md", "docs/hello world.md", "文档/说明.md", "docs/#?%.md", "%2F", "%2e%2e/file"])
+@pytest.mark.parametrize(
+    "path",
+    ["README.md", "docs/hello world.md", "文档/说明.md", "docs/#?%.md", "%2F", "%2e%2e/file", "file\u0085\u009fname"],
+)
 def test_decoded_paths_are_encoded_exactly_once_without_unquoting(path):
     client = RecordingClient()
     FileService(client).get("owner", "repo", path)
@@ -135,7 +138,14 @@ def test_unsafe_path_structure_fails_before_request(operation, path):
 
 @pytest.mark.parametrize(
     ("owner", "repo"),
-    [("", "repo"), ("owner", ""), ("a/b", "repo"), ("owner", "a/b"), ("..", "repo"), ("owner", None)],
+    [
+        ("", "repo"),
+        ("owner", ""),
+        ("a/b", "repo"),
+        ("owner", "a/b"),
+        ("..", "repo"),
+        ("owner", None),
+    ],
 )
 def test_invalid_repository_segments_fail_before_request(owner, repo):
     client = RecordingClient()

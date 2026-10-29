@@ -23,7 +23,7 @@ def _encode_path(value: str, *, allow_root: bool = False) -> str:
         or any(ord(character) < 32 or ord(character) == 127 for character in value)
         or "://" in value
     ):
-        raise ValueError("Use a relative path without traversal, empty components or controls.")
+        raise ValueError("Use a relative path without traversal, empty components or ASCII C0/DEL controls.")
     try:
         return quote(value, safe="/")
     except UnicodeEncodeError:
@@ -65,7 +65,8 @@ class FileService:
     components; spaces, Unicode and literal ``?``, ``#`` and ``%`` are encoded
     once. Input is never URL-decoded: the literal filename ``%2F`` becomes
     ``%252F``, not a slash. URL-derived paths must be decoded at the caller's
-    boundary. Traversal, empty components, backslashes and controls are rejected.
+    boundary. Traversal, empty components, backslashes and ASCII C0/DEL controls
+    are rejected; other UTF-8 characters remain filename data.
     Only reads accept an empty path, for the repository root.
 
     Reads forward query values unchanged, including ``ref`` and ``None``; the

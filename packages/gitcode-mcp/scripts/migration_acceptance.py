@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Any
 
 PACKAGE = "codeasier-gitcode-mcp"
-VERSION = "0.3.0"
+LEGACY_VERSION = "0.3.0"
+# Archive metadata is checked against source before installation. The installed
+# version can advance while the immutable legacy seed remains exactly 0.3.0.
+VERSION = importlib.metadata.version(PACKAGE)
 LEGACY_SHA = "f93b67bb7048e556b44322d48664522f32651920"
 MARKER = b"codeasier-gitcode-mcp.oauth-store.v1"
 FIXTURE_FORMAT = "gitcode-mcp-migration-synthetic-v1"
@@ -400,6 +403,8 @@ def main() -> None:
     args = parser.parse_args()
     isolate_process()
     installed_metadata()
+    if args.mode == "seed":
+        assert VERSION == LEGACY_VERSION
     if args.mode == "_stdio":
         entry = next(
             entry

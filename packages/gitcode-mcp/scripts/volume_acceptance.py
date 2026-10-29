@@ -80,6 +80,7 @@ def prepare_fixture(uid: int, gid: int) -> None:
     helper = migration_helper()
     helper.isolate_process()
     helper.installed_metadata()  # No new-package license requirement for the old image.
+    require(helper.VERSION == helper.LEGACY_VERSION, "Legacy fixture version changed")
     with tempfile.TemporaryDirectory(prefix="synthetic-oauth-") as temporary:
         fixture = Path(temporary) / "fixture"
         anyio.run(helper.seed, fixture)
@@ -204,7 +205,7 @@ def http_probe(phase: str) -> None:
             )
             require(initialized.status_code == 200, "Persisted access token was rejected")
             require(
-                initialized.json()["result"]["serverInfo"]["version"] == "0.3.0",
+                initialized.json()["result"]["serverInfo"]["version"] == helper.VERSION,
                 "HTTP server version changed unexpectedly",
             )
             notified = client.post(

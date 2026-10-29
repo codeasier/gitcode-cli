@@ -8,13 +8,23 @@ on:
       - deploy/gitcode-mcp/**
       - docs/gitcode/**
       - .github/workflows/gitcode-mcp.yml
+      - .github/workflows/publish-mcp.yml
   pull_request:
     paths:
       - packages/gitcode-mcp/**
       - deploy/gitcode-mcp/**
       - docs/gitcode/**
       - .github/workflows/gitcode-mcp.yml
+      - .github/workflows/publish-mcp.yml
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      release-artifact-id:
+        description: Immutable artifact ID emitted only by the Python 3.12 producer
+        value: ${{ jobs.mcp.outputs.release-artifact-id }}
+      release-manifest-sha256:
+        description: Digest of the manifest verified by the Python 3.12 producer
+        value: ${{ jobs.mcp.outputs.release-manifest-sha256 }}
 
 permissions:
   contents: read
@@ -28,6 +38,11 @@ jobs:
     name: MCP / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Matrix outputs are merged. Only 3.12 writes these unique keys; other
+    # matrix legs leave them empty (the runner does not publish empty outputs).
+    outputs:
+      release-artifact-id: ${{ steps.release.outputs.artifact-id-312 }}
+      release-manifest-sha256: ${{ steps.release.outputs.manifest-sha256-312 }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +71,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install MCP test dependencies only
         run: python -m pip install -e '.[dev]'
+      - name: Validate independent release metadata
+        run: python -I scripts/release_check.py source
       - name: Lint MCP independently
         run: |
           python -m ruff check --config pyproject.toml .
@@ -63,7 +80,9 @@ jobs:
       - name: Test MCP independently
         run: python -I -m pytest -c pyproject.toml tests
       - name: Build wheel and sdist (no publication)
-        run: python -m build
+        run: |
+          python -m build
+          python -I scripts/release_check.py manifest --source-sha "$(git rev-parse HEAD)"
       - name: Prepare the isolated legacy installation
         run: |
           test "$(git -C "$GITHUB_WORKSPACE/.mcp-legacy" rev-parse HEAD)" = f93b67bb7048e556b44322d48664522f32651920
@@ -93,15 +112,31 @@ jobs:
             env -i PATH="$target/bin:/usr/bin:/bin" HOME="$target/home" \
               "$target/bin/python" -I "$script" verify "$target/fixture"
           done
-      - name: Upload distributions only (never synthetic OAuth state)
+      - name: Recheck tested bytes and stage public release artifacts only
+        run: |
+          set -euo pipefail
+          python -I scripts/release_check.py verify --source-sha "$(git rev-parse HEAD)"
+          mkdir -p release-artifacts/dist
+          cp dist/*.whl dist/*.tar.gz release-artifacts/dist/
+          cp release-manifest.json release-artifacts/manifest.json
+      - name: Upload distributions and integrity manifest (never synthetic OAuth state)
+        id: upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gitcode-mcp-python-${{ matrix.python-version }}
-          path: |
-            packages/gitcode-mcp/dist/*.whl
-            packages/gitcode-mcp/dist/*.tar.gz
+          path: packages/gitcode-mcp/release-artifacts/
           if-no-files-found: error
           retention-days: 14
+      - name: Bind publication to the exact Python 3.12 producer artifact
+        if: matrix.python-version == '3.12'
+        id: release
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          echo "artifact-id-312=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          echo "manifest-sha256-312=$(sha256sum release-artifacts/manifest.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
   container:
     name: MCP / Container packaging
@@ -122,9 +157,11 @@ jobs:
             docker run --rm --network=none --read-only --cap-drop=ALL \
               --security-opt=no-new-privileges "$image" "$entrypoint" --help
           done
+          expected_version="$(sed -n 's/^version = "\(.*\)"/\1/p' packages/gitcode-mcp/pyproject.toml)"
+          test -n "$expected_version"
           docker run --rm --network=none --read-only --cap-drop=ALL \
-            --security-opt=no-new-privileges "$image" python -I -c \
-            'from importlib.metadata import distribution; d = distribution("codeasier-gitcode-mcp"); assert d.version == "0.3.0"; assert any(p.name == "LICENSE" and "codeasier" in d.locate_file(p).read_text().lower() for p in d.files)'
+            --security-opt=no-new-privileges -e "EXPECTED_MCP_VERSION=$expected_version" "$image" python -I -c \
+            'import os; from importlib.metadata import distribution; d = distribution("codeasier-gitcode-mcp"); assert d.version == os.environ["EXPECTED_MCP_VERSION"]; assert any(p.name == "LICENSE" and "codeasier" in d.locate_file(p).read_text().lower() for p in d.files)'
 
   volume-migration:
     name: MCP / Named-volume takeover and rollback

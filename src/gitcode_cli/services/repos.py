@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..client import GitCodeClient
+from .files import FileService
 
 
 class RepoService:
@@ -19,7 +20,8 @@ class RepoService:
         return self.client.get(f"/repos/{owner}/{repo}")
 
     def contents(self, owner: str, repo: str, path: str, **params: Any) -> Any | None:
-        return self.client.get(f"/repos/{owner}/{repo}/contents/{path}", params=params)
+        """Read a decoded relative path through the canonical Contents service."""
+        return FileService(self.client).get(owner, repo, path, **params)
 
     def list_own(self, **params: Any) -> Any | None:
         return self.client.get("/user/repos", params=params)

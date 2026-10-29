@@ -70,6 +70,17 @@ The runtime and original regression tests preserve that baseline. The CLI packag
 remains separately versioned, and this MCP version keeps its verified
 `pygitcode==0.1.6` dependency rather than implicitly importing a sibling checkout.
 
+New native services in the CLI checkout are producer-only until an independently
+verified, separately authorized CLI release is available. In particular,
+`FileService` is not imported by the production MCP runtime or its normal tests;
+the file tools retain their existing validation and response semantics. Only
+`gitcode-mcp-services.yml` installs the CLI checkout with `--no-deps`, verifies all
+installed client/service hashes, and explicitly runs `tests_source/` alongside
+the full MCP suite. Those tests exercise the new service through the real MCP
+HTTP adapter with mocked transport; they do not change the production pin or
+authorize a consumer switch. A later consumer PR needs the verified published
+CLI artifact, explicit pin review, and the complete MCP compatibility gates.
+
 See the [migration and rollback guide](../../docs/gitcode/migration.md) before
 upgrading an existing OAuth deployment. Repository migration does not authorize
 a production switch, change the state schema or encryption key, or require new

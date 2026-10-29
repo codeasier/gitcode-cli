@@ -18,8 +18,9 @@ Routing priority is:
 
 1. `GC_GH_TARGET=gitcode|github`
 2. the host in an explicit `-R HOST/OWNER/REPO` or `--repo` value
-3. the current repository's `origin` host
-4. the native GitHub CLI when the target cannot be determined
+3. the repository positional's host for `repo view/clone/fork/edit/delete/sync` (option values are ignored)
+4. the current repository's `origin` host
+5. the native GitHub CLI when the target cannot be determined
 
 `gitcode.com` and `ssh.gitcode.com` are recognized by default, including `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`. GitHub SSH endpoints such as `ssh://git@ssh.github.com:443/OWNER/REPO.git` route to the native `gh`. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
 
@@ -47,7 +48,7 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | --- | --- |
 | Authentication | GitCode uses an `access_token` query parameter rather than GitHub's API authentication model. |
 | Issue create/update API | GitCode issue create/update sends `repo` in the request body instead of encoding it only in the URL path. |
-| PR inline comments | GitCode uses `path + position`; GitHub-style `line`, `side`, and `commit` review coordinates are not equivalent. |
+| PR inline comments | GitCode uses `path + position`, where `position` is an absolute file line. `--line` validates against the PR diff and passes the line through; `--position` bypasses diff validation. `--side` only selects the validation side and is not sent to GitCode, so LEFT anchoring is best-effort. Selecting a commit is unsupported. |
 | PR review changes | `gc pr review --request-changes` is approximated with a PR comment because GitCode's review API differs from GitHub's. |
 | Issue deletion | `gc issue delete` relies on GitCode issue deletion behavior that is not documented in the public API and may change. |
 | Draft/readiness operations | `gc pr ready --undo` toggles draft state through the GitCode PR update capability; behavior may differ from GitHub draft PR semantics. |

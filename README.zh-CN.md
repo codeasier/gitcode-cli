@@ -36,12 +36,19 @@ gc issue list
 gc issue view 42
 gc pr list
 gc pr create --fill
+gc pr audit
 gc pr merge 42 --squash
 gc repo view owner/repo
 gc repo clone owner/repo
 ```
 
 在 Windows PowerShell 中请优先使用 `gitcode`，因为 `gc` 是内置 `Get-Content` 别名。
+
+`gc pr audit` 会为每条未通过的 R1-R4 合并就绪规则打印原因。列表模式下，除 HTTP 401 以外的错误会记在对应 PR 上，默认退出码为 0（加 `--fail-exit` 则为 1）。HTTP 401 会中止剩余列表并退出 1，与 `--fail-exit` 无关。
+
+## GitCode MCP
+
+本仓库同时维护独立安装的 [`codeasier-gitcode-mcp`](packages/gitcode-mcp) 运行时（Python 3.11+），提供 stdio、Streamable HTTP、OAuth 和 31 个 GitCode 工具。CLI 与 MCP 是两个独立分发包：安装 `pygitcode` 不会引入 MCP、ASGI 或加密依赖。请参阅 [MCP 文档](docs/gitcode/README.md)和[迁移指南](docs/gitcode/migration.md)；Codex 专属插件桥接仍由 [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode) 维护。
 
 ## 文档
 

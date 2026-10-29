@@ -8,13 +8,15 @@ import click
 
 from ..adapters import PullRequestAdapter
 from ..adapters.capabilities import unsupported
+from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request, is_fatal_audit_error
 from ..cli_compat import (
     get_body_from_options,
     get_default_base_branch,
     get_fill_info,
     resolve_pr_identifier_or_current_branch,
 )
-from ..formatters import format_pr_detail, format_pr_list, output_result
+from ..errors import GCError
+from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services import PullRequestService
@@ -39,10 +41,25 @@ def _pr_merged_at(item: dict) -> str | None:
     return str(value) if value else None
 
 
+def _pr_ref_name(value: object) -> object:
+    return value.get("ref") if isinstance(value, dict) else value
+
+
+def _pr_ref_oid(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    sha = value.get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
 def _normalize_pr_fields(item: dict) -> dict:
     result = dict(item)
     if "mergedAt" not in result:
         result["mergedAt"] = _pr_merged_at(item)
+    result["baseRefName"] = item.get("baseRefName") or _pr_ref_name(item.get("base"))
+    result["baseRefOid"] = item.get("baseRefOid") or _pr_ref_oid(item.get("base"))
+    result["headRefName"] = item.get("headRefName") or _pr_ref_name(item.get("head"))
+    result["headRefOid"] = item.get("headRefOid") or _pr_ref_oid(item.get("head"))
     return result
 
 
@@ -77,10 +94,6 @@ def _normalize_pr_actor(value: object) -> object:
     }
 
 
-def _pr_ref_name(value: object) -> object:
-    return value.get("ref") if isinstance(value, dict) else value
-
-
 def _normalize_pr_view_fields(item: dict) -> dict:
     result = _normalize_pr_fields(item)
     assignees = item.get("assignees")
@@ -90,9 +103,7 @@ def _normalize_pr_view_fields(item: dict) -> dict:
             "assignees": (
                 [_normalize_pr_actor(assignee) for assignee in assignees] if isinstance(assignees, list) else assignees
             ),
-            "baseRefName": item.get("baseRefName") or _pr_ref_name(item.get("base")),
             "createdAt": item.get("createdAt") or item.get("created_at"),
-            "headRefName": item.get("headRefName") or _pr_ref_name(item.get("head")),
             "updatedAt": item.get("updatedAt") or item.get("updated_at"),
             "url": item.get("html_url") or item.get("url"),
         }
@@ -144,27 +155,26 @@ def _extract_search_filters(
 
 
 def _advance_diff_line(
-    raw_line: str, old_line: int, new_line: int, target_line: int, target_side: str, position: int
-) -> tuple[int | None, int, int]:
+    raw_line: str, old_line: int, new_line: int, target_line: int, target_side: str
+) -> tuple[bool, int, int]:
     prefix = raw_line[:1]
     if prefix == "-":
-        return (position if target_side == "LEFT" and old_line == target_line else None), old_line + 1, new_line
+        return target_side == "LEFT" and old_line == target_line, old_line + 1, new_line
     if prefix == "+":
-        return (position if target_side == "RIGHT" and new_line == target_line else None), old_line, new_line + 1
+        return target_side == "RIGHT" and new_line == target_line, old_line, new_line + 1
     matched = (target_side == "LEFT" and old_line == target_line) or (
         target_side == "RIGHT" and new_line == target_line
     )
-    return (position if matched else None), old_line + 1, new_line + 1
+    return matched, old_line + 1, new_line + 1
 
 
-def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> int:
+def _validate_diff_line(diff_text: str, path: str, line: int, side: str) -> None:
     target_side = side.upper()
     if target_side not in {"LEFT", "RIGHT"}:
         raise click.UsageError("--side must be LEFT or RIGHT")
 
     old_line = None
     new_line = None
-    position = 0
     in_target_file = False
     saw_target_file = False
 
@@ -172,9 +182,9 @@ def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> 
         if raw_line.startswith("diff --git "):
             old_line = None
             new_line = None
-            position = 0
             in_target_file = False
             continue
+        # TODO: Handle Git-quoted paths and deleted files whose +++ header is /dev/null.
         if raw_line.startswith("+++ b/"):
             in_target_file = raw_line[6:] == path
             saw_target_file = saw_target_file or in_target_file
@@ -189,12 +199,9 @@ def _diff_position_for_line(diff_text: str, path: str, line: int, side: str) -> 
         if old_line is None or new_line is None or raw_line.startswith("\\"):
             continue
 
-        position += 1
-        matched_position, old_line, new_line = _advance_diff_line(
-            raw_line, old_line, new_line, line, target_side, position
-        )
-        if matched_position is not None:
-            return matched_position
+        matched, old_line, new_line = _advance_diff_line(raw_line, old_line, new_line, line, target_side)
+        if matched:
+            return
 
     if not saw_target_file:
         raise click.ClickException(f"Path '{path}' was not found in the pull request diff.")
@@ -209,7 +216,9 @@ def _resolve_comment_position_from_line(
     if path is None:
         raise click.UsageError("--path is required when using --line")
     diff_text = service.diff(owner, repo, number)
-    return _diff_position_for_line(diff_text, path, line, side)
+    _validate_diff_line(diff_text, path, line, side)
+    # GitCode position is an absolute file line, not an ordinal within the diff.
+    return line
 
 
 @click.group("pr", cls=GCSectionGroup, help="Work with GitCode pull requests.")
@@ -287,10 +296,19 @@ def pr_merge(
 @click.option("--edit-last", is_flag=True)
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
+@click.option(
+    "--discussion-id",
+    help="Reply to an existing discussion (gc extension). Find discussion_id with pr view --json comments.",
+)
 @click.option("--path")
-@click.option("--position", type=int)
-@click.option("--line", type=int)
-@click.option("--side", default="RIGHT", show_default=True)
+@click.option("--position", type=int, help="Pass an absolute file line number directly to GitCode.")
+@click.option("--line", type=int, help="Absolute file line number; validated against the pull request diff.")
+@click.option(
+    "--side",
+    default="RIGHT",
+    show_default=True,
+    help="Side used only to validate --line: LEFT or RIGHT. GitCode receives no side; LEFT anchoring is best-effort.",
+)
 @click.option("--commit-id")
 @click.option("--commit", "commit_id")
 @click.option("--yes", is_flag=True)
@@ -306,6 +324,7 @@ def pr_comment(
     edit_last: bool,
     editor: bool,
     web: bool,
+    discussion_id: str | None,
     path: str | None,
     position: int | None,
     line: int | None,
@@ -321,6 +340,23 @@ def pr_comment(
         _pending_gh_compat("pr comment --edit-last")
     if yes:
         _pending_gh_compat("pr comment --yes")
+    if discussion_id is not None:
+        discussion_id = discussion_id.strip()
+        if not discussion_id:
+            raise click.UsageError("--discussion-id must not be empty")
+        if discussion_id in {".", ".."} or any(char in discussion_id for char in "/\\?#%"):
+            raise click.UsageError("--discussion-id must be a single path segment without URL-reserved characters")
+        if (
+            path is not None
+            or position is not None
+            or line is not None
+            or ctx.get_parameter_source("side") != click.core.ParameterSource.DEFAULT
+            or commit_id is not None
+            or web
+        ):
+            raise click.UsageError(
+                "--discussion-id cannot be used with --path, --position, --line, --side, --commit-id/--commit, or --web"
+            )
     if commit_id:
         raise click.ClickException("GitCode PR comments do not support selecting a commit for line comments.")
     if line is not None and position is not None:
@@ -337,7 +373,15 @@ def pr_comment(
         return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
-    resolved_position = position or _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    if discussion_id is not None:
+        item = service.reply(owner, repo, number, discussion_id, body=body) or {}
+        safe_echo(str(item.get("noteId") or "Reply posted."))
+        return
+    resolved_position = (
+        position
+        if position is not None
+        else _resolve_comment_position_from_line(service, owner, repo, number, path, line, side)
+    )
     item = service.comment(owner, repo, number, body=body, path=path, position=resolved_position)
     safe_echo(str(item["id"]))
 
@@ -900,6 +944,131 @@ def pr_status(ctx: click.Context, repo_name: str | None) -> None:
         safe_echo("  No open pull requests")
 
 
+def _format_audit_abort(number: int | None, skipped: int, total: int, exc: BaseException) -> str:
+    if skipped:
+        return f"error: aborted audit at #{number}: {skipped} of {total} pull requests not audited ({exc})"
+    return f"error: aborted audit at #{number}: {exc}"
+
+
+@pr_group.command("audit")
+@click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.argument("identifier", required=False)
+@click.option("-s", "--state", default="open", show_default=True, help="Filter by state: open, closed, merged, all.")
+@click.option("-L", "--limit", type=click.IntRange(min=1), default=100, show_default=True, help="Max PRs to audit.")
+@click.option(
+    "--th1",
+    type=click.IntRange(min=0),
+    default=100,
+    show_default=True,
+    help="R3 size threshold (added + removed lines).",
+)
+@click.option(
+    "--th2",
+    type=click.IntRange(min=0),
+    default=1000,
+    show_default=True,
+    help="R4 size threshold (added + removed lines).",
+)
+@click.option("--minutes-keyword", default="评审纪要", show_default=True, help="R4 review-minutes keyword.")
+@click.option("--only-fail", is_flag=True, help="Show only pull requests that fail the audit.")
+@click.option(
+    "--fail-exit",
+    is_flag=True,
+    help="Exit 1 if any audited PR fails. HTTP 401 aborts the remaining list and exits 1, regardless of this flag.",
+)
+@click.option("--json", "json_fields", help="Output JSON. Optionally specify comma-separated fields.")
+@click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression.")
+@click.option("-t", "--template", help="Format output using a Go template string.")
+@click.pass_context
+def pr_audit(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    state: str | None,
+    limit: int | None,
+    th1: int,
+    th2: int,
+    minutes_keyword: str,
+    only_fail: bool,
+    fail_exit: bool,
+    json_fields: str | None,
+    jq_query: str | None,
+    template: str | None,
+) -> None:
+    app = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    service = PullRequestService(app.client())
+    adapter = PullRequestAdapter(service)
+    if th1 > th2:
+        raise click.UsageError("--th1 must be less than or equal to --th2.")
+    minutes_keyword = minutes_keyword.strip()
+    if not minutes_keyword:
+        raise click.UsageError("--minutes-keyword must not be empty.")
+    thresholds = AuditThresholds(th1=th1, th2=th2, minutes_keyword=minutes_keyword)
+    results: list[dict] = []
+    fatal_error: GCError | None = None
+    fatal_number: int | None = None
+    audit_total = 0
+    if identifier:
+        resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
+        owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+        results.append(audit_pull_request(service, owner, repo, int(number), thresholds=thresholds))
+    else:
+        listed_items = adapter.list_prs(
+            owner,
+            repo,
+            state=state,
+            author=None,
+            base=None,
+            assignee=None,
+            draft=None,
+            head=None,
+            labels=None,
+            search=None,
+            limit=limit,
+        )
+        candidates = [item for item in listed_items if item.get("number") is not None]
+        audit_total = len(candidates)
+        for item in candidates:
+            number = int(item["number"])
+            try:
+                results.append(
+                    audit_pull_request(service, owner, repo, int(number), listed=item, thresholds=thresholds)
+                )
+            except GCError as exc:
+                results.append(audit_error_result(int(number), exc, listed=item))
+                if is_fatal_audit_error(exc):
+                    fatal_error = exc
+                    fatal_number = number
+                    break
+    audited = len(results)
+    if only_fail:
+        results = [item for item in results if not item.get("overall")]
+
+    output_data: dict | list[dict] | None = results if not identifier else (results[0] if results else None)
+
+    def default_formatter(data) -> None:
+        if not data:
+            return
+        output = format_pr_audit_list(data if isinstance(data, list) else [data])
+        if output:
+            safe_echo(output)
+
+    if output_data is not None:
+        output_result(
+            output_data,
+            json_fields,
+            jq_query,
+            template,
+            default_formatter=default_formatter,
+        )
+    if fatal_error is not None:
+        skipped = max(audit_total - audited, 0)
+        safe_echo(_format_audit_abort(fatal_number, skipped, audit_total, fatal_error), err=True)
+    if fatal_error is not None or (fail_exit and any(not item.get("overall") for item in results)):
+        ctx.exit(1)
+
+
 pr_group.add_command(pr_list, name="ls")
 pr_group.add_command(pr_create, name="new")
 
@@ -907,7 +1076,7 @@ set_gc_help(
     pr_group,
     gc_usage="gc pr <command> [flags]",
     gc_command_sections=[
-        ("GENERAL COMMANDS", ["create", "list", "status"]),
+        ("GENERAL COMMANDS", ["audit", "create", "list", "status"]),
         (
             "TARGETED COMMANDS",
             ["checkout", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
@@ -944,9 +1113,11 @@ set_gc_help(
         "author",
         "assignees",
         "baseRefName",
+        "baseRefOid",
         "body",
         "createdAt",
         "headRefName",
+        "headRefOid",
         "labels",
         "mergedAt",
         "number",
@@ -970,11 +1141,13 @@ set_gc_help(
         "author",
         "assignees",
         "baseRefName",
+        "baseRefOid",
         "body",
         "closingIssuesReferences",
         "comments",
         "createdAt",
         "headRefName",
+        "headRefOid",
         "labels",
         "mergedAt",
         "number",
@@ -997,3 +1170,19 @@ pr_ready.short_help = "Mark a pull request as ready for review"
 pr_ready.help = "Mark a pull request as ready for review."
 pr_status.short_help = "Show status of relevant pull requests"
 pr_status.help = "Show status of relevant pull requests."
+pr_audit.short_help = "Audit pull requests against merge-readiness rules"
+pr_audit.help = (
+    "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "
+    "reason for every failed rule. List-mode errors other than HTTP 401 are recorded per PR "
+    "and exit 0 unless --fail-exit is set. HTTP 401 aborts the remaining list and exits 1."
+)
+set_gc_help(
+    pr_audit,
+    gc_usage="gc pr audit [<number> | <url>] [flags]",
+    gc_json_fields=AUDIT_JSON_FIELDS,
+    gc_examples=[
+        "gc pr audit -R owner/repo",
+        "gc pr audit 1028",
+        "gc pr audit --only-fail --json number,verdict,reasons",
+    ],
+)

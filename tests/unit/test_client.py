@@ -178,3 +178,44 @@ class TestNetworkErrorWrapping:
 
         with pytest.raises(APIError, match="Authentication failed: Unauthorized"):
             client.get("/test")
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "repository_auth"),
+    [
+        ("GET", "/repos/owner/repo", True),
+        ("PATCH", "/repos/owner/repo", True),
+        ("DELETE", "/repos/owner/repo", True),
+        ("GET", "/repos/owner/repo/contents/docs/README.md", True),
+        ("GET", "/user/repos", True),
+        ("POST", "/user/repos", True),
+        ("GET", "/users/owner/repos", True),
+        ("POST", "/users/owner/repos", False),
+        ("GET", "/orgs/org/repos", True),
+        ("POST", "/orgs/org/repos", True),
+        ("POST", "/repos/owner/repo/forks", True),
+        ("PUT", "/repos/owner/repo/sync_repo", True),
+        ("GET", "/user", False),
+        ("GET", "/repos/owner/repo/issues", False),
+        ("POST", "/repos/owner/issues", False),
+        ("PATCH", "/repos/owner/issues/42", False),
+        ("GET", "/repos/owner/repo/pulls", False),
+        ("POST", "/repos/owner/repo/pulls", False),
+        ("GET", "/repos/owner/repo/pulls/42/diff", False),
+        ("POST", "/repos/owner/repo/contents/file", False),
+        ("GET", "/repos/owner/repo/forks/extra", False),
+    ],
+)
+def test_private_token_is_owned_by_cli_transport_only_for_repository_endpoints(method, path, repository_auth):
+    client = GitCodeClient(token="test-token")
+    with respx.mock:
+        route = respx.request(method, BASE_URL + path.lstrip("/")).mock(return_value=Response(200, json={}))
+        try:
+            client.request(method, path, params={"page": 1}, accept="application/vnd.example+json")
+        finally:
+            client._client.close()
+    request = route.calls.last.request
+    assert request.url.params["access_token"] == "test-token"
+    assert request.url.params["page"] == "1"
+    assert request.headers["Accept"] == "application/vnd.example+json"
+    assert request.headers.get("private-token") == ("test-token" if repository_auth else None)

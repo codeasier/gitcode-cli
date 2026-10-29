@@ -4,7 +4,7 @@ import base64
 import binascii
 import re
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote, urlsplit
 
 import click
 
@@ -64,9 +64,13 @@ class RepoAdapter:
         path = "README.md"
         readme_url = item.get("readme_url") if isinstance(item, dict) else None
         if readme_url:
-            match = _README_BLOB_RE.search(str(readme_url))
+            try:
+                readme_path = urlsplit(str(readme_url)).path
+            except ValueError:
+                return None
+            match = _README_BLOB_RE.search(readme_path)
             if match:
-                path = unquote(match.group("path"))
+                path = quote(unquote(match.group("path")), safe="/")
         try:
             data = self.service.contents(owner, repo, path)
         except APIError:

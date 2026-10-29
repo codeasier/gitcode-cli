@@ -18,8 +18,9 @@ gc setup gh-proxy --configure
 
 1. `GC_GH_TARGET=gitcode|github`
 2. 显式 `-R HOST/OWNER/REPO` 或 `--repo` 参数中的 host
-3. 当前仓库 `origin` 的 host
-4. 无法判断目标时使用原生 GitHub CLI
+3. `repo view/clone/fork/edit/delete/sync` 的仓库位置参数中的 host（忽略选项值）
+4. 当前仓库 `origin` 的 host
+5. 无法判断目标时使用原生 GitHub CLI
 
 默认识别 `gitcode.com` 和 `ssh.gitcode.com`，包括 `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`。`ssh://git@ssh.github.com:443/OWNER/REPO.git` 等 GitHub SSH 地址会路由到原生 `gh`。私有部署可以通过 `GC_GITCODE_HOSTS` 配置逗号分隔的额外 host。自动查找原生 `gh` 失败时，可用 `GC_REAL_GH` 指定其可执行文件。代理查找时会排除自身目录；在 POSIX 上通过进程替换保留原始参数、标准流、信号和退出状态。
 
@@ -47,7 +48,7 @@ GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令
 | --- | --- |
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`，而不是只依赖 URL 路径。 |
-| PR 行内评论 | GitCode 使用 `path + position` 模型；GitHub 的 `line`、`side`、`commit` 坐标不能直接等价映射。 |
+| PR 行内评论 | GitCode 使用 `path + position` 模型，`position` 为文件绝对行号。`--line` 校验行号位于 PR diff 中后原样传递；`--position` 跳过 diff 校验。`--side` 仅选择校验侧，不会发送给 GitCode，因此 LEFT 侧锚定仅为尽力支持，不保证准确。不支持选择 commit。 |
 | PR review request changes | `gc pr review --request-changes` 会近似为 PR 评论，因为 GitCode review API 与 GitHub 不同。 |
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
 | Draft/ready 操作 | `gc pr ready --undo` 通过 GitCode 的 PR 更新能力切换 draft 状态，但语义可能不同于 GitHub draft PR。 |

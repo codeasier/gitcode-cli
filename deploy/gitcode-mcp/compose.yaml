@@ -1,0 +1,25 @@
+services:
+  gitcode-mcp:
+    build:
+      context: ../..
+      dockerfile: deploy/gitcode-mcp/Dockerfile
+    environment:
+      GITCODE_MCP_AUTH_MODE: bearer
+      GITCODE_TOKEN: ${GITCODE_TOKEN:-}
+      GC_TOKEN: ${GC_TOKEN:-}
+      GITCODE_MCP_HTTP_TOKEN: ${GITCODE_MCP_HTTP_TOKEN:?Set a separate HTTP MCP bearer token}
+      GITCODE_MCP_ALLOWED_REPOS: ${GITCODE_MCP_ALLOWED_REPOS:-}
+      GITCODE_MCP_READ_ONLY: ${GITCODE_MCP_READ_ONLY:-true}
+      GITCODE_MCP_ALLOWED_HOSTS: ${GITCODE_MCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*,[::1]:*}
+      GITCODE_MCP_ALLOWED_ORIGINS: ${GITCODE_MCP_ALLOWED_ORIGINS:-http://127.0.0.1:*,http://localhost:*,http://[::1]:*}
+    ports:
+      - "127.0.0.1:8765:8765"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    restart: unless-stopped

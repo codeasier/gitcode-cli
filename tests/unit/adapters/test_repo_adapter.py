@@ -273,3 +273,24 @@ class TestRepoAdapterWrite:
         service.sync.assert_called_once_with("owner", "repo")
         assert result.message == "synced"
         assert result.item == {"repo_sync_result": True}
+
+
+@pytest.mark.parametrize(
+    ("url_path", "expected"),
+    [
+        ("docs/README%23x.md?ref=main#section", "docs/README%23x.md"),
+        ("docs/README%3Fx.md", "docs/README%3Fx.md"),
+        ("docs/100%25.md", "docs/100%25.md"),
+        ("docs/hello%20world.md", "docs/hello%20world.md"),
+    ],
+)
+def test_readme_url_preserves_encoded_file_path_delimiters(adapter, service, url_path, expected):
+    service.contents.return_value = _contents_payload("readme body")
+    item = {"readme_url": "https://gitcode.com/owner/repo/blob/main/" + url_path}
+    assert adapter.get_readme("owner", "repo", item) == "readme body"
+    service.contents.assert_called_once_with("owner", "repo", expected)
+
+
+def test_malformed_readme_url_remains_best_effort(adapter, service):
+    assert adapter.get_readme("owner", "repo", {"readme_url": "https://[invalid"}) is None
+    service.contents.assert_not_called()

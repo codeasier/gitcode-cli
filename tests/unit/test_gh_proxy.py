@@ -320,3 +320,35 @@ def test_origin_host_ignores_git_failure(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "git")),
     )
     assert _origin_host() is None
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["repo", "edit", "-d", "description", "gitcode.com/o/r"],
+        ["repo", "edit", "--description", "github.com/other/repo", "gitcode.com/o/r"],
+        ["repo", "edit", "--homepage", "https://github.com/o/r", "gitcode.com/o/r"],
+        ["repo", "edit", "--description=description", "gitcode.com/o/r"],
+        ["repo", "view", "--json", "url", "gitcode.com/o/r"],
+        ["repo", "view", "-q", ".url", "-t", "{{.url}}", "gitcode.com/o/r"],
+        ["repo", "fork", "--org", "organization", "gitcode.com/o/r"],
+        ["repo", "view", "--", "gitcode.com/o/r"],
+    ],
+)
+def test_repo_positional_routing_skips_option_values(args, monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "github.com")
+    assert _positional_repo_host(args) == "gitcode.com"
+    assert select_target(args, {}) == "gitcode"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["repo", "edit", "--homepage", "https://gitcode.com/o/r"],
+        ["repo", "edit", "-d", "gitcode.com/o/r"],
+        ["repo", "view", "--json", "url"],
+        ["repo", "view", "--"],
+    ],
+)
+def test_repo_option_value_never_selects_a_host(args):
+    assert _positional_repo_host(args) is None

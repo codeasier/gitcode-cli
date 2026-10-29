@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codeasier-gitcode-mcp"
+version = "0.3.0"
+description = "GitCode repository, code publishing, issue, and pull request tools for MCP clients"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Codeasier"}]
+dependencies = [
+  "mcp==2.3.0",
+  "pygitcode==0.1.6",
+  "httpx>=0.28.1,<1",
+  "anyio>=4.9,<5",
+  "pydantic>=2.12,<3",
+  "uvicorn>=0.31.1,<1",
+  "cryptography>=44,<49",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1", "build>=1.2,<2"]
+
+[project.scripts]
+gitcode-mcp = "gitcode_mcp.__main__:main"
+gitcode-clone = "gitcode_mcp.clone:main"
+
+[project.urls]
+Repository = "https://github.com/codeasier/gitcode-cli"
+Documentation = "https://github.com/codeasier/gitcode-cli/tree/main/docs/gitcode"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gitcode_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

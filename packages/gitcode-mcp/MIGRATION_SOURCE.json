@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/codeasier/codex-codeasier",
+  "source_commit": "f93b67bb7048e556b44322d48664522f32651920",
+  "source_pull_request": "https://github.com/codeasier/codex-codeasier/pull/8",
+  "source_merge_commit": "27b542521c8483b5cf051ae001e791e08e92bb40",
+  "destination_repository": "https://github.com/codeasier/gitcode-cli",
+  "distribution": "codeasier-gitcode-mcp",
+  "distribution_version": "0.3.0",
+  "license": {
+    "spdx": "MIT",
+    "source_path": "LICENSE",
+    "source_blob_sha": "9c1d94e52351fefff9267baf08300114e6764a56",
+    "destination_path": "packages/gitcode-mcp/LICENSE"
+  },
+  "notes": [
+    "Source blob SHAs record the imported baseline, not the hashes after destination-specific documentation and packaging edits.",
+    "Runtime source and original regression tests are carried over without behavioral changes.",
+    "The source merge commit has the same tree as the reviewed source commit.",
+    "This manifest does not assert that destination CI or production migration has passed."
+  ],
+  "files": [
+    {
+      "source_path": "deploy/gitcode-mcp/Dockerfile",
+      "destination_path": "deploy/gitcode-mcp/Dockerfile",
+      "source_blob_sha": "0c630af266217741a405b586e183c618f56911c1"
+    },
+    {
+      "source_path": "deploy/gitcode-mcp/Dockerfile.dockerignore",
+      "destination_path": "deploy/gitcode-mcp/Dockerfile.dockerignore",
+      "source_blob_sha": "36d604954f5534c14b1b84fe0c7d6515ed625985"
+    },
+    {
+      "source_path": "deploy/gitcode-mcp/compose.oauth.yaml",
+      "destination_path": "deploy/gitcode-mcp/compose.oauth.yaml",
+      "source_blob_sha": "44cdcfe4f411f1b1d0a1608da6326087b2c7fc26"
+    },
+    {
+      "source_path": "deploy/gitcode-mcp/compose.yaml",
+      "destination_path": "deploy/gitcode-mcp/compose.yaml",
+      "source_blob_sha": "9ed9721476b7ae226a6ac67a9c130f47800fa3e0"
+    },
+    {
+      "source_path": "deploy/gitcode-mcp/nginx.oauth.conf.example",
+      "destination_path": "deploy/gitcode-mcp/nginx.oauth.conf.example",
+      "source_blob_sha": "bf611654da31dc8101d5eefd0284aec90a132abf"
+    },
+    {
+      "source_path": "deploy/gitcode-mcp/oauth.env.example",
+      "destination_path": "deploy/gitcode-mcp/oauth.env.example",
+      "source_blob_sha": "71eae415ec88529770eed66e5e068fd37a404167"
+    },
+    {
+      "source_path": "docs/gitcode/README.md",
+      "destination_path": "docs/gitcode/README.md",
+      "source_blob_sha": "e8be2b3c33d755cd89211151999dc2654ff08fa5"
+    },
+    {
+      "source_path": "docs/gitcode/code-publishing.md",
+      "destination_path": "docs/gitcode/code-publishing.md",
+      "source_blob_sha": "0f8bed531d43aa050ee5bdd4d64a2c8f7a06bb78"
+    },
+    {
+      "source_path": "docs/gitcode/connect-dot.md",
+      "destination_path": "docs/gitcode/connect-dot.md",
+      "source_blob_sha": "6718e56f6fafe7fc2f347fa3b3fb182d9ccb16ae"
+    },
+    {
+      "source_path": "docs/gitcode/connect-tunnel.md",
+      "destination_path": "docs/gitcode/connect-tunnel.md",
+      "source_blob_sha": "cdcd225c825b3988aad1826b6e18183089e1266d"
+    },
+    {
+      "source_path": "docs/gitcode/deployment.md",
+      "destination_path": "docs/gitcode/deployment.md",
+      "source_blob_sha": "c3792a7b722806ba47590aea5cd82cb5f4c92857"
+    },
+    {
+      "source_path": "docs/gitcode/oauth.md",
+      "destination_path": "docs/gitcode/oauth.md",
+      "source_blob_sha": "28192c8ca09bef8ea2f4f392f7b623b0466963d6"
+    },
+    {
+      "source_path": "docs/gitcode/setup.md",
+      "destination_path": "docs/gitcode/setup.md",
+      "source_blob_sha": "a961a1fddd19dd129fc90452140dc103d46c72fa"
+    },
+    {
+      "source_path": "docs/gitcode/tools.md",
+      "destination_path": "docs/gitcode/tools.md",
+      "source_blob_sha": "edc1b494d169d321e1a8b0f3bef40ef14c0250cc"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/README.md",
+      "destination_path": "packages/gitcode-mcp/README.md",
+      "source_blob_sha": "cc9757079c6688e37fe6351452b592a42af2c964"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/pyproject.toml",
+      "destination_path": "packages/gitcode-mcp/pyproject.toml",
+      "source_blob_sha": "4e44fcf5ef5934fb078e7bf9d5f42a58a5f4075c"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/__init__.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/__init__.py",
+      "source_blob_sha": "c0ef75c776eeb56c2e79e0932ebf13f019355e23"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/__main__.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/__main__.py",
+      "source_blob_sha": "6ac19575fcab4b740d06943b9cef5d2bf4165c3c"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/api.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/api.py",
+      "source_blob_sha": "97ce3e02594cf54097466cd5cb7ca9b2a955d612"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/askpass.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/askpass.py",
+      "source_blob_sha": "a76c0074761bc0d1746c63486027df6c00a21230"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/clone.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/clone.py",
+      "source_blob_sha": "e42df2e181bddb35f4bec9808f279c70e89c4392"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/config.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/config.py",
+      "source_blob_sha": "30c2fc59bd304506e01bb9cb67fabc56c4fd17ff"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/file_writes.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/file_writes.py",
+      "source_blob_sha": "95bc0b579cb09a6ac6621f0cbc3d9db4f627b7b8"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth.py",
+      "source_blob_sha": "1b4ed2f6966b4d549f15b1d7745783f1e828ac32"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_config.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_config.py",
+      "source_blob_sha": "5d585161371951c5ba2107b4bf64b6d48a66a409"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_http.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_http.py",
+      "source_blob_sha": "c59aee7118f8493d054bc208fdffdd3ecde19337"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_store.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_store.py",
+      "source_blob_sha": "cfeba1e49d401de2d1f17dc42897d8fb35600d8d"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_upstream.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/oauth_upstream.py",
+      "source_blob_sha": "063ad447d22a459d779f95c1e060f6ecc2b6cbda"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/server.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/server.py",
+      "source_blob_sha": "4e9ad20b4dbf6780dd9d7a82fdd96a4ed5238dd4"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/smoke.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/smoke.py",
+      "source_blob_sha": "175bd3844abb3651514c92a7193d559b1ff8f8cd"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/src/gitcode_mcp/tools.py",
+      "destination_path": "packages/gitcode-mcp/src/gitcode_mcp/tools.py",
+      "source_blob_sha": "28c59f3b5d16a4d00d343cb815eeb15def85dec1"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_api.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_api.py",
+      "source_blob_sha": "9dc79ab9df281483684a092f3c3ec7ec7cf6ca81"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_clone.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_clone.py",
+      "source_blob_sha": "f29f9b3319eb3c046b03ed66916e6c7cacd0b33a"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_config.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_config.py",
+      "source_blob_sha": "8e7ee8bfa9b62e324abf5ebedf8a91ea26c7a914"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_file_writes.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_file_writes.py",
+      "source_blob_sha": "fba1d4f30dacda5100187970ff78047a858e67f1"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_oauth_config.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_oauth_config.py",
+      "source_blob_sha": "5258bc245ff9a4c0a06fafceafd5323fe0981930"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_oauth_http.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_oauth_http.py",
+      "source_blob_sha": "fb9b2edd4c1672b835e03a958f73e2dae48ce49d"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_oauth_store.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_oauth_store.py",
+      "source_blob_sha": "9472494b6005fc704842b97c1b54d725041c14be"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_oauth_upstream.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_oauth_upstream.py",
+      "source_blob_sha": "1d986a173d51966306ce0b90b2d0f9287b844b6f"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_server.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_server.py",
+      "source_blob_sha": "06b767aefa1790c3dae19cb87feab95cb8096d41"
+    },
+    {
+      "source_path": "packages/gitcode-mcp/tests/test_tools.py",
+      "destination_path": "packages/gitcode-mcp/tests/test_tools.py",
+      "source_blob_sha": "60aa7056f5f6a72fa945267b8596a593b542894f"
+    }
+  ]
+}

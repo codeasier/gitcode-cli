@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,10 +36,8 @@ def mock_client(monkeypatch):
 @pytest.fixture
 def mock_repo(monkeypatch):
     import gitcode_cli.commands.repo as repo_mod
-    from gitcode_cli import repo
 
-    monkeypatch.setattr(repo, "resolve_repo", lambda x=None: ("owner", "repo"))
-    monkeypatch.setattr(repo_mod, "resolve_repo", lambda x=None: ("owner", "repo"))
+    monkeypatch.setattr(repo_mod, "_origin_repository_arg", lambda: "https://gitcode.com/owner/repo.git")
 
 
 @pytest.fixture
@@ -217,7 +216,7 @@ class TestRepoList:
         first_call = mock_client.get.call_args_list[0]
         assert first_call.args[0] == "/user/repos"
         assert first_call.kwargs["params"] == {"page": 1, "per_page": 30}
-        assert "private-token" in first_call.kwargs["headers"]
+        assert "headers" not in first_call.kwargs
 
     def test_owner_argument_uses_users_endpoint(self, runner, mock_client):
         mock_client.get.return_value = [{"full_name": "owner/repo", "private": True}]
@@ -585,7 +584,7 @@ class TestRepoRename:
             result = runner.invoke(main, ["repo", "rename", "new-name", "-y"])
 
         assert result.exit_code == 0
-        assert "Updated the 'origin' remote URL to https://gitcode.com/owner/new-name.git" in result.output
+        assert "Updated the 'origin' remote URL." in result.output
         assert mock_run.call_args_list[1].args[0] == [
             "git",
             "remote",
@@ -684,3 +683,68 @@ class TestRepoHelpSections:
         assert result.exit_code == 0
         assert "private (the default)" in result.output
         assert "Unsupported: GitCode has no internal repositories" in result.output
+
+
+@pytest.mark.parametrize("url", ["https://github.com/owner/repo.git", "git@github.com:owner/repo.git"])
+def test_rename_does_not_rewrite_same_named_non_gitcode_origin(runner, mock_client, mock_repo, url):
+    with patch(
+        "gitcode_cli.commands.repo.subprocess.run",
+        return_value=MagicMock(stdout=url + "\n", returncode=0),
+    ) as mock_run:
+        result = runner.invoke(main, ["repo", "rename", "new-name", "-y"])
+    assert result.exit_code == 0
+    assert mock_client.patch.call_args.kwargs["json"] == {"name": "new-name", "path": "new-name"}
+    assert "Updated the 'origin'" not in result.output
+    assert mock_run.call_count == 1
+
+
+@pytest.mark.parametrize("source", ["subcommand_flag", "global_flag", "origin"])
+@pytest.mark.parametrize(
+    "command",
+    [["view"], ["edit", "-d", "new"], ["sync"], ["fork"], ["delete", "--yes"], ["rename", "new", "--yes"]],
+)
+def test_foreign_repository_host_is_rejected_for_every_target_source(runner, mock_client, monkeypatch, source, command):
+    args = ["repo", *command]
+    if source == "subcommand_flag":
+        args += ["-R", "github.com/owner/repo"]
+    elif source == "global_flag":
+        args = ["-R", "github.com/owner/repo", *args]
+    else:
+        monkeypatch.setattr("gitcode_cli.commands.repo._origin_repository_arg", lambda: "git@github.com:owner/repo.git")
+    result = runner.invoke(main, args)
+    assert result.exit_code != 0
+    assert "not supported" in result.output
+    assert mock_client.mock_calls == []
+
+
+@pytest.mark.parametrize(
+    "repository", ["owner/", "/repo", "owner/..", "owner/%2e%2e", "owner/repo?extra", "owner/a%2fb"]
+)
+def test_invalid_repository_segment_cannot_reach_transport(runner, mock_client, repository):
+    result = runner.invoke(main, ["repo", "delete", repository, "--yes"])
+    assert result.exit_code != 0
+    assert "Invalid repository format" in result.output
+    assert mock_client.mock_calls == []
+
+
+@pytest.mark.parametrize("error", [OSError("missing git"), subprocess.CalledProcessError(1, "git")])
+def test_missing_origin_fails_before_api_request(runner, mock_client, error):
+    with patch("gitcode_cli.commands.repo.subprocess.run", side_effect=error):
+        result = runner.invoke(main, ["repo", "delete", "--yes"])
+    assert result.exit_code != 0
+    assert "Unable to infer repo" in result.output
+    assert mock_client.mock_calls == []
+
+
+def test_rename_never_prints_origin_credentials(runner, mock_client, mock_repo):
+    origin = "https://example-user:synthetic-credential@gitcode.com/owner/repo.git"
+    with patch(
+        "gitcode_cli.commands.repo.subprocess.run",
+        side_effect=[MagicMock(stdout=origin + "\n", returncode=0), MagicMock(returncode=0)],
+    ) as mock_run:
+        result = runner.invoke(main, ["repo", "rename", "new-name", "--yes"])
+    assert result.exit_code == 0
+    assert "Updated the 'origin' remote URL." in result.output
+    assert "example-user" not in result.output
+    assert "synthetic-credential" not in result.output
+    assert mock_run.call_args_list[1].args[0][-1] == origin.replace("/repo.git", "/new-name.git")

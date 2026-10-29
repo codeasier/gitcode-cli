@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from typing import Any
+from urllib.parse import unquote
 
 import click
 
@@ -10,7 +11,7 @@ from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
 from ..helptext import GCSectionGroup, set_gc_help
-from ..repo import parse_remote_url_with_host, parse_repo_with_host, resolve_repo
+from ..repo import parse_remote_url_with_host, parse_repo_with_host
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -62,13 +63,36 @@ def _parse_repository_arg(repository: str) -> tuple[str, str]:
         raise click.ClickException(
             f"Repository host '{host}' is not supported; gc works with gitcode.com repositories."
         )
+    for segment in (owner, name):
+        decoded = unquote(segment)
+        if (
+            not decoded
+            or decoded in {".", ".."}
+            or any(char in decoded for char in "/\\?#")
+            or any(char.isspace() or ord(char) < 32 for char in decoded)
+        ):
+            raise click.ClickException(
+                "Invalid repository format. Owner and repository must be nonempty path segments."
+            )
     return owner, name
 
 
+def _origin_repository_arg() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RepoResolutionError("Unable to infer repo from current directory. Use -R OWNER/REPO.") from exc
+    return result.stdout.strip()
+
+
 def _resolve_repo_target(app, repo_name: str | None, repository: str | None) -> tuple[str, str]:
-    if repository:
-        return _parse_repository_arg(repository)
-    return resolve_repo(repo_name or app.repo)
+    # Do not use resolve_repo here: it discards hosts before they can be checked.
+    return _parse_repository_arg(repository or repo_name or app.repo or _origin_repository_arg())
 
 
 def _normalize_repo_owner(item: dict) -> Any:
@@ -175,10 +199,10 @@ def _update_origin_remote(owner: str, repo: str, new_name: str) -> None:
         return
     url = result.stdout.strip()
     try:
-        _, origin_owner, origin_repo = parse_remote_url_with_host(url)
+        origin_host, origin_owner, origin_repo = parse_remote_url_with_host(url)
     except RepoResolutionError:
         return
-    if (origin_owner, origin_repo) != (owner, repo):
+    if not _is_gitcode_host(origin_host) or (origin_owner, origin_repo) != (owner, repo):
         return
     new_url = _replace_repo_in_url(url, repo, new_name)
     try:
@@ -190,7 +214,7 @@ def _update_origin_remote(owner: str, repo: str, new_name: str) -> None:
         )
     except (OSError, subprocess.CalledProcessError):
         return
-    safe_echo(f"Updated the 'origin' remote URL to {new_url}")
+    safe_echo("Updated the 'origin' remote URL.")
 
 
 def _repo_url(item: dict | None, owner: str, repo: str) -> str:
@@ -526,7 +550,7 @@ def repo_edit(
 @click.pass_context
 def repo_rename(ctx: click.Context, repo_name: str | None, new_name: str | None, yes: bool) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_repo_target(app, repo_name, None)
     new_name = prompt_if_missing(new_name, "New repository name")
     if not yes and not click.confirm(f"Rename {owner}/{repo} to {new_name}?", default=False):
         raise click.ClickException("Aborted.")

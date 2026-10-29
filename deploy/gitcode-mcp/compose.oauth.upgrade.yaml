@@ -1,0 +1,21 @@
+# Upgrade override ONLY: combine with compose.oauth.yaml, never with compose.yaml.
+# Resolve this name from the old container's /var/lib/gitcode-mcp mount. Do not
+# guess a project prefix, run `volume create`, or use this override for a new install.
+services:
+  gitcode-mcp:
+    # An existing but wrong/empty volume must not silently initialize a new store.
+    # Compose escapes $$ so the container shell, not Compose, reads this variable.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ ! -s "$$GITCODE_MCP_OAUTH_DATABASE" ]; then
+          printf '%s\n' 'Upgrade refused: the existing OAuth database is missing or empty.' >&2
+          exit 1
+        fi
+        exec gitcode-mcp --transport streamable-http --host 0.0.0.0 --port 8765
+
+volumes:
+  oauth-data:
+    external: true
+    name: ${GITCODE_MCP_OAUTH_VOLUME_NAME:?Set the verified existing Docker volume name; do not create an empty replacement}

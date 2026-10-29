@@ -82,12 +82,50 @@ def _origin_host() -> str | None:
 _REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
 
 
+# Values of these options must never become a repository routing hint.
+_REPO_VALUE_OPTIONS = {
+    "-R",
+    "--repo",
+    "--json",
+    "-q",
+    "--jq",
+    "-t",
+    "--template",
+    "--org",
+    "--fork-name",
+    "-d",
+    "--description",
+    "--homepage",
+    "--default-branch",
+    "--visibility",
+}
+
+
 def _positional_repo_host(argv: Sequence[str]) -> str | None:
-    """Extract a host from the repository positional of a repo subcommand."""
+    """Extract the repo positional, not a preceding option's value."""
     tokens = _command_tokens(argv)
-    if len(tokens) < 3 or tokens[0] != "repo" or tokens[1] not in _REPO_POSITIONAL_COMMANDS:
+    if len(tokens) < 2 or tokens[0] != "repo" or tokens[1] not in _REPO_POSITIONAL_COMMANDS:
         return None
-    candidate = tokens[2]
+    # Global -R options have already been accounted for by select_target.
+    # Starting after the subcommand preserves option/argument boundaries.
+    index = list(argv).index(tokens[1], list(argv).index("repo") + 1) + 1
+    while index < len(argv):
+        candidate = argv[index]
+        if candidate == "--":
+            index += 1
+            if index == len(argv):
+                return None
+            candidate = argv[index]
+            break
+        if candidate in _REPO_VALUE_OPTIONS:
+            index += 2
+            continue
+        if candidate.startswith("-"):
+            index += 1
+            continue
+        break
+    else:
+        return None
     for parser in (parse_remote_url_with_host, parse_repo_with_host):
         try:
             host, _, _ = parser(candidate)

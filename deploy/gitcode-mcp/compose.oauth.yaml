@@ -1,0 +1,40 @@
+# Standalone OAuth deployment. Do not merge with compose.yaml: that file supplies PATs.
+services:
+  gitcode-mcp:
+    build:
+      context: ../..
+      dockerfile: deploy/gitcode-mcp/Dockerfile
+    environment:
+      GITCODE_MCP_AUTH_MODE: oauth
+      GITCODE_MCP_PUBLIC_URL: ${GITCODE_MCP_PUBLIC_URL:?Set the public HTTPS origin}
+      GITCODE_OAUTH_CLIENT_ID: ${GITCODE_OAUTH_CLIENT_ID:?Set the GitCode OAuth application client ID}
+      GITCODE_OAUTH_CLIENT_SECRET: ${GITCODE_OAUTH_CLIENT_SECRET:?Set the GitCode OAuth application secret}
+      GITCODE_OAUTH_SCOPES: ${GITCODE_OAUTH_SCOPES:-}
+      GITCODE_MCP_OAUTH_CLIENT_ID: ${GITCODE_MCP_OAUTH_CLIENT_ID:?Set the ChatGPT MCP OAuth client ID}
+      GITCODE_MCP_OAUTH_CLIENT_SECRET: ${GITCODE_MCP_OAUTH_CLIENT_SECRET:?Set an independent MCP OAuth client secret}
+      GITCODE_MCP_OAUTH_REDIRECT_URIS: ${GITCODE_MCP_OAUTH_REDIRECT_URIS:-}
+      GITCODE_MCP_OAUTH_ENCRYPTION_KEY: ${GITCODE_MCP_OAUTH_ENCRYPTION_KEY:?Set a persistent Fernet encryption key}
+      GITCODE_MCP_OAUTH_DATABASE: /var/lib/gitcode-mcp/oauth.sqlite3
+      GITCODE_MCP_OAUTH_ALLOWED_USER_IDS: ${GITCODE_MCP_OAUTH_ALLOWED_USER_IDS:-}
+      GITCODE_MCP_ALLOWED_REPOS: ${GITCODE_MCP_ALLOWED_REPOS:-}
+      GITCODE_MCP_READ_ONLY: ${GITCODE_MCP_READ_ONLY:-true}
+      GITCODE_MCP_ALLOWED_HOSTS: ${GITCODE_MCP_ALLOWED_HOSTS:?Set the exact public HTTP Host allowlist}
+      GITCODE_MCP_ALLOWED_ORIGINS: ${GITCODE_MCP_ALLOWED_ORIGINS:?Set the explicit allowed HTTP origins}
+      GITCODE_MCP_TIMEOUT: ${GITCODE_MCP_TIMEOUT:-30}
+      GITCODE_MCP_MAX_RESPONSE_BYTES: ${GITCODE_MCP_MAX_RESPONSE_BYTES:-2000000}
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - oauth-data:/var/lib/gitcode-mcp
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    restart: unless-stopped
+
+volumes:
+  oauth-data:

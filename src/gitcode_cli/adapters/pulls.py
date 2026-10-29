@@ -8,6 +8,7 @@ import click
 from ..errors import GCError
 from ..services import IssueService, PullRequestService, UserService
 from ._milestones import milestone_number, resolve_pr_milestone
+from ._pr_labels import PRLabelPlan
 from ._pr_people import PRPeoplePlan
 from .base import AdapterActionResult
 from .capabilities import capability_message
@@ -318,14 +319,18 @@ class PullRequestAdapter:
             remove_assignees=(remove_assignee,) if remove_assignee is not None else (),
             remove_reviewers=(remove_reviewer,) if remove_reviewer is not None else (),
         )
+        labels = PRLabelPlan(self.service, add=add_label, remove=remove_label)
         before = people.read(owner, repo, number, partial=False) if people.fields else None
+        if labels.requested:
+            if before is None:
+                before = labels.read(owner, repo, number, partial=False)
+            else:
+                labels.preflight(before, number)
         data = {
             k: v
             for k, v in {
                 "title": title,
                 "body": body,
-                "labels": add_label,
-                "unset_labels": remove_label,
                 "milestone_number": resolved_milestone,
             }.items()
             if v is not None
@@ -334,11 +339,17 @@ class PullRequestAdapter:
             # Legacy clearing behavior is deliberately outside this setting-only repair.
             data["milestone"] = ""
         item = self.service.update(owner, repo, number, **data) if data else before
+        labels_changed = labels.apply(owner, repo, number, before) if labels.requested and before is not None else False
         if before is not None:
-            item = people.apply(owner, repo, number, before, force_read=bool(data))
+            if people.fields:
+                item = people.apply(owner, repo, number, before, force_read=bool(data) or labels_changed)
+            elif labels.requested:
+                item = labels.read(owner, repo, number, partial=True) if data or labels_changed else before
+        if labels.requested and before is not None:
+            item = labels.confirm(number, before, item)
         if resolved_milestone is not None:
             item = self._confirm_milestone(
-                owner, repo, number, resolved_milestone, snapshot=item if people.fields else None
+                owner, repo, number, resolved_milestone, snapshot=item if people.fields or labels.requested else None
             )
         return item
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import quote
 
 from ..client import GitCodeClient
 from ..errors import APIError
@@ -73,6 +74,33 @@ class PullRequestService:
         return self.client.post(
             f"/repos/{owner}/{repo}/pulls/{number}/assignees", json={"assignees": _people_logins(logins)}
         )
+
+    def add_labels(self, owner: str, repo: str, number: int, names: list[str]) -> Any | None:
+        if (
+            not isinstance(names, list)
+            or not names
+            or any(
+                not isinstance(name, str)
+                or not name.strip()
+                or any(ord(character) < 32 or ord(character) == 127 for character in name)
+                for name in names
+            )
+        ):
+            raise APIError("PR label additions require explicit nonempty label names.")
+        # This endpoint documents a JSON array, not the object used by generic PR PATCH.
+        payload: Any = names
+        return self.client.post(f"/repos/{owner}/{repo}/pulls/{number}/labels", json=payload)
+
+    def remove_label(self, owner: str, repo: str, number: int, name: str) -> Any | None:
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or "," in name
+            or name in {".", ".."}
+            or any(ord(character) < 32 or ord(character) == 127 for character in name)
+        ):
+            raise APIError("PR label removal requires one explicit unambiguous label name.")
+        return self.client.delete(f"/repos/{owner}/{repo}/pulls/{number}/labels/{quote(name, safe='')}")
 
     def remove_assignees(self, owner: str, repo: str, number: int, logins: str) -> Any | None:
         return self.client.delete(

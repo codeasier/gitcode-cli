@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-10-29",
+  "provenance": "Official documentation reviewed manually; synthetic offline examples, not a live recording.",
+  "add": {
+    "source": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-labels/",
+    "method": "POST",
+    "path": "/api/v5/repos/:owner/:repo/pulls/:number/labels",
+    "json": ["help wanted"],
+    "note": "Creates/adds PR labels; replacement is a separate PUT endpoint."
+  },
+  "remove": {
+    "source": "https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-number-labels-name/",
+    "method": "DELETE",
+    "path": "/api/v5/repos/:owner/:repo/pulls/:number/labels/:name",
+    "json": null,
+    "note": "The API documents comma-separated batch names. The service deliberately deletes one encoded, unambiguous name per request."
+  },
+  "readback_source": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/"
+}

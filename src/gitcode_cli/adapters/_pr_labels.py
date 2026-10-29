@@ -64,6 +64,8 @@ class PRLabelPlan:
     def read(self, owner: str, repo: str, number: int, *, partial: bool) -> dict[str, Any]:
         try:
             item = self.service.get(owner, repo, number)
+            if not isinstance(item, dict):
+                raise ValueError("missing PR object")
             _snapshot(item, number)
         except (GCError, ValueError) as exc:
             raise self._error(number, partial=partial) from exc

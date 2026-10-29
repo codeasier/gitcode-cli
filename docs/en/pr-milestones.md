@@ -19,13 +19,13 @@ fails or the milestone is absent/different, the mutation may already have
 completed. The error identifies the PR number when available; verify its state
 before retrying. There is no automatic repeat, rollback or second PR creation.
 
-## Explicitly outside this repair
+## Related behavior and validation boundaries
 
-- `pr edit --remove-milestone` retains its legacy behavior. Its clearing value is
-  **not verified or fixed here**; do not infer that setting support establishes
-  clearing support. Neither zero nor null is introduced as a guessed sentinel.
-- Assignee/reviewer role mappings and their create/edit fields remain separate
-  open findings in #171. This change does not claim they are fixed.
+- `pr edit --remove-milestone` currently fails before any request because no
+  clearing contract has been verified; see [unverified mutations](unverified-mutations.md).
+  Neither zero nor null is introduced as a guessed sentinel.
+- Assignees and approval reviewers use distinct native role endpoints and
+  readback checks; see [PR people](pr-people.md). Assignment is not approval.
 - Offline tests are not evidence of live GitCode acceptance or permissions.
 
 Public contracts checked on 2026-10-29:

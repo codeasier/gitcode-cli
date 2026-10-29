@@ -42,7 +42,7 @@ A dot's cloud computer, a connected computer, a delegated Codex cloud task, and 
 ## Runtime requirements
 
 - Python 3.11 or newer.
-- The package's pinned MCP SDK and GitCode client dependencies, installed with the package; this migration retains `pygitcode==0.1.6`.
+- The package's pinned MCP SDK and GitCode client dependencies, installed with the package; the current source pins `pygitcode==0.1.7`. The immutable legacy migration seed and rollback retain `pygitcode==0.1.6`; see [migration guidance](migration.md).
 - Runtime package `codeasier-gitcode-mcp` version `0.3.0`, with the unchanged `gitcode-mcp` and `gitcode-clone` commands. This is distinct from the repository's `gc` CLI version.
 - Git for `gitcode-clone` and native Git workflows; API file publishing does not require Git.
 - For local stdio/static-bearer mode: an authorized GitCode token on the MCP host.

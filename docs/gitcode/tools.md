@@ -1,5 +1,7 @@
 # GitCode MCP tools
 
+For the frozen GitHub workflow comparison, source/release/connection evidence and explicit gaps, see the [versioned capability matrix](capability-matrix.md).
+
 Use the live tool schemas as the authority for optional fields. All tools are namespaced with `gitcode_`, use explicit `owner` and `repo` arguments, and enforce the server's repository allowlist. Issue tools use `issue_number`; PR tools use `pull_number`.
 
 The complete catalog has **31 tools: 19 reads and 12 writes**. Read-only mode, or an OAuth grant without `gitcode:write`, exposes only the 19 read tools.

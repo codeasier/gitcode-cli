@@ -114,9 +114,7 @@ def test_pr_review_has_documented_force_boolean_and_safe_default(client, strict_
 
 
 def test_issue_list_preserves_query_values_and_omits_none(client, strict_http):
-    route = _contract_route(
-        strict_http, ISSUE_LIST, query={"state": "open", "page": 2, "per_page": 10}, response=[]
-    )
+    route = _contract_route(strict_http, ISSUE_LIST, query={"state": "open", "page": 2, "per_page": 10}, response=[])
 
     result = IssueService(client).list("owner", "repo", state="open", page=2, per_page=10, labels=None)
 

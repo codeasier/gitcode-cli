@@ -40,9 +40,7 @@ def repositories(tmp_path, monkeypatch):
     git("init", "--template=", "--bare", other, cwd=tmp_path)
     git("init", "--template=", local, cwd=tmp_path)
     git("config", "core.hooksPath", "")
-    git(
-        "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "seed"
-    )
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "seed")
     sha = git("rev-parse", "HEAD").stdout.strip()
     for remote in (source, other):
         git("push", remote, "HEAD:refs/heads/feature")
@@ -62,6 +60,50 @@ def run_operation(operation):
 
 def assert_branch(git, repository, sha):
     assert git("rev-parse", "--verify", "refs/heads/feature", cwd=repository).stdout.strip() == sha
+
+
+@pytest.mark.parametrize("operation", ["push", "fetch"])
+def test_command_scoped_remote_operates_without_saved_configuration(repositories, operation):
+    git, source, other, local, head = repositories
+    before = (local / ".git" / "config").read_bytes()
+
+    assert run_operation(operation) == ("feature" if operation == "push" else "reviewed-feature")
+
+    assert git("remote").stdout == ""
+    assert (local / ".git" / "config").read_bytes() == before
+    assert_branch(git, other, head.sha)
+    if operation == "push":
+        assert git("show-ref", "--verify", "refs/heads/feature", cwd=source, check=False).returncode != 0
+    else:
+        assert_branch(git, source, head.sha)
+        assert git("rev-parse", "HEAD").stdout.strip() == head.sha
+
+
+@pytest.mark.parametrize("operation", ["push", "fetch"])
+@pytest.mark.parametrize("listing", ["missing", "duplicate", "other-name"])
+def test_effective_listing_requires_one_exact_remote_and_direction(repositories, monkeypatch, operation, listing):
+    git, source, other, local, head = repositories
+    original = pr_git._git
+
+    def invalid_listing(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[-2:] == ("remote", "-v"):
+            lines = [line for line in result.stdout.splitlines() if line.endswith(f" ({operation})")]
+            assert len(lines) == 1
+            if listing == "missing":
+                result.stdout = ""
+            elif listing == "duplicate":
+                result.stdout = "\n".join(lines * 2)
+            else:
+                result.stdout = lines[0].replace("\t", "-different\t", 1)
+        return result
+
+    monkeypatch.setattr(pr_git, "_git", invalid_listing)
+    with pytest.raises(GCError, match="URL rewriting"):
+        run_operation(operation)
+    assert_branch(git, source, head.sha)
+    assert_branch(git, other, head.sha)
+    assert not (local / ".git" / "FETCH_HEAD").exists()
 
 
 @pytest.mark.parametrize("operation", ["push", "fetch"])
@@ -116,8 +158,8 @@ def test_checked_destination_stays_pinned_when_rewrites_change(repositories, mon
     def change_after_check(*args, **kwargs):
         nonlocal changed
         result = original(*args, **kwargs)
-        if "get-url" in args:
-            assert result.stdout.splitlines() == [source.as_uri()]
+        if args[-2:] == ("remote", "-v"):
+            assert f"\t{source.as_uri()} ({operation})" in result.stdout
             # Install multiple rewrite families, including a broad alias-prefix
             # rule. Pinning must select its exact alias and never rewrite twice.
             rules = [

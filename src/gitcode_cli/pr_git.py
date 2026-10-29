@@ -52,9 +52,14 @@ def _git_source(source: PRHead, command: str, refspec: str, *options: str) -> No
     if occupied.returncode != 1:
         raise GCError("Unable to reserve a private Git remote; branch operation refused.")
     configured = ("-c", f"remote.{remote}.url={source.url}")
-    direction = ("--push",) if command == "push" else ()
-    effective = _git(*configured, "remote", "get-url", *direction, "--all", remote)
-    if effective.stdout.splitlines() != [source.url]:
+    # get-url requires a repository-persisted remote in Git 2.56, so it
+    # rejects command-scoped remotes. The no-network verbose listing expands
+    # the same URL rules and also includes command-scoped configuration.
+    direction = "push" if command == "push" else "fetch"
+    marker = f" ({direction})"
+    effective = _git(*configured, "remote", "-v")
+    urls = [line for line in effective.stdout.splitlines() if line.startswith(f"{remote}\t") and line.endswith(marker)]
+    if urls != [f"{remote}\t{source.url}{marker}"]:
         # The rewritten URL can contain credentials. Never include it in errors.
         raise GCError("Git URL rewriting changes the verified PR source; branch operation refused.")
     alias = remote + ":"

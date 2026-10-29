@@ -1,0 +1,21 @@
+{
+  "category": "Repositories",
+  "name": "Fork a repository",
+  "docUrl": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-forks/",
+  "method": "POST",
+  "path": "/api/v5/repos/{owner}/{repo}/forks",
+  "queryParams": [
+    {"name": "access_token", "type": "string", "required": true}
+  ],
+  "requestBodyFields": [
+    {"name": "organization", "type": "string", "required": false},
+    {"name": "name", "type": "string", "required": false},
+    {"name": "path", "type": "string", "required": false}
+  ],
+  "responseExample": {
+    "id": 42,
+    "full_name": "my-org/repo",
+    "namespace": {"path": "my-org", "full_path": "my-org", "kind": "group"}
+  },
+  "notes": "Targeted public-contract extraction checked on 2026-10-29. Response values are synthetic; this is not live-provider evidence. Omitting organization requests the personal namespace."
+}

@@ -111,7 +111,7 @@ def test_write_failure_is_not_swallowed_or_retried(client, error):
     client.patch.assert_called_once_with("/repos/owner/repo/pulls/42", json={"draft": False})
 
 
-@pytest.mark.parametrize("error", [APIError("Read refused", 403), NetworkError("Read timeout")])
+@pytest.mark.parametrize("error", [APIError("Read refused", 403), NetworkError("Read timeout"), ValueError("Bad JSON")])
 def test_readback_failure_reports_possible_partial_success_without_retry(client, error):
     client.get.side_effect = [{"draft": True}, error]
 

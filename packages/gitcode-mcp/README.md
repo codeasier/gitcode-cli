@@ -75,3 +75,10 @@ upgrading an existing OAuth deployment. Repository migration does not authorize
 a production switch, change the state schema or encryption key, or require new
 user grants. A destination CI pass is required before switching a downstream
 bridge to its exact commit or artifact.
+
+## Independent release preparation
+
+See the [release guide](../../docs/gitcode/releases.md) for `mcp-vX.Y.Z` tags,
+artifact gates, and the separately authorized PyPI setup. Manual release-workflow
+runs validate only; they cannot publish. Merging this workflow does not publish a
+package, change downstream pins, or deploy a server.

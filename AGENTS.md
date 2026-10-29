@@ -65,7 +65,7 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 
 Use the package directory and its configuration, as `.github/workflows/gitcode-mcp.yml` does: install `.[dev]` there, run `python -I -m pytest -c pyproject.toml tests`, and use `python -m ruff check --config pyproject.toml .` / `python -m ruff format --check --config pyproject.toml .`. Clear inherited `PYTEST_ADDOPTS`; do not apply the CLI coverage gate or its Python 3.9 settings to MCP.
 
-- MCP CI is path-filtered to `packages/gitcode-mcp/**`, `deploy/gitcode-mcp/**`, `docs/gitcode/**` and its workflow file. A CLI-only or AGENTS-only PR does not automatically exercise it.
+- MCP CI is path-filtered to `packages/gitcode-mcp/**`, `deploy/gitcode-mcp/**`, `docs/gitcode/**`, its workflow file and `.github/workflows/publish-mcp.yml`. A CLI-only or AGENTS-only PR does not automatically exercise it.
 - Its Python 3.11–3.13 jobs lint, test, build wheel/sdist, clean-install both distributions and verify offline migration compatibility against the immutable legacy source. The separate named-volume job checks Compose volume reuse and rollback with synthetic state.
 - Acceptance script paths are `packages/gitcode-mcp/scripts/migration_acceptance.py` and `volume_acceptance.py`; see [migration guidance](docs/gitcode/migration.md). CI acceptance is not a production deployment or live OAuth connection test. Do not use real credentials, production state or volumes for it.
 
@@ -75,7 +75,7 @@ Use the package directory and its configuration, as `.github/workflows/gitcode-m
 - A `v*` tag fails to publish unless `CHANGELOG.md` contains a non-empty `## [x.y.z]` section for that version — the workflow validates it.
 - `dev<commit-hash>` tags build `{base}.devYYYYMMDD+{hash}` versions to TestPyPI (`publish-dev.yml`), deriving the base from the latest `v*` tag.
 
-- These tag-triggered workflows publish the CLI, not the MCP distribution. The current MCP workflow builds and uploads artifacts without publication; its package version and dependency pin are separate. Follow [MCP package guidance](packages/gitcode-mcp/README.md) and [deployment guidance](docs/gitcode/deployment.md); code review or CI does not authorize tagging, publishing, credential changes or a production switch.
+- These `v*` / `dev*` tag workflows publish the CLI, not the MCP distribution. MCP publication preparation lives in `.github/workflows/publish-mcp.yml` for separately authorized `mcp-vX.Y.Z` tag creation. It reuses full MCP acceptance and requires an opt-in, pre-existing protected environment, independent reviewer, exact source/ref identity and the verified producer's immutable artifact ID/checksums. Manual runs validate only; publication remains disabled unless an operator separately configures the documented prerequisites. Package version and dependency pin stay independent. Follow the [MCP release guide](docs/gitcode/releases.md), [package guidance](packages/gitcode-mcp/README.md) and [deployment guidance](docs/gitcode/deployment.md); code review or CI does not authorize tagging, publishing, credential/security-setting changes or a production switch.
 
 ## Known misleading artifacts
 

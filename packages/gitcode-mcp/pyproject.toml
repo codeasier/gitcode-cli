@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<10", "ruff>=0.11,<1", "build>=1.2,<2"]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1", "build>=1.2,<2", "packaging>=24,<26"]
 
 [project.scripts]
 gitcode-mcp = "gitcode_mcp.__main__:main"

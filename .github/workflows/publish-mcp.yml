@@ -1,0 +1,210 @@
+name: Publish GitCode MCP
+
+on:
+  push:
+    tags: ['mcp-v*']
+  # A manual run is validation only, even when its selected ref is a tag.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: MCP / Release source gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      source-sha: ${{ steps.metadata.outputs.source-sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Validate event and current release ref before executing source helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I - <<'PYCODE'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          assert os.environ["GITHUB_REPOSITORY"] == "codeasier/gitcode-cli"
+          event = os.environ["GITHUB_EVENT_NAME"]
+          assert event in {"push", "workflow_dispatch"}
+          if event == "push":
+              payload = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+              assert payload.get("created") is True
+              assert payload.get("deleted") is False and payload.get("forced") is False
+              assert payload.get("before") == "0" * 40
+              assert os.environ["GITHUB_REF_TYPE"] == "tag"
+              assert re.fullmatch(r"refs/tags/mcp-v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", os.environ["GITHUB_REF"])
+          PYCODE
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            git merge-base --is-ancestor HEAD origin/main
+            live="$(git ls-remote --exit-code https://github.com/codeasier/gitcode-cli.git "$GITHUB_REF" "$GITHUB_REF^{}")"
+            resolved="$(printf '%s\n' "$live" | awk -v ref="$GITHUB_REF" '
+              NF != 2 || length($1) != 40 || $1 ~ /[^0-9a-f]/ {bad=1; next}
+              $2 == ref {raw=$1; raw_count++; next}
+              $2 == ref "^{}" {peeled=$1; peeled_count++; next}
+              {bad=1}
+              END {
+                if (bad || raw_count != 1 || peeled_count > 1) exit 1
+                print peeled_count ? peeled : raw
+              }')"
+            test "$resolved" = "$(git rev-parse HEAD)"
+          fi
+      - run: python -m pip install 'packaging>=24,<26'
+      - name: Validate checked-in version; never rewrite it from a tag
+        id: metadata
+        env:
+          PUBLISH_ENABLED: ${{ vars.MCP_PYPI_PUBLISH_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=packages/gitcode-mcp/scripts/release_check.py
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$GITHUB_REF_TYPE" = tag
+            version="$(python -I "$script" source --tag "$GITHUB_REF_NAME")"
+            # This repository-level opt-in is set by an authorized operator only
+            # AFTER the protected environment and PyPI trust mapping exist.
+            # The public API check below verifies GitHub environment settings;
+            # the PyPI trust mapping is independently checked by the operator.
+            test "$PUBLISH_ENABLED" = true || {
+              echo 'Publication is not enabled; follow docs/gitcode/releases.md.' >&2
+              exit 1
+            }
+            python -I packages/gitcode-mcp/scripts/release_environment.py
+          else
+            version="$(python -I "$script" source)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "source-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  acceptance:
+    name: MCP release acceptance
+    needs: source
+    uses: ./.github/workflows/gitcode-mcp.yml
+
+  authorization:
+    name: MCP / Recheck release protection after acceptance
+    needs: [source, acceptance]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Refuse missing or weakened protection before scheduling the environment job
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.source.outputs.source-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          live="$(git ls-remote --exit-code https://github.com/codeasier/gitcode-cli.git "$GITHUB_REF" "$GITHUB_REF^{}")"
+          resolved="$(printf '%s\n' "$live" | awk -v ref="$GITHUB_REF" '
+              NF != 2 || length($1) != 40 || $1 ~ /[^0-9a-f]/ {bad=1; next}
+              $2 == ref {raw=$1; raw_count++; next}
+              $2 == ref "^{}" {peeled=$1; peeled_count++; next}
+              {bad=1}
+              END {
+                if (bad || raw_count != 1 || peeled_count > 1) exit 1
+                print peeled_count ? peeled : raw
+              }')"
+          test "$resolved" = "$EXPECTED_SOURCE_SHA"
+          python -I packages/gitcode-mcp/scripts/release_environment.py
+
+  publish:
+    name: Publish verified MCP artifacts
+    needs: [source, acceptance, authorization]
+    if: github.repository == 'codeasier/gitcode-cli' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mcp-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: mcp-pypi
+      url: https://pypi.org/p/codeasier-gitcode-mcp
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # No source checkout or rebuild in the privileged publication job.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Require immutable producer outputs before downloading anything
+        env:
+          RELEASE_ARTIFACT_ID: ${{ needs.acceptance.outputs.release-artifact-id }}
+          RELEASE_MANIFEST_SHA256: ${{ needs.acceptance.outputs.release-manifest-sha256 }}
+        run: |
+          python -I - <<'PYCODE'
+          import os
+          import re
+          assert re.fullmatch(r"[1-9][0-9]*", os.environ["RELEASE_ARTIFACT_ID"])
+          assert re.fullmatch(r"[0-9a-f]{64}", os.environ["RELEASE_MANIFEST_SHA256"])
+          PYCODE
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.acceptance.outputs.release-artifact-id }}
+          merge-multiple: true
+          path: release/
+      - name: Fail closed if downloaded artifacts differ from the accepted manifest
+        env:
+          EXPECTED_VERSION: ${{ needs.source.outputs.version }}
+          EXPECTED_MANIFEST_SHA256: ${{ needs.acceptance.outputs.release-manifest-sha256 }}
+          EXPECTED_SOURCE_SHA: ${{ needs.source.outputs.source-sha }}
+        run: |
+          python -I - <<'PYCODE'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path("release")
+          manifest = root / "manifest.json"
+          dist = root / "dist"
+          assert root.is_dir() and not root.is_symlink()
+          assert {p.name for p in root.iterdir()} == {"manifest.json", "dist"}
+          assert manifest.is_file() and not manifest.is_symlink() and manifest.stat().st_size < 65536
+          raw_manifest = manifest.read_bytes()
+          assert hashlib.sha256(raw_manifest).hexdigest() == os.environ["EXPECTED_MANIFEST_SHA256"]
+          data = json.loads(raw_manifest)
+          version = os.environ["EXPECTED_VERSION"]
+          assert set(data) == {"schema", "package", "version", "source_sha", "files"}
+          assert data["schema"] == 1 and data["package"] == "codeasier-gitcode-mcp"
+          assert data["version"] == version and data["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
+          names = {
+              f"codeasier_gitcode_mcp-{version}-py3-none-any.whl",
+              f"codeasier_gitcode_mcp-{version}.tar.gz",
+          }
+          assert dist.is_dir() and not dist.is_symlink()
+          assert set(data["files"]) == {p.name for p in dist.iterdir()} == names
+          for name in names:
+              path = dist / name
+              digest = data["files"][name]
+              assert path.is_file() and not path.is_symlink()
+              assert isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+              with path.open("rb") as stream:
+                  assert hashlib.file_digest(stream, "sha256").hexdigest() == digest
+          print("Verified exact source, version, filenames and SHA256 of both release artifacts.")
+          PYCODE
+      - name: Publish the exact distributions accepted in this run
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+        with:
+          packages-dir: release/dist/
+          skip-existing: false

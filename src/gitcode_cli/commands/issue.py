@@ -387,16 +387,15 @@ def issue_create(
         labels=labels,
         milestone=milestone,
     )
-    if json_fields is not None or jq_query:
-        item = created_output(
-            item,
-            kind="Issue",
-            json_fields=json_fields,
-            jq_query=jq_query,
-            project=project_issue,
-            read=lambda number: service.get(owner, repo, str(number)),
-            requested_milestone=milestone is not None,
-        )
+    item = created_output(
+        item,
+        kind="Issue",
+        json_fields=json_fields,
+        jq_query=jq_query,
+        project=project_issue,
+        read=lambda number: service.get(owner, repo, str(number)),
+        requested_milestone=milestone is not None,
+    )
     output_result(
         item,
         json_fields,

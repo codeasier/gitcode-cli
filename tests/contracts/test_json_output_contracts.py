@@ -185,6 +185,26 @@ def test_pr_milestone_confirmed_readback_is_reused_for_json(http_cli):
     assert [entry.request.method for entry in router.calls] == ["POST", "GET"]
 
 
+@pytest.mark.parametrize("number", [43, "43", None, True, "", "４２"])
+def test_pr_milestone_readback_rejects_wrong_or_missing_pr_identity(http_cli, number):
+    router, runner = http_cli
+    _route(
+        router,
+        "POST",
+        PREFIX + "/pulls",
+        {"number": 42},
+        payload={**_create_payload("pr"), "milestone_number": 7},
+    )
+    _route(router, "GET", PREFIX + "/pulls/42", {"number": number, "milestone": {"number": 7}})
+
+    result = _invoke(runner, "pr", "create", "number,milestone", "--milestone", "7")
+
+    assert result.exit_code == 1
+    assert "PR #42 may have been created or updated" in result.output
+    assert "no write was repeated" in result.output
+    assert [entry.request.method for entry in router.calls] == ["POST", "GET"]
+
+
 def test_org_repository_output_uses_paths_without_modifying_display_names(http_cli):
     router, runner = http_cli
     _route(

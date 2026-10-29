@@ -27,6 +27,13 @@ def test_complete_selected_fields_and_unknown_custom_fields_need_no_get():
     read.assert_not_called()
 
 
+@pytest.mark.parametrize("item", [None, [], {"number": "42", "state": "opened"}])
+def test_human_output_preserves_raw_response_without_readback(item):
+    read = MagicMock()
+    assert _output(item, read, fields=None) is item
+    read.assert_not_called()
+
+
 def test_create_pr_aliases_need_no_get():
     read = MagicMock()
     result = _output(

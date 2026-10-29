@@ -853,17 +853,15 @@ def pr_create(
     if dry_run:
         safe_echo(json.dumps(result.item or {}, indent=2, sort_keys=True))
         return
-    item = result.item
-    if json_fields is not None or jq_query:
-        item = created_output(
-            item,
-            kind="PR",
-            json_fields=json_fields,
-            jq_query=jq_query,
-            project=project_pr,
-            read=lambda number: service.get(owner, repo, number),
-            readback_done=milestone is not None,
-        )
+    item = created_output(
+        result.item,
+        kind="PR",
+        json_fields=json_fields,
+        jq_query=jq_query,
+        project=project_pr,
+        read=lambda number: service.get(owner, repo, number),
+        readback_done=milestone is not None,
+    )
     output_result(
         item,
         json_fields,

@@ -53,7 +53,9 @@ def created_output(
     read: Callable[[int], Any],
     readback_done: bool = False,
     requested_milestone: bool = False,
-) -> dict:
+) -> Any:
+    if json_fields is None and not jq_query:
+        return item
     unknown = f"{kind} creation may have succeeded, but its response cannot identify the result. "
     unknown += "Inspect the repository before retrying; no create request was repeated."
     if not isinstance(item, dict):

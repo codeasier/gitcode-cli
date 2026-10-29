@@ -794,7 +794,9 @@ class TestPrMerge:
     def test_pr_merge_requires_explicit_success(self, runner, mock_client, mock_repo, response, delete_branch):
         mock_client.get.return_value = {"head": {"ref": "feature"}}
         mock_client.put.return_value = response
-        args = ["pr", "merge", "42", *(["--delete-branch"] if delete_branch else [])]
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
 
         with patch("gitcode_cli.commands.pr.subprocess.run") as git:
             result = runner.invoke(main, args)
@@ -816,7 +818,9 @@ class TestPrMerge:
     def test_pr_merge_explicit_success_allows_cleanup(self, runner, mock_client, mock_repo, merged, delete_branch):
         mock_client.get.return_value = {"head": {"ref": "feature"}}
         mock_client.put.return_value = {"merged": merged, "message": "Merged"}
-        args = ["pr", "merge", "42", *(["--delete-branch"] if delete_branch else [])]
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
 
         with patch("gitcode_cli.commands.pr.subprocess.run") as git:
             result = runner.invoke(main, args)
@@ -834,7 +838,7 @@ class TestPrMerge:
     def test_pr_merge_success_has_safe_message_fallback(self, runner, mock_client, mock_repo, message):
         mock_client.put.return_value = {"merged": True, "message": message}
 
-        result = runner.invoke(main, ["pr", "merge", "42"])
+        result = runner.invoke(main, ["--token", "synthetic-merge-token", "pr", "merge", "42"])
 
         assert result.exit_code == 0
         assert result.output == "Merged pull request #42\n"
@@ -843,7 +847,7 @@ class TestPrMerge:
     def test_pr_merge_success_without_message(self, runner, mock_client, mock_repo):
         mock_client.put.return_value = {"merged": True}
 
-        result = runner.invoke(main, ["pr", "merge", "42"])
+        result = runner.invoke(main, ["--token", "synthetic-merge-token", "pr", "merge", "42"])
 
         assert result.exit_code == 0
         assert result.output == "Merged pull request #42\n"
@@ -853,7 +857,9 @@ class TestPrMerge:
     def test_pr_merge_exception_does_not_retry_or_delete(self, runner, mock_client, mock_repo, error, delete_branch):
         mock_client.get.return_value = {"head": {"ref": "feature"}}
         mock_client.put.side_effect = error
-        args = ["pr", "merge", "42", *(["--delete-branch"] if delete_branch else [])]
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
 
         with patch("gitcode_cli.commands.pr.subprocess.run") as git:
             result = runner.invoke(main, args)

@@ -20,7 +20,7 @@ from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
-from ..services import PullRequestService, UserService
+from ..services import IssueService, PullRequestService, UserService
 from ..utils import (
     get_current_git_branch,
     open_in_browser,
@@ -607,7 +607,7 @@ def pr_edit(
         ]
     ):
         raise click.UsageError("must specify at least one field to edit")
-    adapter = PullRequestAdapter(service)
+    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
     item = adapter.edit_pr(
         owner,
         repo,
@@ -847,7 +847,7 @@ def pr_create(
         else get_body_from_options(body=body, body_file=body_file, editor=editor)
     )
     service = PullRequestService(app.client())
-    adapter = PullRequestAdapter(service)
+    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
     result = adapter.create_pr(
         owner,
         repo,
@@ -1062,7 +1062,26 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
-    item = service.update(owner, repo, int(number), draft=undo)
+    current = service.get(owner, repo, int(number))
+    draft = current.get("draft") if isinstance(current, dict) else None
+    if type(draft) is not bool:
+        raise click.ClickException("Cannot determine the pull request's draft state; no update was attempted.")
+    if draft is undo:
+        state = "a draft" if undo else "ready for review"
+        safe_echo(f"Pull request #{safe_number(current, number)} is already {state}")
+        return
+    service.update(owner, repo, int(number), draft=undo)
+    try:
+        item = service.get(owner, repo, int(number))
+    except (GCError, ValueError) as exc:
+        raise click.ClickException(
+            "The draft-state update may have succeeded, but its result could not be read. "
+            "Verify the pull request before retrying."
+        ) from exc
+    if not isinstance(item, dict) or item.get("draft") is not undo:
+        raise click.ClickException(
+            "The requested draft state was not confirmed after the update. Verify the pull request before retrying."
+        )
     if undo:
         safe_echo(f"Converted pull request #{safe_number(item, number)} to draft")
     else:

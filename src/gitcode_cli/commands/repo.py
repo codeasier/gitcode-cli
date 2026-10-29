@@ -491,7 +491,7 @@ def repo_fork(
     safe_echo(f"✓ Created fork {full_name}")
     if clone:
         clone_url = None
-        if item:
+        if item and org is None:
             clone_url = item.get("http_url_to_repo")
         fork_owner, fork_name_part = full_name.rsplit("/", 1) if "/" in full_name else (owner, full_name)
         _git_clone(

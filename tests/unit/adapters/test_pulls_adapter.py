@@ -13,8 +13,16 @@ def service():
 
 
 @pytest.fixture
-def adapter(service):
-    return PullRequestAdapter(service)
+def milestone_service():
+    service = MagicMock()
+    service.list_milestones.return_value = [{"number": 1, "title": "v1"}]
+    return service
+
+
+@pytest.fixture
+def adapter(service, milestone_service):
+    service.get.return_value = {"number": 42, "milestone": {"number": 1}}
+    return PullRequestAdapter(service, milestone_service=milestone_service)
 
 
 class TestPullRequestAdapter:
@@ -177,7 +185,7 @@ class TestPullRequestAdapter:
             "labels": "bug,docs",
             "assignees": "carol,dave",
             "reviewers": "alice,bob",
-            "milestone": "v1",
+            "milestone_number": 1,
         }
 
     def test_merge_pr_maps_supported_gh_flags_to_gitcode_payload(self, adapter, service):
@@ -299,5 +307,5 @@ class TestPullRequestAdapter:
             unassignee="carol",
             unset_labels="wip",
             unset_reviewer="dave",
-            milestone="v1",
+            milestone_number=1,
         )

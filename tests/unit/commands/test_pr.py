@@ -632,6 +632,7 @@ class TestPrCreate:
         assert mock_client.post.call_args.kwargs["json"]["body"] == "resolved body"
 
     def test_pr_create_dry_run_prints_normalized_payload_without_post(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"number": 1, "title": "v1"}]
         result = runner.invoke(
             main,
             [
@@ -671,9 +672,13 @@ class TestPrCreate:
         assert '"labels": "bug,docs"' in result.output
         assert '"reviewers": "alice,bob"' in result.output
         assert '"assignees": "carol,dave"' in result.output
-        assert '"milestone": "v1"' in result.output
+        assert '"milestone_number": 1' in result.output
 
     def test_pr_create_repeatable_people_and_labels_are_normalized(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [
+            [{"number": 1, "title": "v1"}],
+            {"number": 42, "milestone": {"number": 1}, "html_url": "https://gitcode.com/owner/repo/pulls/42"},
+        ]
         result = runner.invoke(
             main,
             [
@@ -707,7 +712,7 @@ class TestPrCreate:
         assert mock_client.post.call_args.kwargs["json"]["labels"] == "bug,docs"
         assert mock_client.post.call_args.kwargs["json"]["reviewers"] == "alice,bob"
         assert mock_client.post.call_args.kwargs["json"]["assignees"] == "carol,dave"
-        assert mock_client.post.call_args.kwargs["json"]["milestone"] == "v1"
+        assert mock_client.post.call_args.kwargs["json"]["milestone_number"] == 1
 
     def test_pr_create_alias_new(self, runner, mock_client, mock_repo):
         result = runner.invoke(
@@ -1584,18 +1589,21 @@ class TestPrCheckout:
 
 class TestPrReady:
     def test_pr_ready(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"number": 42, "draft": True}, {"number": 42, "draft": False}]
         mock_client.patch.return_value = {"number": 42}
         result = runner.invoke(main, ["pr", "ready", "42"])
         assert result.exit_code == 0
         assert "Marked pull request #42 as ready for review" in result.output
 
     def test_pr_ready_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"draft": True}, {"draft": False}]
         mock_client.patch.return_value = {"iid": 42}
         result = runner.invoke(main, ["pr", "ready", "42"])
         assert result.exit_code == 0
         assert "Marked pull request #42 as ready for review" in result.output
 
     def test_pr_ready_undo_without_number_in_response(self, runner, mock_client, mock_repo):
+        mock_client.get.side_effect = [{"draft": False}, {"draft": True}]
         mock_client.patch.return_value = {"iid": 42}
         result = runner.invoke(main, ["pr", "ready", "42", "--undo"])
         assert result.exit_code == 0

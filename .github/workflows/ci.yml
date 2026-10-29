@@ -34,6 +34,15 @@ jobs:
           -m "not live and not destructive"
           --strict-markers --cov=gitcode_cli --cov-report=xml --cov-fail-under=90
 
+      - name: Clean-wheel offline acceptance (gc and gitcode)
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: >-
+          python tests/packaging/wheel_smoke.py
+          --checkout "$GITHUB_WORKSPACE"
+          --temp-parent "$RUNNER_TEMP"
+          --source-sha "$SOURCE_SHA"
+
       - name: Upload coverage
         if: matrix.python-version == '3.13'
         uses: codecov/codecov-action@v4

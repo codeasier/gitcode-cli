@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -196,6 +197,17 @@ def successful(result) -> str:
     return result.stdout
 
 
+def identity_output(result) -> str:
+    """Report only numeric diagnostic metadata, never arbitrary child output."""
+    if result.returncode != 0 or result.stderr:
+        lines = re.findall(r'File "<string>", line ([0-9]+)', result.stderr)
+        location = ",".join(lines[-3:]) or "unknown"
+        raise RuntimeError(
+            f"wheel identity failed (exit={result.returncode}, child_lines={location}, stderr={bool(result.stderr)})"
+        )
+    return result.stdout
+
+
 def check_entrypoint(executable: Path, root: Path, env: dict[str, str], version: str) -> int:
     """Exercise each actual installed console script, with no module substitute."""
     require(executable.is_file() and not executable.is_symlink(), "missing console script")
@@ -318,7 +330,7 @@ def main() -> None:
         require(probe.stderr == (BLOCKED + "\n") * 4, "unexpected guard probe output")
         identity = {**manifest, "checkout": str(checkout), "venv": str(target)}
         installed = json.loads(
-            successful(offline_run([str(python), "-c", IDENTITY], root, env, input_text=json.dumps(identity)))
+            identity_output(offline_run([str(python), "-c", IDENTITY], root, env, input_text=json.dumps(identity)))
         )
         scenarios = {
             name: check_entrypoint(target / "bin" / name, root, env, manifest["version"]) for name in ("gc", "gitcode")

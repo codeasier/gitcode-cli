@@ -167,6 +167,22 @@ def test_successful_requires_zero_exit_and_empty_stderr(code, stderr):
         smoke.successful(subprocess.CompletedProcess([], code, "output", stderr))
 
 
+def test_identity_failure_reports_only_exit_and_source_line():
+    stderr = 'private-prefix\n  File "<string>", line 27, in <module>\nAssertionError: private-detail\n'
+    with pytest.raises(RuntimeError, match=r"exit=1, child_lines=27, stderr=True") as error:
+        smoke.identity_output(subprocess.CompletedProcess([], 1, "private-stdout", stderr))
+    assert "private" not in str(error.value)
+
+
+def test_identity_stderr_without_traceback_is_still_fatal():
+    with pytest.raises(RuntimeError, match="exit=0, child_lines=unknown, stderr=True"):
+        smoke.identity_output(subprocess.CompletedProcess([], 0, "", "private-warning"))
+
+
+def test_identity_success_preserves_stdout():
+    assert smoke.identity_output(subprocess.CompletedProcess([], 0, "identity", "")) == "identity"
+
+
 @pytest.mark.parametrize("name", ["gc", "gitcode"])
 def test_missing_entrypoint_fails_instead_of_skipping(tmp_path, name):
     with pytest.raises(RuntimeError, match="missing console script"):

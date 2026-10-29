@@ -5,7 +5,9 @@ from typing import Any
 
 import click
 
-from ..services import PullRequestService, UserService
+from ..errors import GCError
+from ..services import IssueService, PullRequestService, UserService
+from ._milestones import milestone_number, resolve_pr_milestone
 from .base import AdapterActionResult
 from .capabilities import capability_message
 
@@ -67,9 +69,32 @@ def _comment_creation_key(comment: dict[str, Any]) -> tuple[datetime, int]:
 
 
 class PullRequestAdapter:
-    def __init__(self, service: PullRequestService, user_service: UserService | None = None):
+    def __init__(
+        self,
+        service: PullRequestService,
+        user_service: UserService | None = None,
+        *,
+        milestone_service: IssueService | None = None,
+    ):
         self.service = service
         self.user_service = user_service
+        self.milestone_service = milestone_service
+
+    def _confirm_milestone(self, owner: str, repo: str, number: int, expected: int) -> dict[str, Any]:
+        message = (
+            f"PR #{number} may have been created or updated, but its milestone was not confirmed. "
+            "Verify the PR before retrying; no write was repeated."
+        )
+        try:
+            item = self.service.get(owner, repo, number)
+        except (GCError, ValueError) as exc:
+            raise click.ClickException(message) from exc
+        if not isinstance(item, dict):
+            raise click.ClickException(message)
+        milestone = item.get("milestone")
+        if not isinstance(milestone, dict) or milestone_number(milestone.get("number")) != expected:
+            raise click.ClickException(message)
+        return item
 
     def last_owned_comment(self, owner: str, repo: str, number: int) -> dict[str, Any] | None:
         """Select the newest ordinary comment by verified identity, not response order."""
@@ -167,6 +192,7 @@ class PullRequestAdapter:
         assignees: tuple[str, ...] | None,
         dry_run: bool,
     ) -> AdapterActionResult:
+        resolved_milestone = resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
         payload = {
             "title": title,
             "body": body,
@@ -176,11 +202,20 @@ class PullRequestAdapter:
             "labels": _normalize_multi_values(labels),
             "assignees": _normalize_multi_values(assignees),
             "reviewers": _normalize_multi_values(reviewers),
-            "milestone": milestone,
+            "milestone_number": resolved_milestone,
         }
         if dry_run:
             return AdapterActionResult(item={k: v for k, v in payload.items() if v is not None})
-        return AdapterActionResult(item=self.service.create(owner, repo, **payload))
+        item = self.service.create(owner, repo, **payload)
+        if resolved_milestone is not None:
+            number = milestone_number(item.get("number")) if isinstance(item, dict) else None
+            if number is None:
+                raise click.ClickException(
+                    "PR creation may have succeeded, but its number is unavailable for milestone verification. "
+                    "Verify the repository before retrying; no write was repeated."
+                )
+            item = self._confirm_milestone(owner, repo, number, resolved_milestone)
+        return AdapterActionResult(item=item)
 
     def merge_pr(
         self,
@@ -243,6 +278,9 @@ class PullRequestAdapter:
         milestone: str | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
+        resolved_milestone = (
+            None if remove_milestone else resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
+        )
         data = {
             k: v
             for k, v in {
@@ -254,13 +292,17 @@ class PullRequestAdapter:
                 "unassignee": remove_assignee,
                 "unset_labels": remove_label,
                 "unset_reviewer": remove_reviewer,
-                "milestone": milestone,
+                "milestone_number": resolved_milestone,
             }.items()
             if v is not None
         }
         if remove_milestone:
+            # Legacy clearing behavior is deliberately outside this setting-only repair.
             data["milestone"] = ""
-        return self.service.update(owner, repo, number, **data)
+        item = self.service.update(owner, repo, number, **data)
+        if resolved_milestone is not None:
+            item = self._confirm_milestone(owner, repo, number, resolved_milestone)
+        return item
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:
         items = self.service.list(owner, repo, state="open")

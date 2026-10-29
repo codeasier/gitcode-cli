@@ -20,7 +20,7 @@ from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
-from ..services import PullRequestService, UserService
+from ..services import IssueService, PullRequestService, UserService
 from ..utils import (
     get_current_git_branch,
     open_in_browser,
@@ -607,7 +607,7 @@ def pr_edit(
         ]
     ):
         raise click.UsageError("must specify at least one field to edit")
-    adapter = PullRequestAdapter(service)
+    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
     item = adapter.edit_pr(
         owner,
         repo,
@@ -847,7 +847,7 @@ def pr_create(
         else get_body_from_options(body=body, body_file=body_file, editor=editor)
     )
     service = PullRequestService(app.client())
-    adapter = PullRequestAdapter(service)
+    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
     result = adapter.create_pr(
         owner,
         repo,

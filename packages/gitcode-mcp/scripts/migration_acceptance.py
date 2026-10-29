@@ -28,6 +28,8 @@ from typing import Any
 
 PACKAGE = "codeasier-gitcode-mcp"
 LEGACY_VERSION = "0.3.0"
+LEGACY_CLI_VERSION = "0.1.6"
+CLI_VERSION = "0.1.7"
 # Archive metadata is checked against source before installation. The installed
 # version can advance while the immutable legacy seed remains exactly 0.3.0.
 VERSION = importlib.metadata.version(PACKAGE)
@@ -84,15 +86,18 @@ def isolate_process() -> None:
     sys.addaudithook(deny_network)
 
 
-def installed_metadata(*, license_required: bool = False) -> None:
+def installed_metadata(*, legacy: bool = False, license_required: bool = False) -> None:
     import gitcode_mcp
 
     distribution = importlib.metadata.distribution(PACKAGE)
     assert distribution.version == gitcode_mcp.__version__ == VERSION
-    assert importlib.metadata.version("pygitcode") == "0.1.6"
+    # Both installations can be MCP 0.3.0; select the dependency by role, never
+    # infer legacy status from the MCP version or accept either pin everywhere.
+    cli_version = LEGACY_CLI_VERSION if legacy else CLI_VERSION
+    assert importlib.metadata.version("pygitcode") == cli_version
     assert distribution.metadata["Requires-Python"] == ">=3.11"
     requirements = [value.replace(" ", "") for value in distribution.requires or []]
-    assert "pygitcode==0.1.6" in requirements
+    assert f"pygitcode=={cli_version}" in requirements
     entries = {
         entry.name: entry.value
         for entry in distribution.entry_points
@@ -402,7 +407,7 @@ def main() -> None:
     parser.add_argument("argument", nargs="?")
     args = parser.parse_args()
     isolate_process()
-    installed_metadata()
+    installed_metadata(legacy=args.mode == "seed")
     if args.mode == "seed":
         assert VERSION == LEGACY_VERSION
     if args.mode == "_stdio":

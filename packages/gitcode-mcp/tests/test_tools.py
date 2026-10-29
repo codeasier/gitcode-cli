@@ -1,8 +1,10 @@
 import json
 from contextlib import contextmanager
+from urllib.parse import quote
 
 import httpx
 import pytest
+from gitcode_cli.services.files import FileService
 
 from gitcode_mcp.api import GitCodeAPI, GitCodeError
 from gitcode_mcp.tools import GitCodeTools
@@ -321,15 +323,29 @@ def test_tree_does_not_invent_upstream_completeness_signal():
     assert result["upstream_truncated"] is None
 
 
-def test_file_contents_preserves_encoding_and_literal_path():
-    response = {"encoding": "base64", "content": "aGVsbG8=", "path": "docs/a file.txt"}
+@pytest.mark.parametrize("path", ["docs/a file.txt", "文档/read me.txt"])
+@pytest.mark.parametrize("ref", [None, "feature/test"])
+def test_file_contents_preserves_encoding_and_literal_path(path, ref, monkeypatch):
+    calls = []
+    original = FileService.get
+
+    def delegate(service, owner, repo, path, **params):
+        calls.append((owner, repo, path, params))
+        return original(service, owner, repo, path, **params)
+
+    monkeypatch.setattr(FileService, "get", delegate)
+    response = {"encoding": "base64", "content": "aGVsbG8=", "path": path}
     with catalog(response) as (tools, requests):
         result = tools.call(
             "gitcode_get_file_contents",
-            {**REPOSITORY, "path": "docs/a file.txt", "ref": "feature/test"},
+            {**REPOSITORY, "path": path, "ref": ref},
         )
-    assert requests[0].url.raw_path.startswith(
-        b"/api/v5/repos/team/project/contents/docs/a%20file.txt?"
-    )
-    assert requests[0].url.params["ref"] == "feature/test"
+    assert len(requests) == 1
+    assert requests[0].url.raw_path.split(b"?", 1)[0] == (
+        "/api/v5/repos/team/project/contents/" + quote(path, safe="/")
+    ).encode("ascii")
+    expected = {} if ref is None else {"ref": ref}
+    assert dict(requests[0].url.params) == expected
+    assert calls == [("team", "project", path, expected)]
+    assert "private-token" not in requests[0].headers
     assert result["data"] == response

@@ -10,7 +10,6 @@ import base64
 import binascii
 import re
 from typing import Any, Literal
-from urllib.parse import quote
 
 from .api import GitCodeAPI, GitCodeError
 
@@ -18,7 +17,7 @@ MAX_FILE_BYTES = 256 * 1024
 MAX_ENCODED_FILE_CHARS = 4 * ((MAX_FILE_BYTES + 2) // 3)
 MAX_MESSAGE_BYTES = 4096
 _SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
-FILE_WRITE_METHODS = {"create_file": "POST", "update_file": "PUT", "delete_file": "DELETE"}
+FILE_WRITE_METHODS = {"create_file": "create", "update_file": "update", "delete_file": "delete"}
 
 
 def utf8_bytes(value: str, *, maximum: int) -> bytes:
@@ -89,7 +88,7 @@ def _response_sha(value: Any) -> str | None:
 
 
 def write_file(
-    api: GitCodeAPI, prefix: str, action: str, arguments: dict[str, Any]
+    api: GitCodeAPI, owner: str, repo: str, action: str, arguments: dict[str, Any]
 ) -> dict[str, Any]:
     """Publish one validated file operation and return bounded metadata.
 
@@ -101,9 +100,9 @@ def write_file(
     path = payload.pop("path")
     if "content" in payload:
         payload["content"] = encode_file_content(payload["content"], payload.pop("encoding"))
-    response = api.request(
-        FILE_WRITE_METHODS[action], f"{prefix}/contents/{quote(path, safe='/')}", json=payload
-    )
+    # The service quotes the validated decoded path once and uses this API's
+    # bounded bearer transport. It never looks up a SHA or retries a mutation.
+    response = getattr(api.files, FILE_WRITE_METHODS[action])(owner, repo, path, **payload)
     if response is not None and not isinstance(response, dict):
         raise GitCodeError(
             "invalid_response",

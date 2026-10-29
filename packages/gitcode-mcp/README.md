@@ -66,20 +66,30 @@ This package was imported from `codeasier/codex-codeasier` at
 `27b542521c8483b5cf051ae001e791e08e92bb40` with the same tree).
 [`MIGRATION_SOURCE.json`](MIGRATION_SOURCE.json) records the original file mapping
 and blob hashes; [`LICENSE`](LICENSE) retains the original MIT copyright notice.
-The runtime and original regression tests preserve that baseline. The CLI package
-remains separately versioned, and this MCP version keeps its verified
-`pygitcode==0.1.6` dependency rather than implicitly importing a sibling checkout.
+The original regression tests preserve that baseline. The CLI package remains
+separately versioned: this source now pins the published `pygitcode==0.1.7`, rather
+than implicitly importing a sibling checkout. The MCP version remains `0.3.0`;
+this dependency change does not publish or deploy an MCP release.
 
-New native services in the CLI checkout are producer-only until an independently
-verified, separately authorized CLI release is available. In particular,
-`FileService` is not imported by the production MCP runtime or its normal tests;
-the file tools retain their existing validation and response semantics. Only
+The existing file-read/create/update/delete tools delegate to the installed
+`FileService`. MCP still owns its stricter path policy (including rejection of
+literal `?`, `#` and `%`), canonical Base64 and size limits, explicit branch and
+expected Blob SHA requirements, authorization, and normalized results. The
+service receives decoded paths and quotes them exactly once, then uses MCP's
+bounded bearer-only transport. No tool, schema, retry, automatic SHA refresh or
+multi-file atomicity is added.
+
+Normal tests exercise this published dependency. A separate artifact matrix
+installs the actual CLI wheel and sdist on Python 3.11–3.13, verifies their hashes
+and installed origin, and runs both `tests/` and `tests_source/` in isolation.
+Separately,
 `gitcode-mcp-services.yml` installs the CLI checkout with `--no-deps`, verifies all
 installed client/service hashes, and explicitly runs `tests_source/` alongside
-the full MCP suite. Those tests exercise the new service through the real MCP
-HTTP adapter with mocked transport; they do not change the production pin or
-authorize a consumer switch. A later consumer PR needs the verified published
-CLI artifact, explicit pin review, and the complete MCP compatibility gates.
+the full MCP suite. That forward-compatibility probe does not change the exact
+production pin or authorize consuming unreleased services. Migration acceptance
+keeps the immutable legacy MCP `0.3.0` / `pygitcode==0.1.6` installation for seed
+and rollback; candidate checks require `pygitcode==0.1.7` even though its MCP
+version is also `0.3.0`.
 
 See the [migration and rollback guide](../../docs/gitcode/migration.md) before
 upgrading an existing OAuth deployment. Repository migration does not authorize

@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 import httpx
 import pytest
+from gitcode_cli.services.files import FileService
 
 from gitcode_mcp.api import GitCodeAPI, GitCodeError
 from gitcode_mcp.tools import GitCodeTools
@@ -70,7 +71,15 @@ def test_file_write_schemas_require_a_target_branch_and_declare_mutation(operati
 @pytest.mark.parametrize(
     ("operation", "method"), [("create", "POST"), ("update", "PUT"), ("delete", "DELETE")]
 )
-def test_file_write_uses_documented_endpoint_body_and_bearer_auth(operation, method):
+def test_file_write_uses_documented_endpoint_body_and_bearer_auth(operation, method, monkeypatch):
+    calls = []
+    original = getattr(FileService, operation)
+
+    def delegate(service, owner, repo, path, **payload):
+        calls.append((owner, repo, path, payload))
+        return original(service, owner, repo, path, **payload)
+
+    monkeypatch.setattr(FileService, operation, delegate)
     path = "source files/中文.py"
     args = arguments(operation, path=path)
     if operation != "delete":
@@ -90,6 +99,7 @@ def test_file_write_uses_documented_endpoint_body_and_bearer_auth(operation, met
     ).encode("ascii")
     assert not request.url.params
     assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+    assert "private-token" not in request.headers
     assert request.headers["Content-Type"] == "application/json"
     expected = {"branch": args["branch"], "message": args["message"]}
     if operation != "delete":
@@ -97,6 +107,7 @@ def test_file_write_uses_documented_endpoint_body_and_bearer_auth(operation, met
     if operation != "create":
         expected["sha"] = OLD_SHA
     assert json.loads(request.content) == expected
+    assert calls == [("team", "project", path, expected)]
     assert TOKEN not in str(request.url)
     assert TOKEN.encode() not in request.content
     assert result["repository"] == "team/project"
@@ -244,6 +255,22 @@ def test_invalid_file_paths_are_rejected_before_network(path):
     with catalog() as (tools, requests):
         with pytest.raises(GitCodeError) as raised:
             tools.call("gitcode_delete_file", arguments("delete", path=path))
+    assert raised.value.code == "invalid_arguments"
+    assert not requests
+
+
+@pytest.mark.parametrize("operation", ["get", *OPERATIONS])
+@pytest.mark.parametrize("path", ["", "README?.md", "README#.md", "100%.md", "literal%2F.md"])
+def test_stricter_mcp_paths_are_rejected_before_the_shared_service(operation, path, monkeypatch):
+    def unexpected_service(*args, **kwargs):
+        pytest.fail("Invalid MCP paths must not reach FileService")
+
+    monkeypatch.setattr(FileService, operation, unexpected_service)
+    name = "gitcode_get_file_contents" if operation == "get" else f"gitcode_{operation}_file"
+    args = {**REPOSITORY, "path": path} if operation == "get" else arguments(operation, path=path)
+    with catalog() as (tools, requests):
+        with pytest.raises(GitCodeError) as raised:
+            tools.call(name, args)
     assert raised.value.code == "invalid_arguments"
     assert not requests
 

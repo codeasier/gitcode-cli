@@ -3,6 +3,13 @@
 Versions and release tags in this file belong only to `codeasier-gitcode-mcp`.
 A source entry is not evidence that the version has been published to PyPI.
 
+## [Unreleased]
+
+- Pin the published `pygitcode==0.1.7` and delegate existing file tools to its
+  `FileService`, preserving MCP validation, bearer transport and result semantics.
+- Keep legacy migration seed and rollback on MCP `0.3.0` / `pygitcode==0.1.6`;
+  candidate checks require the new dependency. The MCP version is not changed.
+
 ## [0.3.0]
 
 - Preserve the migrated 31-tool runtime (19 read, 12 write tools), OAuth state

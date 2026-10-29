@@ -54,9 +54,10 @@ def test_release_notes_must_exist_and_be_nonempty(package, notes):
         release.source_metadata(package)
 
 
-def test_dependency_pin_requires_separate_review(package):
+@pytest.mark.parametrize("pin", ["pygitcode>=0.1.7", "pygitcode==0.1.6", "pygitcode==0.1.8"])
+def test_dependency_pin_requires_separate_review(package, pin):
     path = package / "pyproject.toml"
-    path.write_text(path.read_text().replace("pygitcode==0.1.6", "pygitcode>=0.1.6"))
+    path.write_text(path.read_text().replace("pygitcode==0.1.7", pin))
     with pytest.raises(ValueError, match="CLI dependency"):
         release.source_metadata(package)
 

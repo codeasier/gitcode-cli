@@ -40,7 +40,7 @@ def source_metadata(package: Path, tag: str | None = None) -> dict:
     require(project["requires-python"] == ">=3.11", "Unexpected MCP Python compatibility")
     require(project["scripts"] == ENTRY_POINTS, "MCP entry points changed")
     require(
-        "pygitcode==0.1.6" in project["dependencies"], "Review CLI dependency changes separately"
+        "pygitcode==0.1.7" in project["dependencies"], "Review CLI dependency changes separately"
     )
     module = ast.parse((package / "src/gitcode_mcp/__init__.py").read_text(encoding="utf-8"))
     versions = [

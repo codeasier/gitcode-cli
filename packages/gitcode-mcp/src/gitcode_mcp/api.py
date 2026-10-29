@@ -8,6 +8,7 @@ from urllib.parse import quote, unquote
 
 import httpx
 from gitcode_cli.client import GitCodeClient
+from gitcode_cli.services.files import FileService
 from gitcode_cli.services.issues import IssueService
 from gitcode_cli.services.pulls import PullRequestService
 
@@ -93,6 +94,7 @@ class GitCodeAPI(GitCodeClient):
         )
         self.issues = IssueService(self)
         self.pulls = PullRequestService(self)
+        self.files = FileService(self)
 
     def close(self) -> None:
         self._client.close()

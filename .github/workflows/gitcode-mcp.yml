@@ -138,6 +138,53 @@ jobs:
           echo "artifact-id-312=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
           echo "manifest-sha256-312=$(sha256sum release-artifacts/manifest.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
+  published-cli:
+    name: MCP / Published CLI ${{ matrix.artifact }} / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+        artifact: [wheel, sdist]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the exact reviewed PyPI archive and run full MCP contracts
+        shell: bash
+        env:
+          ARTIFACT_KIND: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          package="$GITHUB_WORKSPACE/packages/gitcode-mcp"
+          script="$package/scripts/published_cli_acceptance.py"
+          work="$(mktemp -d "$RUNNER_TEMP/mcp-published-cli.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          python -I -m venv "$work/venv"
+          python="$work/venv/bin/python"
+          mkdir "$work/home" "$work/cwd"
+          # Never use the CLI checkout, editable installs or a pip wheel cache.
+          # Resolve MCP's reviewed 0.1.7 pin, then replace it with the chosen
+          # verified archive. The sdist leg really builds/installs the sdist.
+          "$python" -I -m pip --isolated install --no-cache-dir "$package[dev]"
+          archive="$(env -i PATH="$work/venv/bin:/usr/bin:/bin" HOME="$work/home" \
+            "$python" -I "$script" download --kind "$ARTIFACT_KIND" \
+            --directory "$work/artifacts")"
+          "$python" -I -m pip --isolated install --no-deps --force-reinstall \
+            --no-cache-dir "$archive"
+          "$python" -I -m pip --isolated check
+          cd "$work/cwd"
+          # Synthetic fixtures only, no inherited credentials/PYTHONPATH or
+          # root pytest coverage settings. Verify imports/hashes before AND
+          # after the complete tests + tests_source run in this same process.
+          env -i PATH="$work/venv/bin:/usr/bin:/bin" HOME="$work/home" \
+            "$python" -I "$script" test --kind "$ARTIFACT_KIND" \
+            --directory "$work/artifacts"
+
   container:
     name: MCP / Container packaging
     runs-on: ubuntu-latest

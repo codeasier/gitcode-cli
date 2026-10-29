@@ -7,7 +7,8 @@ from a tag. This workflow prepares publication, **not deployment**.
 
 ## Current boundary
 
-- The MCP source version is `0.3.0`, with `pygitcode==0.1.6` still pinned.
+- The MCP source version is `0.3.0`, with the published `pygitcode==0.1.7` pinned.
+  The immutable legacy migration seed and rollback retain `pygitcode==0.1.6`.
 - A source changelog entry or successful CI run is not proof of a PyPI release.
 - This change does not create a tag, publish a package, configure credentials,
   modify GitHub/PyPI security settings, upgrade a server, or change the downstream
@@ -49,8 +50,9 @@ validation-only run, even if an existing tag is selected.
    `packages/gitcode-mcp/pyproject.toml` and `src/gitcode_mcp/__init__.py` together,
    then add nonempty notes to the package's own `CHANGELOG.md`.
 2. Keep dependency changes separate and explicitly reviewed. In particular the
-   current `pygitcode==0.1.6` guard is deliberate; changing it requires shared
-   service/transport compatibility evidence, not a blind dependency bump.
+   current `pygitcode==0.1.7` guard is deliberate; changing it requires verified
+   published artifacts and shared service/transport compatibility evidence,
+   not a blind dependency bump or a substitution of the CLI checkout.
 3. Obtain successful CLI CI and independent MCP CI on the exact candidate.
    The release workflow reuses the full MCP workflow on the tag's commit:
    - Python 3.11, 3.12 and 3.13 lint/tests;

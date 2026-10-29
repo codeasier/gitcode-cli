@@ -16,6 +16,9 @@ CAPABILITY_MESSAGES = {
         "GitCode results; mentioned issues use repository mention filtering."
     ),
     "PR_MERGE_AUTHOR_EMAIL": "GitCode merge API does not support --author-email.",
+    "PR_COMMENT_OWNERSHIP_UNVERIFIABLE": (
+        "Unable to verify the current user's pull request comments on GitCode; refusing to edit or delete comments."
+    ),
     "PR_MERGE_AUTO": "GitCode merge API does not support --auto.",
     "PR_EDIT_BASE": (
         "GitCode's pull request update API does not support changing the base branch; "

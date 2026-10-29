@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
+import respx
 
+from gitcode_cli.client import GitCodeClient
 from gitcode_cli.services.issues import IssueService
 from gitcode_cli.services.pulls import PullRequestService
 
@@ -150,6 +154,50 @@ class TestIssueServiceContracts:
 
 
 class TestPullRequestServiceContracts:
+    def test_list_files_uses_documented_collection_request_without_pagination(self):
+        contract = _load_contract("Pull Requests", "get-api-v-5-repos-owner-repo-pulls-number-files.json")
+        path = _contract_path(contract, owner="owner", repo="repo", number=42)
+        files = [{"filename": f"src/file_{i}.py"} for i in range(200)]
+        assert contract["method"] == "GET"
+        assert {field["name"] for field in contract["queryParams"]} == {"access_token"}
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            assert list(request.url.params.multi_items()) == [("access_token", "synthetic-contract-token")]
+            assert not request.content
+            return httpx.Response(200, json=files)
+
+        with respx.mock(assert_all_mocked=True, assert_all_called=True) as router:
+            route = router.get(f"https://contract.gitcode.invalid/api/v5{path}").mock(side_effect=respond)
+            with closing(
+                GitCodeClient(token="synthetic-contract-token", base_url="https://contract.gitcode.invalid/api/v5/")
+            ) as client:
+                result = PullRequestService(client).list_files("owner", "repo", 42)
+
+            assert result == files
+            assert route.call_count == 1
+
+    def test_update_comment_matches_documented_pr_comment_contract(self, pull_service):
+        service, client = pull_service
+        contract = _load_contract("Pull Requests", "patch-api-v-5-repos-owner-repo-pulls-comments-id.json")
+
+        service.update_comment("owner", "repo", 7, "Updated body")
+
+        assert contract["method"] == "PATCH"
+        assert {field["name"] for field in contract["requestBodyFields"]} == {"body"}
+        client.patch.assert_called_once_with(
+            _contract_path(contract, owner="owner", repo="repo", id=7), json={"body": "Updated body"}
+        )
+
+    def test_delete_comment_matches_documented_pr_comment_contract(self, pull_service):
+        service, client = pull_service
+        contract = _load_contract("Pull Requests", "delete-api-v-5-repos-owner-repo-pulls-comments-id.json")
+
+        service.delete_comment("owner", "repo", 7)
+
+        assert contract["method"] == "DELETE"
+        assert contract["requestBodyFields"] == []
+        client.delete.assert_called_once_with(_contract_path(contract, owner="owner", repo="repo", id=7))
+
     def test_list_matches_pr_list_contract(self, pull_service: tuple[PullRequestService, MagicMock]) -> None:
         service, client = pull_service
         contract = _load_contract("Pull Requests", "get-api-v-5-repos-owner-repo-pulls.json")

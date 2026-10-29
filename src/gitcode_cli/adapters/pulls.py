@@ -89,7 +89,7 @@ class PullRequestAdapter:
             item = self.service.get(owner, repo, number)
         except (GCError, ValueError) as exc:
             raise click.ClickException(message) from exc
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or milestone_number(item.get("number")) != number:
             raise click.ClickException(message)
         milestone = item.get("milestone")
         if not isinstance(milestone, dict) or milestone_number(milestone.get("number")) != expected:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import shutil
 import subprocess
 import sys
 
@@ -68,7 +69,6 @@ def test_auth_config_roundtrip_is_isolated(run_gc, isolated_home):
         (["auth", "logout"], "Not logged in", 1),
         (["auth", "status", "--json", "hosts"], "recognized but not implemented yet", 1),
         (["issue", "list", "-R", "invalid"], "Invalid repo format", 1),
-        (["issue", "list"], "Unable to infer repo", 1),
         (["not-a-command"], "No such command", 2),
     ],
 )
@@ -80,6 +80,16 @@ def test_local_errors_have_stderr_and_exit_code(run_gc, args, message, code):
     assert "Traceback" not in result.stderr
 
 
+def test_missing_repository_fails_locally(run_gc):
+    if shutil.which("git") is None:
+        pytest.skip("Git is required for local repository inference")
+    result = run_gc(["issue", "list"], input="")
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Unable to infer repo" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_subprocess_environment_drops_ambient_credentials(gc_env, isolated_home):
     assert "GC_TOKEN" not in gc_env
     assert "GH_TOKEN" not in gc_env
@@ -88,6 +98,7 @@ def test_subprocess_environment_drops_ambient_credentials(gc_env, isolated_home)
     assert "GC_GH_PROXY_ACTIVE" not in gc_env
     assert gc_env["HOME"] == str(isolated_home)
     assert gc_env["XDG_CONFIG_HOME"] == str(isolated_home / ".config")
+    assert gc_env["PYTHONIOENCODING"] == "utf-8"
 
 
 def test_network_guard_blocks_child_before_dns(gc_env, tmp_path):

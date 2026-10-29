@@ -37,10 +37,14 @@ def gc_env(isolated_home: Path, tmp_path: Path) -> dict[str, str]:
     )
     temp = tmp_path / "tmp"
     temp.mkdir()
+    # Git for Windows is often outside os.defpath. Keep only its resolved directory,
+    # not the ambient PATH that may contain an unrelated `gc` executable.
+    git = shutil.which("git")
+    path = os.pathsep.join([str(Path(git).resolve().parent), os.defpath]) if git else os.defpath
     env = {key: os.environ[key] for key in ("SystemRoot", "WINDIR") if key in os.environ}
     env.update(
         {
-            "PATH": os.defpath,
+            "PATH": path,
             "HOME": str(isolated_home),
             "USERPROFILE": str(isolated_home),
             "XDG_CONFIG_HOME": str(isolated_home / ".config"),
@@ -51,6 +55,7 @@ def gc_env(isolated_home: Path, tmp_path: Path) -> dict[str, str]:
             "LC_ALL": "C.UTF-8",
             "NO_COLOR": "1",
             "PYTHONUNBUFFERED": "1",
+            "PYTHONIOENCODING": "utf-8",
             "PYTHONNOUSERSITE": "1",
             "PYTHONPATH": str(guard),
             "GIT_CONFIG_NOSYSTEM": "1",

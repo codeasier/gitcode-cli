@@ -9,6 +9,7 @@ This test suite mirrors the `gc` architecture so failures can be isolated by lay
 - `unit/services/`: low-level GitCode API request construction, including HTTP method, path, and request payload filtering.
 - `contracts/`: extracted-doc service contracts and strict HTTP transport checks against `tests/fixtures/gitcode-api-contracts/raw/`.
 - `e2e/`: offline process smoke tests of the installed `gc` and `gitcode` console scripts, with isolated HOME/config/work directories and a credential-free child environment.
+- `packaging/wheel_smoke.py`: the CI-only clean-wheel acceptance step, separate from the editable-install pytest suite.
 
 ## Why this split exists
 
@@ -45,12 +46,22 @@ The process harness resolves both console scripts only in the running interprete
 
 The initial process scenarios cover root/auth/issue/PR help, installed version reporting, stdin login → config/token → logout, environment-over-config precedence, local repository/argument errors, unsupported output flags, exit codes and separate stdout/stderr. Tokens in these fixtures are synthetic. This is an **editable-install process smoke**, not clean-wheel acceptance, a mocked API golden flow, or full structured `gh` compatibility.
 
+## Clean-wheel CI acceptance
+
+Every Python 3.9–3.13 CLI matrix job also runs `packaging/wheel_smoke.py` after the ordinary suites. It builds one wheel from the exact checked-out `github.sha` (the tested merge SHA on PR runs), checks the tracked checkout is unchanged, and records the source SHA, wheel filename/SHA-256, normalized distribution version, package-file count, guard-probe count and per-entrypoint scenario count in a JSON log record. Wheel package bytes must match the checkout, and all Python source files must be present. This does not build a release or change the in-tree version.
+
+Build and dependency installation are a distinct **network-enabled preparation phase**; they use the normal CI registry settings, not the offline claim. A fresh venv has no system site-packages, receives the exact wheel non-editably, and does not reuse the outer editable installation. Runtime checks verify `pyvenv.cfg`, distribution/entrypoint metadata, the installed wheel's `direct_url.json` hash, every installed package file and all loaded CLI module origins. Both absolute venv console-script paths must exist, be executable and select that venv's interpreter; there is no PATH or `python -m` substitute and no skip on missing entrypoints or a failed installation.
+
+All runtime subprocesses run from a temporary directory outside the checkout, with a temporary HOME/config and an allowlisted environment that drops ambient credentials, proxies, `PYTHONPATH`, `PYTHONHOME` and inherited venv settings. An audit hook installed only into the disposable venv rejects Python socket/DNS operations and native-child launches, reports activation on each invocation, and is self-tested against DNS, TCP, UDP and child-process attempts. Even a swallowed denial fails the scenario. This is a guard against accidental external operations in trusted Python CLI tests, **not OS-level network isolation or a security sandbox for hostile Python/native code**. Preparation remains network-enabled.
+
+For both `gc` and `gitcode`, the smoke checks help and exact version output, separate stdout/stderr and exit codes, missing-token behavior, synthetic stdin login → private temporary config → token output → logout, synthetic environment-token precedence, unknown-command errors and empty-token input. `contracts/test_clean_wheel_harness.py` tests the harness's fail-closed boundaries with synthetic files and mocked process results; the real build/install and guarded commands run in CI only. The existing 90% in-process coverage floor, lint/type checks, matrix aggregate, MCP jobs and dependency pin are unchanged. These packaging scenarios are not counted as CLI coverage, a provider-backed golden flow, sdist/platform acceptance, live GitCode access or complete gh parity.
+
 ## Remaining #124 acceptance boundaries
 
 | Layer | Current evidence | Next acceptance gate |
 | --- | --- | --- |
 | Help compatibility | Existing gh 2.89.0 JSON baseline plus exact displayed command/flag/arity/summary checks for root, issue/pr groups and create commands on both entrypoints; explicit differences in the existing coverage JSON | Expand beyond these five commands and add independently sourced gh usage/argument/alias metadata and flag-description semantics; current gc usage/aliases are local invariants, not evidence of gh parity. |
-| CLI behavior | Isolated no-network subprocess harness; existing CliRunner command/unit coverage | Strict mocked/recorded issue and PR golden flows, full output/error matrix, and isolated wheel installation for both entrypoints. A parent-process HTTP mock does not intercept subprocess HTTP. |
+| CLI behavior | Isolated no-network editable subprocess harness; clean-wheel installation and both entrypoints on Python 3.9–3.13 CI; existing CliRunner command/unit coverage | Strict mocked/recorded issue and PR golden flows, full output/error matrix, sdist and additional OS coverage. A parent-process HTTP mock does not intercept subprocess HTTP. |
 | API contracts | Extracted-doc service contracts plus real-client/HTTPX strict matching for Issue create/list and PR comment/review; unmatched requests and body/query/auth drift fail | Expand endpoint/workflow coverage and independently refresh upstream contracts; CLI query-token checks are not MCP OAuth or live account acceptance. |
 | Recorded | Marker registered, no recording/replay suite yet | Define fixture provenance/versioning, refresh procedure and credential/body redaction before committing recordings. |
 | Live/destructive | Markers registered only; explicitly excluded from ordinary PR CI | Obtain a dedicated authorized sandbox and credentials; define run IDs, concurrency isolation, `finally` cleanup/janitor and separate destructive opt-in. Only then add manual/nightly/release execution. |

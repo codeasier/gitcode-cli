@@ -62,6 +62,12 @@ def assert_branch(git, repository, sha):
     assert git("rev-parse", "--verify", "refs/heads/feature", cwd=repository).stdout.strip() == sha
 
 
+def assert_fetched_source(local, source, sha):
+    # Git's FETCH_HEAD display strips the transport URL's trailing .git.
+    expected = f"{sha}\t\tbranch 'feature' of {source.as_uri().removesuffix('.git')}"
+    assert (local / ".git" / "FETCH_HEAD").read_text().splitlines() == [expected]
+
+
 @pytest.mark.parametrize("operation", ["push", "fetch"])
 def test_command_scoped_remote_operates_without_saved_configuration(repositories, operation):
     git, source, other, local, head = repositories
@@ -121,7 +127,7 @@ def test_effective_destination_rewrites_are_refused(repositories, monkeypatch, o
     before = (local / ".git" / "config").read_bytes()
     if operation == "fetch" and rewrite == "pushInsteadOf":
         assert run_operation(operation) == "reviewed-feature"
-        assert str(source) in (local / ".git" / "FETCH_HEAD").read_text()
+        assert_fetched_source(local, source, head.sha)
     else:
         with pytest.raises(GCError, match="URL rewriting"):
             run_operation(operation)
@@ -187,7 +193,7 @@ def test_checked_destination_stays_pinned_when_rewrites_change(repositories, mon
         assert git("show-ref", "--verify", "refs/heads/feature", cwd=source, check=False).returncode != 0
     else:
         assert_branch(git, source, head.sha)
-        assert str(source) in (local / ".git" / "FETCH_HEAD").read_text()
+        assert_fetched_source(local, source, head.sha)
         assert git("rev-parse", "HEAD").stdout.strip() == head.sha
     # No synthetic remote is ever persisted, even after successful operations.
     assert git("remote").stdout == ""

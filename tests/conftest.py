@@ -56,7 +56,7 @@ def mock_pr_data() -> dict:
         "state": "open",
         "body": "PR body",
         "html_url": "https://gitcode.com/owner/repo/pulls/42",
-        "head": {"ref": "feature-branch"},
+        "head": {"ref": "feature-branch", "sha": "a" * 40, "repo": {"full_name": "owner/repo"}},
         "base": {"ref": "master"},
     }
 

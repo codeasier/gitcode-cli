@@ -83,11 +83,11 @@ def test_repeated_removal_does_not_repeat_delete(service):
     [(None, ("bug",), "keep"), (("docs",), ("bug",), "keep,docs"), (("docs",), None, "keep,bug,docs")],
 )
 def test_nonempty_replacement_behavior_stays_unchanged(service, add_labels, remove_labels, expected):
-    service.get.return_value = {"labels": ["keep", "bug"]}
+    service.get.return_value = {"title": "Original", "labels": ["keep", "bug"]}
 
     _edit(service, add_labels=add_labels, remove_labels=remove_labels)
 
-    service.update.assert_called_once_with("owner", "repo", "42", labels=expected)
+    service.update.assert_called_once_with("owner", "repo", "42", title="Original", labels=expected)
     service.remove_label.assert_not_called()
 
 
@@ -103,12 +103,11 @@ def test_remove_still_wins_when_the_same_label_is_also_added(service):
 def test_mixed_fields_update_before_removal_without_empty_labels(service):
     before = {"labels": ["bug"], "assignee": "alice,bob"}
     after = {"labels": [], "title": "Updated", "assignee": "alice", "milestone": None}
-    service.get.side_effect = [before, before, after]
+    service.get.side_effect = [before, after]
 
     assert _edit(service, title="Updated", body="Body", remove_assignee="bob", remove_milestone=True) == after
 
     assert service.mock_calls == [
-        call.get("owner", "repo", "42"),
         call.get("owner", "repo", "42"),
         call.update("owner", "repo", "42", title="Updated", body="Body", assignee="alice", milestone=0),
         call.remove_label("owner", "repo", "42", "bug"),
@@ -117,12 +116,12 @@ def test_mixed_fields_update_before_removal_without_empty_labels(service):
 
 
 def test_absent_label_does_not_suppress_other_edits(service):
-    service.get.return_value = {"labels": []}
+    service.get.return_value = {"title": "Original", "labels": []}
     service.update.return_value = {"labels": [], "body": "Updated"}
 
     assert _edit(service, body="Updated") == service.update.return_value
 
-    service.update.assert_called_once_with("owner", "repo", "42", body="Updated")
+    service.update.assert_called_once_with("owner", "repo", "42", body="Updated", title="Original")
     service.remove_label.assert_not_called()
 
 
@@ -150,7 +149,7 @@ def test_invalid_delete_target_is_rejected_before_other_mutations(service, name)
 
 @pytest.mark.parametrize("error", [APIError("Denied", 403), NetworkError("Timeout")])
 def test_failed_field_update_does_not_start_deletions(service, error):
-    service.get.return_value = {"labels": ["bug"]}
+    service.get.return_value = {"title": "Original", "labels": ["bug"]}
     service.update.side_effect = error
 
     with pytest.raises(click.ClickException, match="field update completed=False.*0 label.*field update failed"):
@@ -163,7 +162,7 @@ def test_failed_field_update_does_not_start_deletions(service, error):
 
 @pytest.mark.parametrize("error", [APIError("Denied", 403), NetworkError("Timeout")])
 def test_partial_delete_failure_reports_completed_steps_and_stops(service, error):
-    service.get.return_value = {"labels": ["bug", "docs", "later"]}
+    service.get.return_value = {"title": "Original", "labels": ["bug", "docs", "later"]}
     service.remove_label.side_effect = [None, error]
 
     with pytest.raises(
@@ -194,3 +193,30 @@ def test_failed_or_unconfirmable_readback_never_reports_success_or_retries(servi
     service.remove_label.assert_called_once()
     service.update.assert_not_called()
     assert service.get.call_count == 2
+
+
+def test_body_and_last_label_share_snapshot_and_preserve_required_title(service):
+    current = {"title": "Original", "labels": ["bug"]}
+    after = {"title": "Original", "body": "Updated", "labels": []}
+    service.get.side_effect = [current, after]
+
+    assert _edit(service, body="Updated") == after
+
+    assert service.mock_calls == [
+        call.get("owner", "repo", "42"),
+        call.update("owner", "repo", "42", body="Updated", title="Original"),
+        call.remove_label("owner", "repo", "42", "bug"),
+        call.get("owner", "repo", "42"),
+    ]
+
+
+@pytest.mark.parametrize("labels", [[], ["bug"], ["bug", "keep"]])
+def test_missing_required_title_blocks_patch_and_any_following_delete(service, labels):
+    service.get.return_value = {"labels": labels}
+
+    with pytest.raises(APIError, match="current Issue title required for update; no update sent"):
+        _edit(service, body="Updated")
+
+    service.get.assert_called_once()
+    service.update.assert_not_called()
+    service.remove_label.assert_not_called()

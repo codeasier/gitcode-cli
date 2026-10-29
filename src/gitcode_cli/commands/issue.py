@@ -123,6 +123,8 @@ def _resolve_issue_target(app, repo_name: str | None, identifier: str) -> tuple[
     url_owner, url_repo, number = resolve_issue_arg(identifier)
     if url_owner:
         assert url_repo is not None
+        if (repo_name or app.repo) and resolve_repo(repo_name or app.repo) != (url_owner, url_repo):
+            raise click.ClickException("Issue URL conflicts with --repo.")
         return url_owner, url_repo, number, identifier
     owner, repo = resolve_repo(repo_name or app.repo)
     return owner, repo, require_issue_number(identifier), None
@@ -292,16 +294,9 @@ def issue_view(
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
+    owner, repo, number, target_url = _resolve_issue_target(app, repo_name, identifier)
     if web:
-        target_url = identifier if url_owner else f"https://gitcode.com/{owner}/{repo}/issues/{number}"
-        open_in_browser(target_url)
+        open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
         return
     service = IssueService(app.client())
     item = service.get(owner, repo, number)
@@ -424,13 +419,7 @@ def issue_close(
     reason: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
+    owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     approximated = duplicate_of is not None
     if duplicate_of is not None:
         duplicate_comment = f"This issue is considered a duplicate of {duplicate_of}."
@@ -528,13 +517,7 @@ def issue_comment(
 @click.pass_context
 def issue_reopen(ctx: click.Context, repo_name: str | None, identifier: str, comment: str | None) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
+    owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     service = IssueService(app.client())
     adapter = IssueAdapter(service)
     result = adapter.reopen_issue(owner, repo, number, comment=comment)
@@ -573,13 +556,7 @@ def issue_edit(
     remove_milestone: bool,
 ) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
+    owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     body = get_body_from_options(body=body, body_file=body_file, editor=False)
     if not any(
         [
@@ -673,13 +650,7 @@ def issue_develop(
     name: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    url_owner, url_repo, number = resolve_issue_arg(identifier)
-    if url_owner:
-        assert url_repo is not None
-        owner, repo = url_owner, url_repo
-    else:
-        owner, repo = resolve_repo(repo_name or app.repo)
-        number = require_issue_number(identifier)
+    owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     service = IssueService(app.client())
     service.get(owner, repo, number)
     if base is not None:

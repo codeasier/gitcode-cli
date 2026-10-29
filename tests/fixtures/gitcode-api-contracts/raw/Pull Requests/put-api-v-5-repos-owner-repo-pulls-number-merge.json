@@ -39,7 +39,8 @@
       "name": "merge_method",
       "type": "string",
       "required": false,
-      "description": "可选。合并PR的方法，merge（合并所有提交）、squash（扁平化分支合并）和rebase（变基并合并）。默认为merge。"
+      "description": "可选。合并PR的方法，merge（合并所有提交）、rebase（变基并合入）。默认为merge。",
+      "enum": ["merge", "rebase"]
     },
     {
       "name": "title",
@@ -58,6 +59,18 @@
       "type": "boolean",
       "required": false,
       "description": "是否强制合并（需开启“允许管理员强制合入”设置，并且需管理员权限）"
+    },
+    {
+      "name": "squash",
+      "type": "boolean",
+      "required": false,
+      "description": "是否squash合并，默认false"
+    },
+    {
+      "name": "squash_commit_message",
+      "type": "string",
+      "required": false,
+      "description": "squash合并的相关备注信息"
     }
   ],
   "responseFields": [
@@ -86,7 +99,7 @@
   "pythonExample": "import requests\n\nurl = \"https://api.gitcode.com/api/v5/repos/owner_value/repo_value/pulls/number_value/merge\"\nparams = {\"access_token\": \"YOUR_TOKEN\"}\nheaders = {\"Accept\": \"application/json\"}\ndata = {\n    \"merge_method\": \"value\"\n}\n\nresponse = requests.put(url, headers=headers, params=params, json=data)\nprint(response.json())",
   "dataSource": "frontMatter.api",
   "status": "done",
-  "notes": "",
+  "notes": "Request fields rechecked against docUrl on 2026-10-30. Documentation evidence only; live sandbox compatibility not verified.",
   "metadata": {
     "chunkUrl": "https://docs.gitcode.com/assets/js/1474b9ff.313556a8.js",
     "sourceType": "openapi",

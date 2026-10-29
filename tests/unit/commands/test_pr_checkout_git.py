@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
 
+from gitcode_cli import pr_git
 from gitcode_cli.cli import main
 
 
@@ -34,8 +36,13 @@ def checkout_repo(tmp_path, monkeypatch, tmp_config_dir):
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    template = tmp_path / "empty-template"
+    template.mkdir()
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", str(template))
     seed = tmp_path / "seed"
     seed.mkdir()
     _git(seed, "init", "-b", "main")
@@ -49,13 +56,23 @@ def checkout_repo(tmp_path, monkeypatch, tmp_config_dir):
     _git(tmp_path, "clone", "--bare", str(seed), str(tmp_path / "origin.git"))
     _git(tmp_path, "clone", str(tmp_path / "origin.git"), str(tmp_path / "work"))
     work = tmp_path / "work"
+    source_url = (tmp_path / "origin.git").as_uri()
+    _git(work, "remote", "set-url", "origin", source_url)
     _git(work, "checkout", "main")
     (seed / "file.txt").write_text("latest\n")
     _git(seed, "commit", "-am", "Latest PR commit")
     latest_sha = _git(seed, "rev-parse", "HEAD").stdout.strip()
     _git(seed, "push", str(tmp_path / "origin.git"), "feature")
     client = MagicMock()
-    client.get.return_value = {"head": {"ref": "feature", "sha": latest_sha}}
+    client.get.return_value = {"head": {"ref": "feature", "sha": latest_sha, "repo": {"full_name": "fork/project"}}}
+    resolve = pr_git.resolve_head
+
+    def offline_source(item):
+        # Keep production metadata validation; substitute only the synthetic
+        # transport endpoint. All fetch, rewrite, SHA and checkout work is real.
+        return replace(resolve(item), url=source_url)
+
+    monkeypatch.setattr(pr_git, "resolve_head", offline_source)
     monkeypatch.setattr("gitcode_cli.context.AppContext.client", lambda self: client)
     monkeypatch.chdir(work)
     return work, initial_sha, latest_sha, client
@@ -104,6 +121,86 @@ def test_force_creates_new_branch_from_latest_remote_head(checkout_repo):
     assert _git(work, "symbolic-ref", "--short", "HEAD").stdout.strip() == "new-review"
 
 
+def test_force_uses_verified_source_not_a_hardcoded_remote_name(checkout_repo):
+    work, _, latest_sha, _ = checkout_repo
+    _git(work, "remote", "rename", "origin", "source-fork")
+    result = CliRunner().invoke(main, ["pr", "checkout", "42", "-R", "owner/repo", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert _git(work, "rev-parse", "HEAD").stdout.strip() == latest_sha
+
+
+@pytest.mark.parametrize("new_source_branch", [False, True])
+def test_new_checkout_preserves_verified_upstream_for_later_force(checkout_repo, new_source_branch):
+    work, _, _, client = checkout_repo
+    seed = work.parent / "seed"
+    source_branch = "new-source" if new_source_branch else "feature"
+    if new_source_branch:
+        # This branch was created after clone, so no local tracking ref exists.
+        _git(seed, "push", str(work.parent / "origin.git"), f"HEAD:{source_branch}")
+        client.get.return_value["head"]["ref"] = source_branch
+    args = ["pr", "checkout", "42", "-R", "owner/repo", "--branch", "new-review"]
+    first = CliRunner().invoke(main, args)
+    assert first.exit_code == 0, first.output
+    assert _git(work, "rev-parse", "--abbrev-ref", "new-review@{upstream}").stdout.strip() == f"origin/{source_branch}"
+    (seed / "file.txt").write_text("new push\n")
+    _git(seed, "commit", "-am", "Subsequent PR push")
+    _git(seed, "push", str(work.parent / "origin.git"), f"HEAD:{source_branch}")
+    expected = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    client.get.return_value["head"]["sha"] = expected
+
+    second = CliRunner().invoke(main, [*args, "--force"])
+    assert second.exit_code == 0, second.output
+    assert _git(work, "rev-parse", "HEAD").stdout.strip() == expected
+    assert (work / "file.txt").read_text() == "new push\n"
+
+
+@pytest.mark.parametrize("upstream", ["none", "other-ref", "other-repo"])
+def test_force_refuses_unverified_tracking_without_resetting_branch(checkout_repo, upstream):
+    work, initial_sha, _, _ = checkout_repo
+    if upstream == "none":
+        _git(work, "branch", "--unset-upstream", "feature")
+    elif upstream == "other-ref":
+        _git(work, "branch", "--set-upstream-to=origin/main", "feature")
+    else:
+        # The second repository advertises the SAME commit; SHA equality cannot
+        # establish which repository the user's branch tracks.
+        other = work.parent / "other.git"
+        _git(work.parent, "clone", "--bare", str(work.parent / "origin.git"), str(other))
+        _git(work, "remote", "set-url", "origin", other.as_uri())
+    original_head = _git(work, "rev-parse", "HEAD").stdout.strip()
+    result = CliRunner().invoke(main, ["pr", "checkout", "42", "-R", "owner/repo", "--force"])
+
+    assert result.exit_code == 1
+    assert "does not track the verified PR source" in result.output
+    assert _git(work, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
+    assert _git(work, "rev-parse", "HEAD").stdout.strip() == original_head
+    assert _git(work, "rev-parse", "feature").stdout.strip() == initial_sha
+
+
+def test_new_checkout_never_overwrites_concurrently_created_tracking_ref(checkout_repo, monkeypatch):
+    work, initial_sha, _, _ = checkout_repo
+    tracking_ref = "refs/remotes/origin/feature"
+    _git(work, "update-ref", "-d", tracking_ref)
+    original = pr_git._git
+
+    def race_after_missing_ref(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args == ("show-ref", "--verify", "--quiet", tracking_ref):
+            assert result.returncode != 0
+            _git(work, "update-ref", tracking_ref, initial_sha)
+        return result
+
+    monkeypatch.setattr(pr_git, "_git", race_after_missing_ref)
+    result = CliRunner().invoke(main, ["pr", "checkout", "42", "-R", "owner/repo", "--branch", "new-review"])
+
+    assert result.exit_code == 1
+    assert "Git operation failed" in result.output
+    assert _git(work, "rev-parse", tracking_ref).stdout.strip() == initial_sha
+    assert _git(work, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
+    assert _git(work, "show-ref", "--verify", "refs/heads/new-review", check=False).returncode != 0
+
+
 @pytest.mark.parametrize("flag", ["--force", "--detach"])
 def test_checkout_refuses_head_mismatch_before_changing_checkout(checkout_repo, flag):
     work, initial_sha, _, client = checkout_repo
@@ -112,7 +209,7 @@ def test_checkout_refuses_head_mismatch_before_changing_checkout(checkout_repo, 
     result = CliRunner().invoke(main, ["pr", "checkout", "42", "-R", "owner/repo", flag])
 
     assert result.exit_code == 1
-    assert "Fetched head does not match the PR head" in result.output
+    assert "PR branch changed during fetch" in result.output
     assert _git(work, "rev-parse", "HEAD").stdout.strip() == original_head
     assert _git(work, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
     assert _git(work, "rev-parse", "feature").stdout.strip() == initial_sha

@@ -184,3 +184,53 @@ def test_missing_malformed_or_unchanged_readback_is_not_success(http_cli, readba
     assert "Edited issue" not in result.output
     assert get.call_count == 2
     assert delete.call_count == 1
+
+
+def test_body_and_last_label_use_one_snapshot_and_required_title(http_cli):
+    router, runner = http_cli
+    get = _route(
+        router,
+        "GET",
+        ISSUE_PATH,
+        responses=[
+            (200, {"title": "Original", "labels": ["bug"], "assignee": "alice,bob"}),
+            (200, {"title": "Original", "body": "Updated", "labels": [], "assignee": "alice"}),
+        ],
+    )
+    patch = _route(
+        router,
+        "PATCH",
+        UPDATE_PATH,
+        payload={"repo": "repo", "title": "Original", "body": "Updated", "assignee": "alice"},
+    )
+    delete = _route(router, "DELETE", ISSUE_PATH + "/labels/bug")
+
+    result = _edit(runner, "--body", "Updated", "--remove-assignee", "bob", "--remove-label", "bug")
+
+    assert result.exit_code == 0, result.output
+    assert get.call_count == 2 and patch.call_count == delete.call_count == 1
+    assert [entry.request.method for entry in router.calls] == ["GET", "PATCH", "DELETE", "GET"]
+
+
+@pytest.mark.parametrize("labels", [[], ["bug"], ["bug", "keep"]])
+def test_missing_required_title_prevents_patch_and_delete(http_cli, labels):
+    router, runner = http_cli
+    get = _route(router, "GET", ISSUE_PATH, responses=[(200, {"labels": labels})])
+
+    result = _edit(runner, "--body", "Updated", "--remove-label", "bug")
+
+    assert result.exit_code == 1
+    assert "current Issue title required for update; no update sent" in result.output
+    assert "Edited issue" not in result.output
+    assert get.call_count == 1 and len(router.calls) == 1
+
+
+def test_invalid_label_evidence_wins_before_title_validation_or_writes(http_cli):
+    router, runner = http_cli
+    _route(router, "GET", ISSUE_PATH, responses=[(200, {"labels": None})])
+
+    result = _edit(runner, "--body", "Updated", "--remove-label", "bug")
+
+    assert result.exit_code == 1
+    assert "Cannot safely remove labels" in result.output
+    assert len(router.calls) == 1

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
 
 import click
@@ -19,11 +18,13 @@ from ..cli_compat import (
 from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
+from ..pr_git import checkout_head, delete_head
 from ..repo import resolve_repo
 from ..services import IssueService, PullRequestService, UserService
 from ..utils import (
     get_current_git_branch,
     open_in_browser,
+    parse_pr_url,
     prompt_if_missing,
     read_body_file,
     read_template_file,
@@ -31,6 +32,16 @@ from ..utils import (
     safe_echo,
     safe_number,
 )
+
+
+def _resolve_pr_repo(explicit: str | None, identifier: str | None) -> tuple[str, str]:
+    target = parse_pr_url(identifier) if identifier else None
+    if target:
+        owner, repo, _ = target
+        if explicit and resolve_repo(explicit) != (owner, repo):
+            raise click.ClickException("Pull request URL conflicts with --repo.")
+        return owner, repo
+    return resolve_repo(explicit)
 
 
 def _pr_merged_at(item: dict) -> str | None:
@@ -253,7 +264,7 @@ def pr_merge(
     admin: bool,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     if author_email is not None:
         raise unsupported("PR_MERGE_AUTHOR_EMAIL")
     if auto:
@@ -280,14 +291,10 @@ def pr_merge(
     safe_echo(message if isinstance(message, str) and message else f"Merged pull request #{number}")
     if delete_branch:
         try:
-            branch = pr_item.get("head", {}).get("ref")
-            if branch:
-                subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                safe_echo(f"Deleted remote branch {branch}")
-            else:
-                safe_echo("Warning: could not determine branch to delete.", err=True)
-        except Exception as exc:
-            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
+            branch = delete_head(pr_item)
+        except GCError as exc:
+            raise click.ClickException(f"PR merged, but branch deletion was not confirmed: {exc}") from None
+        safe_echo(f"Deleted remote branch {branch}")
 
 
 @pr_group.command("comment")
@@ -377,7 +384,7 @@ def pr_comment(
     if line is not None and position is not None:
         raise click.UsageError("--line cannot be used with --position")
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -490,7 +497,7 @@ def pr_review(
     force: bool,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -533,7 +540,7 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None,
     if comment is not None and not comment.strip():
         raise click.UsageError("--comment must not be empty.")
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -585,7 +592,7 @@ def pr_edit(
     if base is not None:
         raise unsupported("PR_EDIT_BASE")
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -719,7 +726,7 @@ def pr_view(
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -889,7 +896,7 @@ def pr_close(
     ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None, delete_branch: bool
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -898,16 +905,14 @@ def pr_close(
     if comment:
         service.comment(owner, repo, number, body=comment)
     item = service.update(owner, repo, number, state="closed")
+    if not isinstance(item, dict) or item.get("state") not in {"closed", "close"}:
+        raise click.ClickException("PR close was not confirmed. Verify the remote state before retrying.")
     if delete_branch:
         try:
-            branch = (pr_item or item).get("head", {}).get("ref")
-            if branch:
-                subprocess.run(["git", "push", "origin", "--delete", branch], check=True)
-                safe_echo(f"Deleted remote branch {branch}")
-            else:
-                safe_echo("Warning: could not determine branch to delete.", err=True)
-        except Exception as exc:
-            safe_echo(f"Warning: could not delete remote branch: {exc}", err=True)
+            branch = delete_head(pr_item)
+        except GCError as exc:
+            raise click.ClickException(f"PR closed, but branch deletion was not confirmed: {exc}") from None
+        safe_echo(f"Deleted remote branch {branch}")
     safe_echo(f"Closed pull request #{safe_number(item, number)}")
 
 
@@ -921,7 +926,7 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
     if name_only and patch:
         raise click.UsageError("--name-only cannot be used with --patch.")
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -954,31 +959,6 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
     safe_echo(diff_text)
 
 
-def _fetch_checkout_head(head_ref: str, *, detach: bool, force: bool, expected_sha: str | None) -> None:
-    fetch_args = ["git", "fetch", "origin", head_ref]
-    if detach:
-        fetch_args = ["git", "fetch", "origin", f"refs/heads/{head_ref}", "--no-tags"]
-    elif force:
-        fetch_args = ["git", "fetch", "origin", f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}", "--no-tags"]
-    try:
-        subprocess.run(fetch_args, check=True)
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"Git fetch failed: {exc}") from exc
-
-    if (detach or force) and expected_sha:
-        try:
-            fetched = subprocess.run(
-                ["git", "rev-parse", "--verify", "FETCH_HEAD"], capture_output=True, text=True, check=True
-            )
-        except subprocess.CalledProcessError as exc:
-            raise click.ClickException(f"Unable to verify fetched PR head: {exc}") from exc
-        if fetched.stdout.strip() != expected_sha:
-            raise click.ClickException(
-                "Fetched head does not match the PR head. Check that origin contains the PR source branch, "
-                "then retry with up-to-date PR metadata."
-            )
-
-
 @pr_group.command("checkout")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
@@ -995,59 +975,15 @@ def pr_checkout(
     force: bool,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     item = service.get(owner, repo, int(number))
-    head_ref = item.get("head", {}).get("ref")
-    if not head_ref:
-        raise click.ClickException("Unable to determine PR branch.")
-    if not isinstance(head_ref, str) or head_ref.startswith("-"):
-        raise click.ClickException("Invalid PR branch name.")
-    local_branch = branch or head_ref
-    remote_tracking = f"origin/{head_ref}"
-    _fetch_checkout_head(head_ref, detach=detach, force=force, expected_sha=_pr_ref_oid(item.get("head")))
-
+    local_branch = checkout_head(item, branch, detach=detach, force=force)
     if detach:
-        try:
-            subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], check=True)
-        except subprocess.CalledProcessError as exc:
-            raise click.ClickException(f"Git checkout failed: {exc}") from exc
         safe_echo(f"Checked out pull request #{number} with detached HEAD")
-        return
-
-    existing = subprocess.run(
-        ["git", "rev-parse", "--verify", f"refs/heads/{local_branch}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if existing.returncode == 0:
-        tracking = subprocess.run(
-            ["git", "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{local_branch}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if tracking.stdout.strip() == remote_tracking:
-            try:
-                subprocess.run(["git", "checkout", local_branch], check=True)
-                if force:
-                    subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], check=True)
-            except subprocess.CalledProcessError as exc:
-                raise click.ClickException(f"Git checkout failed: {exc}") from exc
-            safe_echo(f"Checked out existing branch {local_branch} (tracking {remote_tracking})")
-        else:
-            raise click.ClickException(
-                f"A branch named '{local_branch}' already exists and does not track {remote_tracking}. "
-                f"Use --branch to specify a different name, or rename/delete the existing branch."
-            )
     else:
-        try:
-            subprocess.run(["git", "checkout", "-b", local_branch, remote_tracking], check=True)
-        except subprocess.CalledProcessError as exc:
-            raise click.ClickException(f"Git checkout failed: {exc}") from exc
         safe_echo(f"Checked out branch {local_branch}")
 
 
@@ -1058,7 +994,7 @@ def pr_checkout(
 @click.pass_context
 def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, undo: bool) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
@@ -1157,7 +1093,7 @@ def pr_audit(
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
+    owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
     if th1 > th2:

@@ -18,13 +18,15 @@ gc setup gh-proxy --configure
 
 1. `GC_GH_TARGET=gitcode|github`
 2. 显式 `-R HOST/OWNER/REPO` 或 `--repo` 参数中的 host
-3. `repo view/clone/fork/edit/delete/sync` 的仓库位置参数中的 host（忽略选项值）
+3. Issue/PR URL 中的 host，或 `repo view/clone/fork/edit/delete/sync` 的仓库位置参数中的 host（忽略选项值）
 4. 当前仓库 `origin` 的 host
 5. 无法判断目标时使用原生 GitHub CLI
 
 默认识别 `gitcode.com` 和 `ssh.gitcode.com`，包括 `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`。`ssh://git@ssh.github.com:443/OWNER/REPO.git` 等 GitHub SSH 地址会路由到原生 `gh`。私有部署可以通过 `GC_GITCODE_HOSTS` 配置逗号分隔的额外 host。自动查找原生 `gh` 失败时，可用 `GC_REAL_GH` 指定其可执行文件。代理查找时会排除自身目录；在 POSIX 上通过进程替换保留原始参数、标准流、信号和退出状态。
 
 GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令会直接拒绝，不会转发给 GitHub。`gc setup gh-proxy --uninstall` 会移除 shim，并且只删除由该命令管理且带标记的 shell/OpenCode 配置。
+
+Issue/PR URL 与显式 host 或 `GC_GH_TARGET` 冲突时会被拒绝。直接使用 `gc` 的 Issue/PR 命令会在访问 API 前校验有效 URL、`-R` 或 origin 的 host，不会将其他平台的目标映射为 GitCode 同名仓库。完整 GitCode URL 可在本地 checkout 之外使用。`GC_GITCODE_HOSTS` 只改变代理路由，不会改变 CLI 固定的 GitCode API 地址，也不会授权其他 host。
 
 在 GitCode 仓库中，`gh --version` 会明确标识 pygitcode proxy、GitCode 目标和 `gc` 后端；`gh auth status` 会显示 `gitcode.com`、GitCode API host、脱敏 token，并明确提示命令目标是 GitCode 而非 GitHub。在 GitHub 仓库中，这两个命令仍保持原生 GitHub CLI 输出。
 
@@ -43,7 +45,7 @@ GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令
 | `--add-label` / `--remove-label` 等编辑辅助参数 | 支持 |
 | `auth status --json hosts`、`--jq`、`--template` | 支持；格式化选项需要配合 `--json` |
 | `pr reopen --comment`、`pr diff --name-only` | 支持 |
-| `pr checkout --detach`、`--force` | 支持，使用已配置的 `origin` |
+| `pr checkout --detach`、`--force` | 支持，使用已验证的 PR 源仓库 |
 | `pr comment --edit-last`、`--create-if-none`、`--delete-last`、`--yes` | 支持，限当前用户的普通 PR 评论 |
 | `pr diff --patch` | 支持，返回按提交划分的邮件格式补丁 |
 
@@ -62,7 +64,7 @@ gc pr checkout 42 --force
 
 `--template` 复用 CLI 已有的 Go template 子集。`pr diff --name-only` 通过单次请求读取完整文件变更集合，包含二进制、重命名和删除的文件。[文件变更端点](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-files/)未声明分页参数。`pr reopen --comment` 先重开 PR 再发表评论；评论失败时命令以失败退出，并明确报告 PR 已重开。
 
-PR checkout 要求源分支位于 `origin`。`--detach` 检出刚拉取的 head，不创建或重置本地分支。`--force` 只重置跟踪对应 `origin` 分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改；已有无关分支仍会被拒绝。当 API 提供 head SHA 时，这两个参数会在改变本地检出状态前核对它与 `FETCH_HEAD` 是否一致。fork／源仓库不匹配或 API 查询到拉取之间 head 已更新时，会明确报错。
+PR checkout 从已验证的源仓库拉取，不再假定源分支位于 `origin`。`--detach` 检出已核实的不可变 head SHA，不创建或重置本地分支。`--force` 只重置 upstream 对应同一源仓库及分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改。缺失、不相关或不明确的 upstream 均拒绝，remote 名称不必是 `origin`。不使用 `--force` 时，已有分支必须已指向核实的 SHA。新分支从该 SHA 创建；若现存 remote 中恰有一个使用规范 HTTPS/SSH 源 URL 及标准分支 fetch 映射，则保留对应 upstream。缺少 tracking ref 时，以 compare-and-swap 保护创建，绝不覆盖已有 ref。否则不擅自建立 upstream，之后使用 `--force` 前须明确配置源 remote/upstream。自定义端口、HTTPS URL 内嵌凭据和 remote helper 不作为 upstream 身份证明，不保存临时路由 remote。所有模式均要求 API 提供完整 head SHA；API 查询到拉取之间 head 已变化时，在改变本地检出状态前报错。URL 固定针对 Git 配置重写，不会禁用原生 HTTPS 重定向或替代 Git 认证。
 
 ### PR 评论历史与补丁
 
@@ -84,7 +86,10 @@ gc pr diff 42 --patch > review.patch
 | 范围 | `gc` 中的差异 |
 | --- | --- |
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
-| Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`，而不是只依赖 URL 路径。 |
+| Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`。更新还要求 `title`；close/reopen 和部分字段编辑保留读取到的当前标题，无法取得标题时拒绝写入。 |
+| PR squash | `--squash` 按当前 GitCode 契约发送 `merge_method=merge` 和独立布尔字段 `squash=true`。 |
+| PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
+| 写入结果 | merge 必须明确返回 `merged=true`（或整数 `1`）后才能报告成功或删除分支。重定向、已受理但未完成、非法 JSON 及非预期空响应均报错。结果不确定时应先核实远端状态再重试。已完成 merge/close 但分支删除被拒绝时，返回非零退出码并明确报告部分完成。 |
 | PR 行内评论 | GitCode 使用 `path + position` 模型，`position` 为文件绝对行号。`--line` 校验行号位于 PR diff 中后原样传递；`--position` 跳过 diff 校验。`--side` 仅选择校验侧，不会发送给 GitCode，因此 LEFT 侧锚定仅为尽力支持，不保证准确。不支持选择 commit。 |
 | PR review request changes | `gc pr review --request-changes` 会近似为 PR 评论，因为 GitCode review API 与 GitHub 不同。 |
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
@@ -93,3 +98,7 @@ gc pr diff 42 --patch > review.patch
 | 仓库归档 | 未实现 `gc repo archive`/`unarchive`；GitCode 仅文档化了一个缺少请求参数说明的 org 级归档端点。 |
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |
+
+POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
+
+squash/title 契约已于 2026-10-30 对照[合并 PR](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge)和[更新 Issue](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number)文档核实；离线契约测试不代表已验证真实 sandbox 兼容性。

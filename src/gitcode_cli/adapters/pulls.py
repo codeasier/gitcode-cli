@@ -229,7 +229,8 @@ class PullRequestAdapter:
         admin: bool,
     ) -> dict[str, Any] | None:
         payload = {
-            "merge_method": merge_method,
+            "merge_method": "merge" if merge_method == "squash" else merge_method,
+            "squash": True if merge_method == "squash" else None,
             "description": body,
             "title": subject,
             "force_merge": True if admin else None,

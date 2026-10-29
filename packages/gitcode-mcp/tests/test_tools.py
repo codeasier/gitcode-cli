@@ -143,6 +143,32 @@ def test_issue_create_and_update_keep_gitcode_endpoint_shape():
     }
 
 
+@pytest.mark.parametrize("fields", [{"state": "close"}, {"state": "reopen"}, {"body": "updated"}])
+def test_issue_update_preserves_required_title_and_bearer_transport(fields):
+    with catalog({"number": "23", "title": "Original"}) as (tools, requests):
+        tools.call(
+            "gitcode_update_issue",
+            {**REPOSITORY, "issue_number": 23, "title": "Original", **fields},
+        )
+    assert [request.method for request in requests] == ["PATCH"]
+    assert json.loads(requests[0].content) == {"repo": "project", "title": "Original", **fields}
+    for request in requests:
+        assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        assert "access_token" not in request.url.params
+        assert "private-token" not in request.headers
+
+
+@pytest.mark.parametrize("fields", [{}, {"title": None}, {"title": ""}])
+def test_issue_update_missing_title_never_calls_upstream(fields):
+    with catalog() as (tools, requests):
+        with pytest.raises(GitCodeError, match="JSON schema"):
+            tools.call(
+                "gitcode_update_issue",
+                {**REPOSITORY, "issue_number": 23, "state": "close", **fields},
+            )
+    assert requests == []
+
+
 @pytest.mark.parametrize(
     ("name", "extra", "suffix"),
     [

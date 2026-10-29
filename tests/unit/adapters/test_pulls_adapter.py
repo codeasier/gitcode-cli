@@ -189,7 +189,7 @@ class TestPullRequestAdapter:
         }
 
     def test_merge_pr_maps_supported_gh_flags_to_gitcode_payload(self, adapter, service):
-        service.merge.return_value = {"message": "Merged"}
+        service.merge.return_value = {"merged": True, "message": "Merged"}
 
         adapter.merge_pr(
             "owner",
@@ -205,7 +205,8 @@ class TestPullRequestAdapter:
             "owner",
             "repo",
             42,
-            merge_method="squash",
+            merge_method="merge",
+            squash=True,
             description="Merge body",
             title="Merge subject",
             force_merge=True,

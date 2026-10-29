@@ -13,7 +13,10 @@ def milestone_number(value: Any) -> int | None:
     if type(value) is int:
         return value if value > 0 else None
     if isinstance(value, str) and value.isascii() and value.isdigit():
-        number = int(value)
+        try:
+            number = int(value)
+        except ValueError:
+            return None
         return number if number > 0 else None
     return None
 

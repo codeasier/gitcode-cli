@@ -87,7 +87,7 @@ class PullRequestAdapter:
         )
         try:
             item = self.service.get(owner, repo, number)
-        except GCError as exc:
+        except (GCError, ValueError) as exc:
             raise click.ClickException(message) from exc
         if not isinstance(item, dict):
             raise click.ClickException(message)

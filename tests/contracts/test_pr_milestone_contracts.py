@@ -34,7 +34,7 @@ def http_cli(monkeypatch):
             client.close()
 
 
-def _route(router, method, suffix, response, *, payload=None, query=None, status=200):
+def _route(router, method, suffix, response, *, payload=None, query=None, status=200, raw=None):
     def respond(request):
         assert request.method == method
         assert request.url.scheme == "https" and request.url.host == "milestones.gitcode.invalid"
@@ -50,7 +50,7 @@ def _route(router, method, suffix, response, *, payload=None, query=None, status
             assert json.loads(request.content) == payload
             assert "milestone" not in payload
             assert type(payload["milestone_number"]) is int
-        return httpx.Response(status, json=response)
+        return httpx.Response(status, text=raw) if raw is not None else httpx.Response(status, json=response)
 
     return router.request(method, ORIGIN + PREFIX + suffix).mock(side_effect=respond)
 
@@ -173,3 +173,23 @@ def test_create_without_number_never_reposts(http_cli):
     assert "creation may have succeeded" in result.output
     assert write.call_count == 1
     assert [entry.request.method for entry in router.calls] == ["POST"]
+
+
+@pytest.mark.parametrize("operation", ["create", "edit"])
+@pytest.mark.parametrize("raw", ["<html>Synthetic error</html>", '{"milestone":'])
+def test_non_json_readback_preserves_partial_success_message(http_cli, operation, raw):
+    router, runner = http_cli
+    method = "POST" if operation == "create" else "PATCH"
+    suffix = "/pulls" if operation == "create" else "/pulls/42"
+    write = _route(router, method, suffix, {"number": 42}, payload=_payload(operation))
+    read = _route(router, "GET", "/pulls/42", None, raw=raw)
+
+    result = _invoke(runner, operation, "7")
+
+    assert result.exit_code == 1
+    assert "PR #42 may have been created or updated" in result.output
+    assert "no write was repeated" in result.output
+    assert raw not in result.output
+    assert "Created pull request" not in result.output and "Edited pull request" not in result.output
+    assert write.call_count == read.call_count == 1
+    assert [entry.request.method for entry in router.calls] == [method, "GET"]

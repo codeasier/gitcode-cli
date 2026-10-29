@@ -1073,7 +1073,7 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
     service.update(owner, repo, int(number), draft=undo)
     try:
         item = service.get(owner, repo, int(number))
-    except GCError as exc:
+    except (GCError, ValueError) as exc:
         raise click.ClickException(
             "The draft-state update may have succeeded, but its result could not be read. "
             "Verify the pull request before retrying."

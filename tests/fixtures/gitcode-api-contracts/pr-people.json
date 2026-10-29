@@ -1,0 +1,11 @@
+{
+  "verified_on": "2026-10-29",
+  "provenance": "Manually checked against official GitCode v5 documentation; not a live recording.",
+  "endpoints": [
+    {"method": "POST", "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/assignees", "json": {"assignees": "alice,bob"}, "query": {}, "source": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-assignees/"},
+    {"method": "DELETE", "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/assignees", "json": null, "query": {"assignees": "alice,bob"}, "source": "https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-number-assignees/"},
+    {"method": "POST", "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/reviewers", "json": {"reviewers": "alice,bob", "add": true}, "query": {}, "source": "https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-approval-reviewers/"},
+    {"method": "DELETE", "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/reviewers", "json": {"reviewers": "alice,bob"}, "query": {}, "source": "https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-number-approval-reviewers/"}
+  ],
+  "readback": {"assignees": "assignees", "reviewers": "approval_reviewers", "source": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/"}
+}

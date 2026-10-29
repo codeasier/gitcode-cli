@@ -594,7 +594,7 @@ def pr_edit(
         ]
     ):
         raise click.UsageError("must specify at least one field to edit")
-    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
+    adapter = PullRequestAdapter(service, UserService(service.client), milestone_service=IssueService(service.client))
     item = adapter.edit_pr(
         owner,
         repo,
@@ -835,7 +835,7 @@ def pr_create(
         else get_body_from_options(body=body, body_file=body_file, editor=editor)
     )
     service = PullRequestService(app.client())
-    adapter = PullRequestAdapter(service, milestone_service=IssueService(service.client))
+    adapter = PullRequestAdapter(service, UserService(service.client), milestone_service=IssueService(service.client))
     result = adapter.create_pr(
         owner,
         repo,
@@ -860,7 +860,7 @@ def pr_create(
         jq_query=jq_query,
         project=project_pr,
         read=lambda number: service.get(owner, repo, number),
-        readback_done=milestone is not None,
+        readback_done=milestone is not None or bool(assignees or reviewers),
     )
     output_result(
         item,

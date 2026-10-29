@@ -7,6 +7,12 @@ from ..client import GitCodeClient
 from ..errors import APIError
 
 
+def _people_logins(logins: str) -> str:
+    if not isinstance(logins, str) or not all(part.strip() for part in logins.split(",")):
+        raise APIError("PR people requests require explicit nonempty account logins.")
+    return logins
+
+
 class PullRequestService:
     def __init__(self, client: GitCodeClient):
         self.client = client
@@ -61,6 +67,26 @@ class PullRequestService:
     def merge(self, owner: str, repo: str, number: int, **data: Any) -> Any | None:
         return self.client.put(
             f"/repos/{owner}/{repo}/pulls/{number}/merge", json={k: v for k, v in data.items() if v is not None}
+        )
+
+    def add_assignees(self, owner: str, repo: str, number: int, logins: str) -> Any | None:
+        return self.client.post(
+            f"/repos/{owner}/{repo}/pulls/{number}/assignees", json={"assignees": _people_logins(logins)}
+        )
+
+    def remove_assignees(self, owner: str, repo: str, number: int, logins: str) -> Any | None:
+        return self.client.delete(
+            f"/repos/{owner}/{repo}/pulls/{number}/assignees", params={"assignees": _people_logins(logins)}
+        )
+
+    def add_reviewers(self, owner: str, repo: str, number: int, logins: str) -> Any | None:
+        return self.client.post(
+            f"/repos/{owner}/{repo}/pulls/{number}/reviewers", json={"reviewers": _people_logins(logins), "add": True}
+        )
+
+    def remove_reviewers(self, owner: str, repo: str, number: int, logins: str) -> Any | None:
+        return self.client.delete(
+            f"/repos/{owner}/{repo}/pulls/{number}/reviewers", json={"reviewers": _people_logins(logins)}
         )
 
     def comment(

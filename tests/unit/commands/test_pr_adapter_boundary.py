@@ -66,11 +66,13 @@ class TestPrCommandAdapterBoundary:
         pull_service_ctor = MagicMock()
         pull_adapter_ctor = MagicMock(return_value=adapter)
         milestone_service_ctor = MagicMock()
+        user_service_ctor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("gitcode_cli.commands.pr.PullRequestService", pull_service_ctor)
             mp.setattr("gitcode_cli.commands.pr.PullRequestAdapter", pull_adapter_ctor)
             mp.setattr("gitcode_cli.commands.pr.IssueService", milestone_service_ctor)
+            mp.setattr("gitcode_cli.commands.pr.UserService", user_service_ctor)
             result = runner.invoke(
                 main,
                 [
@@ -96,8 +98,11 @@ class TestPrCommandAdapterBoundary:
         assert result.exit_code == 0
         pull_service_ctor.assert_called_once_with(mock_app_client)
         milestone_service_ctor.assert_called_once_with(pull_service_ctor.return_value.client)
+        user_service_ctor.assert_called_once_with(pull_service_ctor.return_value.client)
         pull_adapter_ctor.assert_called_once_with(
-            pull_service_ctor.return_value, milestone_service=milestone_service_ctor.return_value
+            pull_service_ctor.return_value,
+            user_service_ctor.return_value,
+            milestone_service=milestone_service_ctor.return_value,
         )
         adapter.create_pr.assert_called_once_with(
             "owner",

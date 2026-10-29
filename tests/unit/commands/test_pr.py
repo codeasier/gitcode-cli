@@ -671,14 +671,24 @@ class TestPrCreate:
         assert '"base": "master"' in result.output
         assert '"head": "feature"' in result.output
         assert '"labels": "bug,docs"' in result.output
-        assert '"reviewers": "alice,bob"' in result.output
-        assert '"assignees": "carol,dave"' in result.output
+        assert json.loads(result.output)["people_operations"] == {
+            "assignees": ["carol", "dave"],
+            "approval_reviewers": ["alice", "bob"],
+        }
         assert '"milestone_number": 1' in result.output
 
     def test_pr_create_repeatable_people_and_labels_are_normalized(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
             [{"number": 1, "title": "v1"}],
-            {"number": 42, "milestone": {"number": 1}, "html_url": "https://gitcode.com/owner/repo/pulls/42"},
+            {"number": 42, "id": 1042, "assignees": [], "approval_reviewers": []},
+            {
+                "number": 42,
+                "id": 1042,
+                "assignees": [{"id": 3, "login": "carol"}, {"id": 4, "login": "dave"}],
+                "approval_reviewers": [{"id": 1, "login": "alice"}, {"id": 2, "login": "bob"}],
+                "milestone": {"number": 1},
+                "html_url": "https://gitcode.com/owner/repo/pulls/42",
+            },
         ]
         result = runner.invoke(
             main,
@@ -710,10 +720,14 @@ class TestPrCreate:
             ],
         )
         assert result.exit_code == 0
-        assert mock_client.post.call_args.kwargs["json"]["labels"] == "bug,docs"
-        assert mock_client.post.call_args.kwargs["json"]["reviewers"] == "alice,bob"
-        assert mock_client.post.call_args.kwargs["json"]["assignees"] == "carol,dave"
-        assert mock_client.post.call_args.kwargs["json"]["milestone_number"] == 1
+        create = mock_client.post.call_args_list[0]
+        assert create.kwargs["json"]["labels"] == "bug,docs"
+        assert create.kwargs["json"]["milestone_number"] == 1
+        assert "reviewers" not in create.kwargs["json"] and "assignees" not in create.kwargs["json"]
+        assert mock_client.post.call_args_list[1:] == [
+            call("/repos/owner/repo/pulls/42/assignees", json={"assignees": "carol,dave"}),
+            call("/repos/owner/repo/pulls/42/reviewers", json={"reviewers": "alice,bob", "add": True}),
+        ]
 
     def test_pr_create_alias_new(self, runner, mock_client, mock_repo):
         result = runner.invoke(

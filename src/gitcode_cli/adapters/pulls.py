@@ -8,6 +8,7 @@ import click
 from ..errors import GCError
 from ..services import IssueService, PullRequestService, UserService
 from ._milestones import milestone_number, resolve_pr_milestone
+from ._pr_people import PRPeoplePlan
 from .base import AdapterActionResult
 from .capabilities import capability_message
 
@@ -80,13 +81,15 @@ class PullRequestAdapter:
         self.user_service = user_service
         self.milestone_service = milestone_service
 
-    def _confirm_milestone(self, owner: str, repo: str, number: int, expected: int) -> dict[str, Any]:
+    def _confirm_milestone(
+        self, owner: str, repo: str, number: int, expected: int, *, snapshot: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         message = (
             f"PR #{number} may have been created or updated, but its milestone was not confirmed. "
             "Verify the PR before retrying; no write was repeated."
         )
         try:
-            item = self.service.get(owner, repo, number)
+            item = snapshot if snapshot is not None else self.service.get(owner, repo, number)
         except (GCError, ValueError) as exc:
             raise click.ClickException(message) from exc
         if not isinstance(item, dict) or milestone_number(item.get("number")) != number:
@@ -193,6 +196,7 @@ class PullRequestAdapter:
         dry_run: bool,
     ) -> AdapterActionResult:
         resolved_milestone = resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
+        people = PRPeoplePlan(self.service, self.user_service, assignees=assignees or (), reviewers=reviewers or ())
         payload = {
             "title": title,
             "body": body,
@@ -200,13 +204,35 @@ class PullRequestAdapter:
             "head": head,
             "draft": draft,
             "labels": _normalize_multi_values(labels),
-            "assignees": _normalize_multi_values(assignees),
-            "reviewers": _normalize_multi_values(reviewers),
             "milestone_number": resolved_milestone,
         }
         if dry_run:
-            return AdapterActionResult(item={k: v for k, v in payload.items() if v is not None})
+            preview: dict[str, Any] = {k: v for k, v in payload.items() if v is not None}
+            if people.fields:
+                preview["people_operations"] = {
+                    "assignees": people.add["assignees"],
+                    "approval_reviewers": people.add["approval_reviewers"],
+                }
+            return AdapterActionResult(item=preview)
         item = self.service.create(owner, repo, **payload)
+        if people.fields:
+            number = milestone_number(item.get("number")) if isinstance(item, dict) else None
+            if number is None:
+                raise click.ClickException(
+                    "PR creation may have succeeded, but its number is unavailable for people changes. "
+                    "Inspect the repository before retrying; no write was repeated."
+                )
+            before = people.read(owner, repo, number, partial=True)
+            if (
+                isinstance(item, dict)
+                and "id" in item
+                and milestone_number(item["id"]) != milestone_number(before["id"])
+            ):
+                raise click.ClickException(
+                    f"PR #{number} may have been created, but its creation identity was not confirmed. "
+                    "Inspect the PR before retrying; no write was repeated."
+                )
+            item = people.apply(owner, repo, number, before)
         if resolved_milestone is not None:
             number = milestone_number(item.get("number")) if isinstance(item, dict) else None
             if number is None:
@@ -214,7 +240,9 @@ class PullRequestAdapter:
                     "PR creation may have succeeded, but its number is unavailable for milestone verification. "
                     "Verify the repository before retrying; no write was repeated."
                 )
-            item = self._confirm_milestone(owner, repo, number, resolved_milestone)
+            item = self._confirm_milestone(
+                owner, repo, number, resolved_milestone, snapshot=item if people.fields else None
+            )
         return AdapterActionResult(item=item)
 
     def merge_pr(
@@ -282,17 +310,22 @@ class PullRequestAdapter:
         resolved_milestone = (
             None if remove_milestone else resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
         )
+        people = PRPeoplePlan(
+            self.service,
+            self.user_service,
+            assignees=(add_assignee,) if add_assignee is not None else (),
+            reviewers=(add_reviewer,) if add_reviewer is not None else (),
+            remove_assignees=(remove_assignee,) if remove_assignee is not None else (),
+            remove_reviewers=(remove_reviewer,) if remove_reviewer is not None else (),
+        )
+        before = people.read(owner, repo, number, partial=False) if people.fields else None
         data = {
             k: v
             for k, v in {
                 "title": title,
                 "body": body,
-                "assignee": add_assignee,
                 "labels": add_label,
-                "reviewer": add_reviewer,
-                "unassignee": remove_assignee,
                 "unset_labels": remove_label,
-                "unset_reviewer": remove_reviewer,
                 "milestone_number": resolved_milestone,
             }.items()
             if v is not None
@@ -300,9 +333,13 @@ class PullRequestAdapter:
         if remove_milestone:
             # Legacy clearing behavior is deliberately outside this setting-only repair.
             data["milestone"] = ""
-        item = self.service.update(owner, repo, number, **data)
+        item = self.service.update(owner, repo, number, **data) if data else before
+        if before is not None:
+            item = people.apply(owner, repo, number, before, force_read=bool(data))
         if resolved_milestone is not None:
-            item = self._confirm_milestone(owner, repo, number, resolved_milestone)
+            item = self._confirm_milestone(
+                owner, repo, number, resolved_milestone, snapshot=item if people.fields else None
+            )
         return item
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:

@@ -183,8 +183,7 @@ class TestPullRequestAdapter:
             "head": "feature",
             "draft": False,
             "labels": "bug,docs",
-            "assignees": "carol,dave",
-            "reviewers": "alice,bob",
+            "people_operations": {"assignees": ("carol", "dave"), "approval_reviewers": ("alice", "bob")},
             "milestone_number": 1,
         }
 
@@ -279,6 +278,21 @@ class TestPullRequestAdapter:
 
     def test_edit_pr_maps_add_remove_fields(self, adapter, service):
         service.update.return_value = {"number": 42}
+        service.get.side_effect = [
+            {
+                "number": 42,
+                "id": 1042,
+                "assignees": [{"id": 3, "login": "carol"}],
+                "approval_reviewers": [{"id": 4, "login": "dave"}],
+            },
+            {
+                "number": 42,
+                "id": 1042,
+                "assignees": [{"id": 1, "login": "alice"}],
+                "approval_reviewers": [{"id": 2, "login": "bob"}],
+                "milestone": {"number": 1},
+            },
+        ]
 
         adapter.edit_pr(
             "owner",
@@ -302,11 +316,11 @@ class TestPullRequestAdapter:
             42,
             title="New title",
             body="Body",
-            assignee="alice",
             labels="bug",
-            reviewer="bob",
-            unassignee="carol",
             unset_labels="wip",
-            unset_reviewer="dave",
             milestone_number=1,
         )
+        service.add_assignees.assert_called_once_with("owner", "repo", 42, "alice")
+        service.remove_assignees.assert_called_once_with("owner", "repo", 42, "carol")
+        service.add_reviewers.assert_called_once_with("owner", "repo", 42, "bob")
+        service.remove_reviewers.assert_called_once_with("owner", "repo", 42, "dave")

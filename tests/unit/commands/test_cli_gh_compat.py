@@ -169,14 +169,7 @@ class TestCliGhCompatibility:
             (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
             (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
             (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["pr", "reopen", "1", "--comment", "reopening"], "pr reopen --comment"),
-            (["pr", "diff", "1", "--name-only"], "pr diff --name-only"),
             (["pr", "diff", "1", "--patch"], "pr diff --patch"),
-            (["pr", "checkout", "1", "--detach"], "pr checkout --detach"),
-            (["pr", "checkout", "1", "--force"], "pr checkout --force"),
-            (["auth", "status", "--json", "token"], "auth status --json"),
-            (["auth", "status", "--jq", ".token"], "auth status --jq"),
-            (["auth", "status", "--template", "{{.token}}"], "auth status --template"),
         ],
     )
     def test_selected_gh_flags_fail_as_pending(self, args: list[str], flag_name: str) -> None:

@@ -41,6 +41,26 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | Command aliases such as `ls` → `list`, `new` → `create` | Supported |
 | Multi-value options such as repeated `--label` | Supported |
 | Edit helpers such as `--add-label` / `--remove-label` | Supported |
+| `auth status --json hosts`, `--jq`, and `--template` | Supported; formatting options require `--json` |
+| `pr reopen --comment` and `pr diff --name-only` | Supported |
+| `pr checkout --detach` and `--force` | Supported using the configured `origin` |
+
+### Structured authentication status
+
+`gc auth status --json hosts` verifies the current user through the GitCode API and returns a `hosts` map for `gitcode.com`. Tokens are never included in this output. Unavailable scopes and Git protocol are omitted. A missing token returns `{"hosts": {}}`; an API or network authentication failure returns an entry with `state: "error"` and exit code 0. Invalid configuration, JSON fields, jq expressions, or formatting options still fail. JSON output stays machine-readable when the gh proxy is active.
+
+```bash
+gc auth status --json hosts
+gc auth status --json hosts --jq '.hosts["gitcode.com"][0].login'
+gc pr diff 42 --name-only
+gc pr reopen 42 --comment "Ready for another review"
+gc pr checkout 42 --detach
+gc pr checkout 42 --force
+```
+
+`--template` uses the CLI's existing Go-template subset. `pr diff --name-only` reads all pages of the changed-files API, including binary, renamed, and deleted files. `pr reopen --comment` posts the comment after reopening; if commenting fails, the command exits unsuccessfully and reports that the PR was already reopened.
+
+PR checkout expects the source branch on `origin`. `--detach` checks out the freshly fetched head without creating or resetting a local branch. `--force` resets an existing branch only when it tracks the matching `origin` branch, discarding its local commits and tracked working-tree changes; an unrelated existing branch is still rejected. When the API provides a head SHA, both flags check that it matches `FETCH_HEAD` before changing the local checkout. A fork/source mismatch or a head updated between the API read and fetch is reported as an error.
 
 ## GitCode differences and limitations
 

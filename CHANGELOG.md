@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试。
+
 ## [0.1.7] - 2026-10-29
 
 本次发布新增 `gc repo` 仓库命令组，补齐 `gh` 的仓库管理能力，并引入文件读写服务基元与独立维护的 GitCode MCP 运行时，让仓库操作与 MCP 集成场景更完整。

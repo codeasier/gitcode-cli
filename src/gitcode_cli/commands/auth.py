@@ -5,13 +5,39 @@ import sys
 
 import click
 
+from .. import config
 from ..config import get_token, load_config, save_config
-from ..helptext import GCSectionGroup
+from ..errors import APIError, NetworkError
+from ..formatters import output_result
+from ..helptext import GCSectionGroup, set_gc_help
+from ..services import UserService
 from ..utils import safe_echo
 
 
-def _pending_gh_compat(name: str) -> None:
-    raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
+def _structured_auth_status(ctx: click.Context) -> dict:
+    app = ctx.obj["app"]
+    if not app.token:
+        # A malformed config is a fatal error, rather than a logged-out account.
+        load_config()
+        return {"hosts": {}}
+    if ctx.find_root().params.get("token"):
+        token_source = "--token"
+    elif os.environ.get("GC_TOKEN"):
+        token_source = "GC_TOKEN"
+    else:
+        token_source = str(config.CONFIG_PATH)
+    entry = {"host": "gitcode.com", "active": True, "tokenSource": token_source, "login": ""}
+    try:
+        user = UserService(app.client()).current()
+        login = (user.get("login") or user.get("username")) if isinstance(user, dict) else None
+        if not isinstance(login, str) or not login.strip():
+            raise APIError("Current user response has no login")
+    except (APIError, NetworkError):
+        # Do not export raw API errors: upstream diagnostics can contain credentials.
+        entry.update(state="error", error="Unable to verify authentication with GitCode.")
+    else:
+        entry.update(state="success", login=login)
+    return {"hosts": {"gitcode.com": [entry]}}
 
 
 @click.group("auth", cls=GCSectionGroup, help="Authenticate gc with GitCode.")
@@ -43,16 +69,22 @@ def auth_logout() -> None:
 
 
 @auth_group.command("status", short_help="Show authentication status", help="Show authentication status.")
-@click.option("--json", "json_fields")
-@click.option("-q", "--jq", "jq_query")
-@click.option("-t", "--template")
-def auth_status(json_fields: str | None, jq_query: str | None, template: str | None) -> None:
+@click.option(
+    "--json", "json_fields", is_flag=False, flag_value="", default=None, help="Output JSON; available field: hosts."
+)
+@click.option("-q", "--jq", "jq_query", help="Filter JSON output using a jq expression. Requires --json.")
+@click.option("-t", "--template", help="Format JSON using a Go template string. Requires --json.")
+@click.pass_context
+def auth_status(ctx: click.Context, json_fields: str | None, jq_query: str | None, template: str | None) -> None:
+    if jq_query is not None and template is not None:
+        raise click.UsageError("Specify only one of --jq or --template.")
+    if json_fields is None and (jq_query is not None or template is not None):
+        raise click.UsageError("--jq and --template require --json.")
     if json_fields is not None:
-        _pending_gh_compat("auth status --json")
-    if jq_query is not None:
-        _pending_gh_compat("auth status --jq")
-    if template is not None:
-        _pending_gh_compat("auth status --template")
+        if json_fields.strip() != "hosts":
+            raise click.UsageError("Available JSON fields:\n  hosts")
+        output_result(_structured_auth_status(ctx), "hosts", jq_query, template, default_formatter=lambda _: None)
+        return
     try:
         token = get_token()
     except Exception:
@@ -71,6 +103,18 @@ def auth_status(json_fields: str | None, jq_query: str | None, template: str | N
     safe_echo(f"  - Token: {masked}")
     if os.environ.get("GC_GH_PROXY_ACTIVE") == "1":
         safe_echo("  - gh proxy: active; commands target GitCode, not GitHub")
+
+
+set_gc_help(
+    auth_status,
+    gc_json_fields=["hosts"],
+    gc_arguments_help=[
+        "JSON output verifies the current user for gitcode.com and never includes the token. "
+        "Unavailable scopes and Git protocol are omitted. Authentication failures are reported "
+        "in hosts with exit code 0; malformed configuration and output errors still fail."
+    ],
+    gc_examples=["gc auth status", "gc auth status --json hosts", "gc auth status --json hosts --jq '.hosts'"],
+)
 
 
 @auth_group.command("token", short_help="Print the active token", help="Print the active token.")

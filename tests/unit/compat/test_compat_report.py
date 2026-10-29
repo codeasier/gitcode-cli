@@ -54,8 +54,8 @@ def test_render_markdown_report_includes_legend_and_sections() -> None:
 
 def test_render_markdown_report_uses_real_flags() -> None:
     md = render_markdown_report()
-    # Sanity: at least one of the well-known pending flags appears in the table.
-    assert "| `auth status` | `--json` | pending |" in md
+    assert "| `auth status` | `--json` | implemented |" in md
+    assert "| `pr diff` | `--patch` | pending |" in md
     assert "| `pr edit` | `-B/--base` | unsupported |" in md
     # And the unsupported marker key from the capabilities module.
     assert "PR_EDIT_BASE" in md or "base branch" in md

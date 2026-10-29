@@ -54,9 +54,8 @@ class TestRegistryBasics:
         for entry in _ENTRIES:
             if entry.status is CompatStatus.UNSUPPORTED:
                 assert entry.unsupported_key, f"{entry.label()}: UNSUPPORTED entries must set unsupported_key"
-                assert entry.unsupported_key in CAPABILITY_MESSAGES, (
-                    f"{entry.label()}: capability key {entry.unsupported_key!r} missing from CAPABILITY_MESSAGES"
-                )
+                message = f"{entry.label()}: capability key {entry.unsupported_key!r} missing from CAPABILITY_MESSAGES"
+                assert entry.unsupported_key in CAPABILITY_MESSAGES, message
 
     def test_other_statuses_have_no_guard_keys(self) -> None:
         for entry in _ENTRIES:
@@ -105,9 +104,8 @@ class TestRegistryMatchesRuntime:
         for entry in _ENTRIES:
             if entry.unsupported_key is None:
                 continue
-            assert entry.unsupported_key in CAPABILITY_MESSAGES, (
-                f"{entry.label()}: {entry.unsupported_key!r} not in CAPABILITY_MESSAGES"
-            )
+            message = f"{entry.label()}: {entry.unsupported_key!r} not in CAPABILITY_MESSAGES"
+            assert entry.unsupported_key in CAPABILITY_MESSAGES, message
 
 
 class TestPendingFlagsBehaveAsPending:
@@ -120,14 +118,7 @@ class TestPendingFlagsBehaveAsPending:
             (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
             (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
             (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["pr", "reopen", "1", "--comment", "reopening"], "pr reopen --comment"),
-            (["pr", "diff", "1", "--name-only"], "pr diff --name-only"),
             (["pr", "diff", "1", "--patch"], "pr diff --patch"),
-            (["pr", "checkout", "1", "--detach"], "pr checkout --detach"),
-            (["pr", "checkout", "1", "--force"], "pr checkout --force"),
-            (["auth", "status", "--json", "token"], "auth status --json"),
-            (["auth", "status", "--jq", ".token"], "auth status --jq"),
-            (["auth", "status", "--template", "{{.token}}"], "auth status --template"),
         ],
     )
     def test_pending_flag_invocation_fails(self, args: list[str], flag_name: str) -> None:

@@ -15,7 +15,7 @@ from ..cli_compat import (
     get_fill_info,
     resolve_pr_identifier_or_current_branch,
 )
-from ..errors import GCError
+from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
@@ -448,8 +448,8 @@ def pr_review(
 @click.option("-c", "--comment")
 @click.pass_context
 def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None) -> None:
-    if comment is not None:
-        _pending_gh_compat("pr reopen --comment")
+    if comment is not None and not comment.strip():
+        raise click.UsageError("--comment must not be empty.")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -457,6 +457,13 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None,
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     item = service.update(owner, repo, number, state="open")
+    if comment is not None:
+        try:
+            service.comment(owner, repo, number, body=comment)
+        except GCError as exc:
+            raise click.ClickException(
+                f"Pull request #{number} was reopened, but posting the comment failed: {exc}"
+            ) from exc
     safe_echo(f"Reopened pull request #{safe_number(item, number)}")
 
 
@@ -825,12 +832,12 @@ def pr_close(
 @pr_group.command("diff")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
-@click.option("--name-only", is_flag=True)
+@click.option("--name-only", is_flag=True, help="Display only names of changed files.")
 @click.option("--patch", is_flag=True)
 @click.pass_context
 def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
-    if name_only:
-        _pending_gh_compat("pr diff --name-only")
+    if name_only and patch:
+        raise click.UsageError("--name-only cannot be used with --patch.")
     if patch:
         _pending_gh_compat("pr diff --patch")
     app = ctx.obj["app"]
@@ -838,16 +845,58 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    if name_only:
+        files = service.list_files(owner, repo, int(number))
+        if not isinstance(files, list):
+            raise APIError("Unable to read changed files for this pull request.")
+        paths: list[str] = []
+        for item in files:
+            path = (
+                item.get("filename") or item.get("new_path") or item.get("path") or item.get("old_path")
+                if isinstance(item, dict)
+                else None
+            )
+            if not isinstance(path, str) or not path:
+                raise APIError("Changed file response has no filename.")
+            paths.append(path)
+        if paths:
+            safe_echo("\n".join(paths))
+        return
     diff_text = service.diff(owner, repo, int(number))
     safe_echo(diff_text)
+
+
+def _fetch_checkout_head(head_ref: str, *, detach: bool, force: bool, expected_sha: str | None) -> None:
+    fetch_args = ["git", "fetch", "origin", head_ref]
+    if detach:
+        fetch_args = ["git", "fetch", "origin", f"refs/heads/{head_ref}", "--no-tags"]
+    elif force:
+        fetch_args = ["git", "fetch", "origin", f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}", "--no-tags"]
+    try:
+        subprocess.run(fetch_args, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"Git fetch failed: {exc}") from exc
+
+    if (detach or force) and expected_sha:
+        try:
+            fetched = subprocess.run(
+                ["git", "rev-parse", "--verify", "FETCH_HEAD"], capture_output=True, text=True, check=True
+            )
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Unable to verify fetched PR head: {exc}") from exc
+        if fetched.stdout.strip() != expected_sha:
+            raise click.ClickException(
+                "Fetched head does not match the PR head. Check that origin contains the PR source branch, "
+                "then retry with up-to-date PR metadata."
+            )
 
 
 @pr_group.command("checkout")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
-@click.option("--detach", is_flag=True)
-@click.option("-f", "--force", is_flag=True)
+@click.option("--detach", is_flag=True, help="Check out the fetched PR head without creating a local branch.")
+@click.option("-f", "--force", is_flag=True, help="Reset a matching existing local branch to the fetched PR head.")
 @click.pass_context
 def pr_checkout(
     ctx: click.Context,
@@ -857,10 +906,6 @@ def pr_checkout(
     detach: bool,
     force: bool,
 ) -> None:
-    if detach:
-        _pending_gh_compat("pr checkout --detach")
-    if force:
-        _pending_gh_compat("pr checkout --force")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -870,12 +915,19 @@ def pr_checkout(
     head_ref = item.get("head", {}).get("ref")
     if not head_ref:
         raise click.ClickException("Unable to determine PR branch.")
+    if not isinstance(head_ref, str) or head_ref.startswith("-"):
+        raise click.ClickException("Invalid PR branch name.")
     local_branch = branch or head_ref
     remote_tracking = f"origin/{head_ref}"
-    try:
-        subprocess.run(["git", "fetch", "origin", head_ref], check=True)
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"Git fetch failed: {exc}") from exc
+    _fetch_checkout_head(head_ref, detach=detach, force=force, expected_sha=_pr_ref_oid(item.get("head")))
+
+    if detach:
+        try:
+            subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Git checkout failed: {exc}") from exc
+        safe_echo(f"Checked out pull request #{number} with detached HEAD")
+        return
 
     existing = subprocess.run(
         ["git", "rev-parse", "--verify", f"refs/heads/{local_branch}"],
@@ -893,6 +945,8 @@ def pr_checkout(
         if tracking.stdout.strip() == remote_tracking:
             try:
                 subprocess.run(["git", "checkout", local_branch], check=True)
+                if force:
+                    subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], check=True)
             except subprocess.CalledProcessError as exc:
                 raise click.ClickException(f"Git checkout failed: {exc}") from exc
             safe_echo(f"Checked out existing branch {local_branch} (tracking {remote_tracking})")

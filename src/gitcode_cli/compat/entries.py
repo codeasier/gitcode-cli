@@ -41,7 +41,12 @@ ENTRIES: list[CompatEntry] = [
     # --- auth subcommands ---
     _e("auth login", None, CompatStatus.IMPLEMENTED, "Supports --with-token and interactive input"),
     _e("auth logout", None, CompatStatus.IMPLEMENTED),
-    _e("auth status", None, CompatStatus.IMPLEMENTED, "Simplified: token mask only"),
+    _e(
+        "auth status",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Single host; JSON verifies current user, text reports local token",
+    ),
     _e("auth token", None, CompatStatus.IMPLEMENTED),
     # --- auth flags ---
     _e(
@@ -63,23 +68,20 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "auth status",
         "--json",
-        CompatStatus.PENDING,
-        "Click guard added; structured output not yet implemented",
-        pending_key="auth status --json",
+        CompatStatus.IMPLEMENTED,
+        "hosts field; verifies current user; excludes credentials and unavailable scopes/protocol",
     ),
     _e(
         "auth status",
         "--jq",
-        CompatStatus.PENDING,
-        "Click guard added; structured output not yet implemented",
-        pending_key="auth status --jq",
+        CompatStatus.IMPLEMENTED,
+        "Requires --json; uses the shared jq formatter",
     ),
     _e(
         "auth status",
         "--template",
-        CompatStatus.PENDING,
-        "Click guard added; structured output not yet implemented",
-        pending_key="auth status --template",
+        CompatStatus.IMPLEMENTED,
+        "Requires --json; uses the shared Go-template subset",
     ),
     _e("auth status", "--show-token", CompatStatus.NOT_IN_CLI),
     _e("auth token", "-h/--hostname", CompatStatus.NOT_IN_CLI),
@@ -390,9 +392,8 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "pr reopen",
         "-c/--comment",
-        CompatStatus.PENDING,
-        "Click guard added; gh supports reopening with comment",
-        pending_key="pr reopen --comment",
+        CompatStatus.IMPLEMENTED,
+        "Posts a comment after reopening; reports partial success if commenting fails",
     ),
     _e("pr edit", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("pr edit", "-t/--title", CompatStatus.IMPLEMENTED),
@@ -421,9 +422,8 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "pr diff",
         "--name-only",
-        CompatStatus.PENDING,
-        "Click guard added; behaviour not yet implemented",
-        pending_key="pr diff --name-only",
+        CompatStatus.IMPLEMENTED,
+        "Uses the paginated changed-files API, including binary and renamed files",
     ),
     _e(
         "pr diff",
@@ -438,16 +438,14 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "pr checkout",
         "--detach",
-        CompatStatus.PENDING,
-        "Click guard added; behaviour not yet implemented",
-        pending_key="pr checkout --detach",
+        CompatStatus.IMPLEMENTED,
+        "Checks out FETCH_HEAD from origin without creating a local branch",
     ),
     _e(
         "pr checkout",
         "-f/--force",
-        CompatStatus.PENDING,
-        "Click guard added; behaviour not yet implemented",
-        pending_key="pr checkout --force",
+        CompatStatus.IMPLEMENTED,
+        "Resets a matching existing local branch to FETCH_HEAD; preserves unrelated-branch checks",
     ),
     _e("pr checkout", "--recurse-submodules", CompatStatus.NOT_IN_CLI),
     _e("pr ready", "-R/--repo", CompatStatus.IMPLEMENTED),

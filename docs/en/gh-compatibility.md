@@ -44,6 +44,8 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | `auth status --json hosts`, `--jq`, and `--template` | Supported; formatting options require `--json` |
 | `pr reopen --comment` and `pr diff --name-only` | Supported |
 | `pr checkout --detach` and `--force` | Supported using the configured `origin` |
+| `pr comment --edit-last`, `--create-if-none`, `--delete-last`, and `--yes` | Supported for the current user's ordinary PR comments |
+| `pr diff --patch` | Supported; returns per-commit mail-format patches |
 
 ### Structured authentication status
 
@@ -61,6 +63,21 @@ gc pr checkout 42 --force
 `--template` uses the CLI's existing Go-template subset. `pr diff --name-only` reads all pages of the changed-files API, including binary, renamed, and deleted files. `pr reopen --comment` posts the comment after reopening; if commenting fails, the command exits unsuccessfully and reports that the PR was already reopened.
 
 PR checkout expects the source branch on `origin`. `--detach` checks out the freshly fetched head without creating or resetting a local branch. `--force` resets an existing branch only when it tracks the matching `origin` branch, discarding its local commits and tracked working-tree changes; an unrelated existing branch is still rejected. When the API provides a head SHA, both flags check that it matches `FETCH_HEAD` before changing the local checkout. A fork/source mismatch or a head updated between the API read and fetch is reported as an error.
+
+### PR comment history and patches
+
+```bash
+gc pr comment 42 --edit-last --body "Updated review summary"
+gc pr comment 42 --edit-last --create-if-none --body-file summary.md
+gc pr comment 42 --delete-last --yes
+gc pr diff 42 --patch > review.patch
+```
+
+Comment history reads every page and selects the current user's newest **ordinary PR comment** by creation time, not update time or API response order. Stable user IDs take precedence over logins; display names are never used to establish ownership. Inline comments and discussion replies are excluded. If identity, comment type, pagination, or creation time cannot be established, the command fails before writing. `--create-if-none` requires `--edit-last` and creates only when a complete, valid history has no matching comment. `--yes` requires `--delete-last`; otherwise deletion prompts for confirmation with a default of no.
+
+History flags cannot be combined with inline-comment, discussion, or web options. Editing accepts `--body`, `--body-file` (including `-` for stdin), or `--editor`; the editor starts with the selected comment's text. Without an explicit body source, interactive editing opens the editor; non-interactive use requires a body source. Cancelling the editor or submitting an empty body does not write anything.
+
+Comment updates and deletion use GitCode's documented [edit](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id) and [delete](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id) endpoints. `--patch` uses `GET /repos/{owner}/{repo}/pulls/{number}/patch`, observed to return a mail-format patch in a read-only probe against public `GitCode-official-team/GitCode-Docs` PR #1 on 2026-10-30. This patch endpoint is not listed in the public v5 reference; the CLI rejects non-patch responses and does not substitute an aggregate diff. `--patch` and `--name-only` are mutually exclusive.
 
 ## GitCode differences and limitations
 

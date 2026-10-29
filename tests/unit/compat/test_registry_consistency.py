@@ -108,44 +108,13 @@ class TestRegistryMatchesRuntime:
             assert entry.unsupported_key in CAPABILITY_MESSAGES, message
 
 
-class TestPendingFlagsBehaveAsPending:
-    """End-to-end: invoking a PENDING flag raises the documented message."""
-
-    @pytest.mark.parametrize(
-        ("args", "flag_name"),
-        [
-            (["pr", "comment", "1", "--create-if-none"], "pr comment --create-if-none"),
-            (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
-            (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
-            (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["pr", "diff", "1", "--patch"], "pr diff --patch"),
-        ],
-    )
-    def test_pending_flag_invocation_fails(self, args: list[str], flag_name: str) -> None:
-        # Paranoia: this list must mirror every PENDING entry whose guard we want to
-        # verify at runtime. The full registry→guard consistency is enforced
-        # separately in TestRegistryMatchesRuntime; this list catches the case
-        # where a guard message drifted.
-        from click.testing import CliRunner
-
-        from gitcode_cli.cli import main
-
-        result = CliRunner().invoke(main, args)
-        assert result.exit_code != 0, result.output
-        assert f"gh-compatible command/flag '{flag_name}' is recognized but not implemented yet." in result.output
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [e for e in iter_entries() if e.status is CompatStatus.PENDING],
-)
-def test_every_pending_entry_has_runtime_match(entry) -> None:
+def test_every_pending_entry_has_runtime_match() -> None:
     """Each PENDING entry's pending_key must show up in some command module."""
     sources = _commands_source()
-    for text in sources.values():
-        if entry.pending_key and entry.pending_key in _pending_calls(text):
-            return
-    pytest.fail(f"{entry.label()}: pending_key {entry.pending_key!r} has no matching `_pending_gh_compat()` call")
+    for entry in iter_entries(statuses=[CompatStatus.PENDING]):
+        matched = entry.pending_key and any(entry.pending_key in _pending_calls(text) for text in sources.values())
+        message = f"{entry.label()}: pending_key {entry.pending_key!r} has no matching `_pending_gh_compat()` call"
+        assert matched, message
 
 
 @pytest.mark.parametrize(

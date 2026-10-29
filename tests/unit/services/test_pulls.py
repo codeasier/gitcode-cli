@@ -228,6 +228,19 @@ class TestPullRequestService:
         )
         assert result == ""
 
+    @pytest.mark.parametrize("response", [None, ""])
+    def test_patch_empty_response(self, service, mock_client, response):
+        mock_client.request.return_value = response
+
+        assert service.patch("owner", "repo", 42) == ""
+
+    @pytest.mark.parametrize("response", ["<html>Sign in</html>", '{"message":"error"}', "diff --git a/a b/a", {}])
+    def test_patch_rejects_non_mail_response(self, service, mock_client, response):
+        mock_client.request.return_value = response
+
+        with pytest.raises(APIError, match="mail-format"):
+            service.patch("owner", "repo", 42)
+
     def test_diff_requests_text_response(self, service, mock_client):
         mock_client.request.return_value = "diff --git a/file b/file"
         result = service.diff("owner", "repo", 42)

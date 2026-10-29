@@ -44,6 +44,8 @@ GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令
 | `auth status --json hosts`、`--jq`、`--template` | 支持；格式化选项需要配合 `--json` |
 | `pr reopen --comment`、`pr diff --name-only` | 支持 |
 | `pr checkout --detach`、`--force` | 支持，使用已配置的 `origin` |
+| `pr comment --edit-last`、`--create-if-none`、`--delete-last`、`--yes` | 支持，限当前用户的普通 PR 评论 |
+| `pr diff --patch` | 支持，返回按提交划分的邮件格式补丁 |
 
 ### 结构化认证状态
 
@@ -61,6 +63,21 @@ gc pr checkout 42 --force
 `--template` 复用 CLI 已有的 Go template 子集。`pr diff --name-only` 读取文件变更 API 的全部分页，包含二进制、重命名和删除的文件。`pr reopen --comment` 先重开 PR 再发表评论；评论失败时命令以失败退出，并明确报告 PR 已重开。
 
 PR checkout 要求源分支位于 `origin`。`--detach` 检出刚拉取的 head，不创建或重置本地分支。`--force` 只重置跟踪对应 `origin` 分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改；已有无关分支仍会被拒绝。当 API 提供 head SHA 时，这两个参数会在改变本地检出状态前核对它与 `FETCH_HEAD` 是否一致。fork／源仓库不匹配或 API 查询到拉取之间 head 已更新时，会明确报错。
+
+### PR 评论历史与补丁
+
+```bash
+gc pr comment 42 --edit-last --body "Updated review summary"
+gc pr comment 42 --edit-last --create-if-none --body-file summary.md
+gc pr comment 42 --delete-last --yes
+gc pr diff 42 --patch > review.patch
+```
+
+评论历史操作读取全部分页，按创建时间选取当前用户最新的**普通 PR 评论**，不依赖更新时间或 API 返回顺序。身份判断优先使用稳定用户 ID，其次使用 login，始终不使用显示名称。行内评论与讨论回复不参与选择。身份、评论类型、分页或创建时间无法确认时，命令在写入前失败。`--create-if-none` 必须配合 `--edit-last`，且仅在完整、有效的历史中不存在匹配评论时创建。`--yes` 必须配合 `--delete-last`；否则删除前会确认，默认选择否。
+
+历史参数不能与行内评论、讨论回复或 web 参数混用。编辑支持 `--body`、`--body-file`（`-` 表示标准输入）与 `--editor`，编辑器预填选中评论的正文。未显式指定正文来源时，交互模式打开编辑器，非交互模式要求提供正文来源。取消编辑或正文为空时不写入。
+
+评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。
 
 ## GitCode 差异与限制
 

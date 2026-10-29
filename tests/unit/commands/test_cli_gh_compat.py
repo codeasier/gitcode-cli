@@ -162,21 +162,6 @@ class TestCliGhCompatibility:
     def test_command_has_gh_flags(self, command_path: str, expected_flags: list[tuple[str, ...]]) -> None:
         _assert_command_flags(command_path, expected_flags)
 
-    @pytest.mark.parametrize(
-        ("args", "flag_name"),
-        [
-            (["pr", "comment", "1", "--create-if-none"], "pr comment --create-if-none"),
-            (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
-            (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
-            (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["pr", "diff", "1", "--patch"], "pr diff --patch"),
-        ],
-    )
-    def test_selected_gh_flags_fail_as_pending(self, args: list[str], flag_name: str) -> None:
-        result = CliRunner().invoke(main, args)
-        assert result.exit_code != 0
-        assert f"gh-compatible command/flag '{flag_name}' is recognized but not implemented yet." in result.output
-
     def test_issue_list_rejects_invalid_limit(self) -> None:
         result = CliRunner().invoke(main, ["issue", "list", "-L", "0"])
         assert result.exit_code != 0

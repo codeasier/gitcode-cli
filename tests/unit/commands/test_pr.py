@@ -1281,6 +1281,26 @@ class TestPrStatus:
 
 
 class TestPrDiff:
+    @pytest.mark.parametrize("failure", [APIError("Patch unavailable", 404), NetworkError("Unavailable")])
+    def test_patch_errors_do_not_fall_back_to_diff(self, runner, mock_client, mock_repo, failure):
+        mock_client.request.side_effect = failure
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--patch"])
+
+        assert result.exit_code == 1
+        mock_client.request.assert_called_once_with(
+            "GET", "/repos/owner/repo/pulls/42/patch", accept="text/plain", response_format="text"
+        )
+        mock_client.get.assert_not_called()
+
+    def test_patch_empty_response_does_not_add_a_newline(self, runner, mock_client, mock_repo):
+        mock_client.request.return_value = None
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--patch"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
     def test_name_only_lists_all_pages_including_binary_and_renamed_files(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [
             [{"filename": f"src/file{i}.py"} for i in range(98)]

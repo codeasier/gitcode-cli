@@ -150,6 +150,28 @@ class TestIssueServiceContracts:
 
 
 class TestPullRequestServiceContracts:
+    def test_update_comment_matches_documented_pr_comment_contract(self, pull_service):
+        service, client = pull_service
+        contract = _load_contract("Pull Requests", "patch-api-v-5-repos-owner-repo-pulls-comments-id.json")
+
+        service.update_comment("owner", "repo", 7, "Updated body")
+
+        assert contract["method"] == "PATCH"
+        assert {field["name"] for field in contract["requestBodyFields"]} == {"body"}
+        client.patch.assert_called_once_with(
+            _contract_path(contract, owner="owner", repo="repo", id=7), json={"body": "Updated body"}
+        )
+
+    def test_delete_comment_matches_documented_pr_comment_contract(self, pull_service):
+        service, client = pull_service
+        contract = _load_contract("Pull Requests", "delete-api-v-5-repos-owner-repo-pulls-comments-id.json")
+
+        service.delete_comment("owner", "repo", 7)
+
+        assert contract["method"] == "DELETE"
+        assert contract["requestBodyFields"] == []
+        client.delete.assert_called_once_with(_contract_path(contract, owner="owner", repo="repo", id=7))
+
     def test_list_matches_pr_list_contract(self, pull_service: tuple[PullRequestService, MagicMock]) -> None:
         service, client = pull_service
         contract = _load_contract("Pull Requests", "get-api-v-5-repos-owner-repo-pulls.json")

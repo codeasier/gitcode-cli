@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试。
+- 补齐剩余 5 项占位参数：`pr comment --edit-last/--create-if-none/--delete-last/--yes` 仅管理当前用户最新普通评论，验证完整历史与归属并默认确认删除；`pr diff --patch` 返回服务端按提交划分的邮件格式补丁，拒绝非补丁响应。
 
 ## [0.1.7] - 2026-10-29
 

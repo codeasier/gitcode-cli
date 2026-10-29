@@ -1,0 +1,18 @@
+{
+  "category": "Pull Requests",
+  "name": "编辑评论",
+  "slug": "patch-api-v-5-repos-owner-repo-pulls-comments-id",
+  "docUrl": "https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id",
+  "capturedAt": "2026-10-30",
+  "method": "PATCH",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/comments/{id}",
+  "pathParams": [
+    {"name": "owner", "type": "string", "required": true},
+    {"name": "repo", "type": "string", "required": true},
+    {"name": "id", "type": "integer", "required": true}
+  ],
+  "queryParams": [{"name": "access_token", "type": "string", "required": true}],
+  "requestBodyFields": [{"name": "body", "type": "string", "required": true}],
+  "responseFields": [],
+  "responseExample": {}
+}

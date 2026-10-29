@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..client import GitCodeClient
@@ -77,6 +78,25 @@ class PullRequestService:
 
     def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
         return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/comments")
+
+    def update_comment(self, owner: str, repo: str, comment_id: int, body: str) -> Any | None:
+        return self.client.patch(f"/repos/{owner}/{repo}/pulls/comments/{comment_id}", json={"body": body})
+
+    def delete_comment(self, owner: str, repo: str, comment_id: int) -> Any | None:
+        return self.client.delete(f"/repos/{owner}/{repo}/pulls/comments/{comment_id}")
+
+    def patch(self, owner: str, repo: str, number: int) -> str:
+        response = self.client.request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{number}/patch",
+            accept="text/plain",
+            response_format="text",
+        )
+        if response is None or response == "":
+            return ""
+        if not isinstance(response, str) or not re.match(r"From (?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64}) ", response):
+            raise APIError("GitCode did not return a mail-format pull request patch.")
+        return response
 
     def diff(self, owner: str, repo: str, number: int) -> str:
         response = self.client.request(

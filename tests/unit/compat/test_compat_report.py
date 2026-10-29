@@ -55,7 +55,7 @@ def test_render_markdown_report_includes_legend_and_sections() -> None:
 def test_render_markdown_report_uses_real_flags() -> None:
     md = render_markdown_report()
     assert "| `auth status` | `--json` | implemented |" in md
-    assert "| `pr diff` | `--patch` | pending |" in md
+    assert "| `pr diff` | `--patch` | implemented |" in md
     assert "| `pr edit` | `-B/--base` | unsupported |" in md
     # And the unsupported marker key from the capabilities module.
     assert "PR_EDIT_BASE" in md or "base branch" in md
@@ -70,9 +70,9 @@ def test_iter_entries_filters_by_group() -> None:
 
 
 def test_iter_entries_filters_by_status() -> None:
-    pending = list(iter_entries(statuses=[CompatStatus.PENDING]))
-    assert pending
-    assert all(e.status is CompatStatus.PENDING for e in pending)
+    unsupported = list(iter_entries(statuses=[CompatStatus.UNSUPPORTED]))
+    assert unsupported
+    assert all(e.status is CompatStatus.UNSUPPORTED for e in unsupported)
 
 
 def test_gc_compat_report_runs() -> None:
@@ -91,5 +91,6 @@ def test_gc_compat_stats_runs_as_json() -> None:
 def test_gc_compat_list_filters_pending() -> None:
     result = CliRunner().invoke(main, ["compat", "list", "--status", "pending"])
     assert result.exit_code == 0, result.output
-    assert "pending" in result.output
-    assert "unsupported" not in result.output.splitlines()[0]  # only pending rows
+    expected = list(iter_entries(statuses=[CompatStatus.PENDING]))
+    assert len(result.output.splitlines()) == len(expected)
+    assert all("pending" in line and "unsupported" not in line for line in result.output.splitlines())

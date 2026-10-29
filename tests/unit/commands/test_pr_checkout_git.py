@@ -1,4 +1,4 @@
-"""Exercise PR checkout flags against disposable local Git repositories, without API access."""
+"""Exercise PR checkout and patch output against disposable Git repositories, without API access."""
 
 from __future__ import annotations
 
@@ -12,12 +12,13 @@ from click.testing import CliRunner
 from gitcode_cli.cli import main
 
 
-def _git(path, *args, check=True):
+def _git(path, *args, check=True, input_text=None):
     return subprocess.run(
         ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
         cwd=path,
         capture_output=True,
         text=True,
+        input=input_text,
         check=check,
     )
 
@@ -115,3 +116,21 @@ def test_checkout_refuses_head_mismatch_before_changing_checkout(checkout_repo, 
     assert _git(work, "rev-parse", "HEAD").stdout.strip() == original_head
     assert _git(work, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
     assert _git(work, "rev-parse", "feature").stdout.strip() == initial_sha
+
+
+def test_patch_preserves_mail_series_and_can_be_applied_with_git_am(checkout_repo):
+    work, _, latest_sha, client = checkout_repo
+    _git(work, "fetch", "origin", "feature")
+    patch_text = _git(work, "format-patch", "--stdout", "--binary", "main..FETCH_HEAD").stdout
+    client.request.return_value = patch_text
+
+    result = CliRunner().invoke(main, ["pr", "diff", "42", "-R", "owner/repo", "--patch"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout_bytes == patch_text.encode("utf-8")
+    client.request.assert_called_once_with(
+        "GET", "/repos/owner/repo/pulls/42/patch", accept="text/plain", response_format="text"
+    )
+    _git(work, "am", input_text=result.output)
+    assert _git(work, "rev-parse", "HEAD^{tree}").stdout == _git(work, "rev-parse", f"{latest_sha}^{{tree}}").stdout
+    assert _git(work, "log", "-2", "--format=%s").stdout.splitlines() == ["Latest PR commit", "First PR commit"]

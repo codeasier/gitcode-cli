@@ -18,8 +18,9 @@ Routing priority is:
 
 1. `GC_GH_TARGET=gitcode|github`
 2. the host in an explicit `-R HOST/OWNER/REPO` or `--repo` value
-3. the current repository's `origin` host
-4. the native GitHub CLI when the target cannot be determined
+3. the repository positional's host for `repo view/clone/fork/edit/delete/sync` (option values are ignored)
+4. the current repository's `origin` host
+5. the native GitHub CLI when the target cannot be determined
 
 `gitcode.com` and `ssh.gitcode.com` are recognized by default, including `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`. GitHub SSH endpoints such as `ssh://git@ssh.github.com:443/OWNER/REPO.git` route to the native `gh`. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
 
@@ -32,6 +33,7 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | Capability | Status in `gc` |
 | --- | --- |
 | Issue and PR list/view/create/comment/edit/close flows | Supported |
+| Repository view/list/create/clone/fork/edit/rename/delete/sync flows | Supported |
 | PR identifier inference from the current branch | Supported |
 | `pr create --fill`, `--fill-first`, `--fill-verbose` | Supported |
 | `--editor`, `--dry-run`, and `--web` where applicable | Supported |
@@ -50,4 +52,7 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | PR review changes | `gc pr review --request-changes` is approximated with a PR comment because GitCode's review API differs from GitHub's. |
 | Issue deletion | `gc issue delete` relies on GitCode issue deletion behavior that is not documented in the public API and may change. |
 | Draft/readiness operations | `gc pr ready --undo` toggles draft state through the GitCode PR update capability; behavior may differ from GitHub draft PR semantics. |
+| Repository sync | `gc repo sync` only syncs a fork from its upstream via the GitCode fork sync API; branch selection and `--force` are not available. |
+| Repository archive | `gc repo archive`/`unarchive` are not implemented; GitCode documents only an org-scoped archive endpoint without request parameters. |
+| Repository topics and deploy keys | GitCode v5 has no repository topics or deploy-key API, so `repo edit --add-topic/--remove-topic` and `repo deploy-key` are unavailable. |
 | Browser flows | `--web` opens the corresponding GitCode page; browser-created content depends on GitCode's web UI. |

@@ -12,6 +12,7 @@ from .commands.auth import auth_group
 from .commands.compat import compat_group
 from .commands.issue import issue_group
 from .commands.pr import pr_group
+from .commands.repo import repo_group
 from .commands.setup import setup_group
 from .config import get_token
 from .context import AppContext
@@ -68,12 +69,13 @@ set_gc_help(
     main,
     gc_usage="gc <command> <subcommand> [flags]",
     gc_command_sections=[
-        ("CORE COMMANDS", ["auth", "issue", "pr"]),
+        ("CORE COMMANDS", ["auth", "issue", "pr", "repo"]),
         ("ADDITIONAL COMMANDS", ["compat", "setup", "completion", "version"]),
     ],
     gc_examples=[
         "gc issue create",
         "gc pr list -R owner/repo",
+        "gc repo view owner/repo",
         "gc auth login",
         "gc compat report --stdout",
     ],
@@ -86,6 +88,7 @@ set_gc_help(
 auth_group.short_help = "Authenticate gc with GitCode"  # type: ignore[attr-defined]
 issue_group.short_help = "Manage issues"  # type: ignore[attr-defined]
 pr_group.short_help = "Manage pull requests"  # type: ignore[attr-defined]
+repo_group.short_help = "Manage repositories"  # type: ignore[attr-defined]
 compat_group.short_help = "Inspect gc ↔ gh compatibility"  # type: ignore[attr-defined]
 setup_group.short_help = "Configure optional gc integrations"  # type: ignore[attr-defined]
 
@@ -108,6 +111,7 @@ def completion_command(shell: str) -> None:
 main.add_command(auth_group)  # type: ignore[attr-defined]
 main.add_command(issue_group)  # type: ignore[attr-defined]
 main.add_command(pr_group)  # type: ignore[attr-defined]
+main.add_command(repo_group)  # type: ignore[attr-defined]
 main.add_command(compat_group)  # type: ignore[attr-defined]
 main.add_command(setup_group)  # type: ignore[attr-defined]
 

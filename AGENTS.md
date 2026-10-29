@@ -21,7 +21,7 @@ The main CLI layering is below, with tests organized by layer (see `tests/AGENTS
 commands/*.py (Click UX, flag parsing, output shaping)
     → adapters/*.py (translate gh semantics into GitCode-compatible calls)
         → services/*.py (thin REST path/method wrappers)
-            → client.py (httpx; injects access_token query param)
+            → client.py (httpx; owns CLI query/header authentication)
 ```
 
 Two planes sit alongside that pipeline:
@@ -43,9 +43,9 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 ## Cross-cutting runtime behavior
 
 - Token resolution order (`src/gitcode_cli/config.py`): `--token` flag > `GC_TOKEN` env var > `~/.config/gc/config.json` (written by `gc auth login`). Missing token raises `ConfigError`.
-- Repo resolution (`src/gitcode_cli/repo.py`): explicit `-R [HOST/]OWNER/REPO` or `git remote get-url origin` (HTTPS, `ssh://`, and SCP-style SSH URLs are all parsed).
+- Repo resolution (`src/gitcode_cli/repo.py`): explicit `-R [HOST/]OWNER/REPO` or `git remote get-url origin` (HTTPS, `ssh://`, and SCP-style SSH URLs are all parsed). `gc repo` additionally validates the effective positional, command/global `-R`, or origin host before any API call; foreign hosts and invalid path segments fail closed.
 - Unhandled `GCError` subclasses are converted by `_GCMainGroup.invoke` (`src/gitcode_cli/cli.py`) to `error: ...` on stderr with exit code 1. Prefer typed errors; `pr audit` additionally collects per-PR errors and handles an authentication abort explicitly.
-- The CLI client injects `access_token` into request query parameters. Keep credentials out of logs, fixtures, committed files and tool arguments; MCP has its own transport/authentication behavior, documented under `docs/gitcode/`.
+- The CLI client injects `access_token` into request query parameters and adds `private-token` only for the repository endpoint/method combinations in `client._requires_private_token`. Shared services never read or assemble credentials; keep the public request/helper signatures compatible with MCP overrides. Keep credentials out of logs, fixtures, committed files and tool arguments; MCP has its own transport/authentication behavior, documented under `docs/gitcode/`.
 
 ## Build, run, test boundaries
 
@@ -53,7 +53,7 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 |---|---|---|
 | Dev install | `pip install -e ".[dev]"` | `docs/en/development.md`, `.github/CONTRIBUTING.md` |
 | Full CLI test suite (unit + contracts; excludes MCP) | `python -m pytest tests` | `pyproject.toml` `[tool.pytest.ini_options]` `testpaths = ["tests"]`; `tests/README.md` shows the maintainers' conda variant `conda run -n gitcode-cli python -m pytest tests` |
-| Unit tests only | `python -m pytest tests/unit/` | This is what CI and pre-commit run — contract tests do **not** run in CI |
+| Unit tests only | `python -m pytest tests/unit/` | This is what `ci.yml` and pre-commit run; the separate source-compatibility workflow also runs unit + contract tests |
 | Lint / format check | `python -m ruff check src/ tests/` and `python -m ruff format --check src/ tests/` | `ci.yml` lint job; config in `pyproject.toml` (line length 120, py39 target) |
 | Type check | `python -m basedpyright src/` | `ci.yml` typecheck job; `[tool.basedpyright]` includes only `src` |
 | CLI pre-commit checks (not MCP or contracts) | `pre-commit run --all-files` | `.pre-commit-config.yaml` (ruff, basedpyright, pytest unit with coverage gate) |
@@ -65,8 +65,9 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 
 Use the package directory and its configuration, as `.github/workflows/gitcode-mcp.yml` does: install `.[dev]` there, run `python -I -m pytest -c pyproject.toml tests`, and use `python -m ruff check --config pyproject.toml .` / `python -m ruff format --check --config pyproject.toml .`. Clear inherited `PYTEST_ADDOPTS`; do not apply the CLI coverage gate or its Python 3.9 settings to MCP.
 
-- MCP CI is path-filtered to `packages/gitcode-mcp/**`, `deploy/gitcode-mcp/**`, `docs/gitcode/**`, its workflow file and `.github/workflows/publish-mcp.yml`. A CLI-only or AGENTS-only PR does not automatically exercise it.
-- Its Python 3.11–3.13 jobs lint, test, build wheel/sdist, clean-install both distributions and verify offline migration compatibility against the immutable legacy source. The separate named-volume job checks Compose volume reuse and rollback with synthetic state.
+- The published-dependency MCP CI (`gitcode-mcp.yml`) is path-filtered to `packages/gitcode-mcp/**`, `deploy/gitcode-mcp/**`, `docs/gitcode/**`, its workflow file and `.github/workflows/publish-mcp.yml`. A CLI-only or AGENTS-only PR does not automatically exercise it.
+- `gitcode-mcp-services.yml` separately gates CLI source/service changes: Python 3.11–3.13 jobs install the MCP dependencies, replace only the CLI distribution from the checkout with `--no-deps`, verify every installed client/service file hash, then run the full MCP suite. This is a compatibility probe, not a change to the published MCP pin. Its Python 3.13 CLI job runs `tests/unit/` plus `tests/contracts/` with the existing 90% coverage floor.
+- The published-dependency workflow's Python 3.11–3.13 jobs lint, test, build wheel/sdist, clean-install both distributions and verify offline migration compatibility against the immutable legacy source. The separate named-volume job checks Compose volume reuse and rollback with synthetic state.
 - Acceptance script paths are `packages/gitcode-mcp/scripts/migration_acceptance.py` and `volume_acceptance.py`; see [migration guidance](docs/gitcode/migration.md). CI acceptance is not a production deployment or live OAuth connection test. Do not use real credentials, production state or volumes for it.
 
 ## Release lifecycle and operational boundaries
@@ -79,7 +80,7 @@ Use the package directory and its configuration, as `.github/workflows/gitcode-m
 
 ## Known misleading artifacts
 
-- `CLAUDE.md` at the repo root is stale (it claims `tests/` is empty and predates `adapters/`, `compat/`, and the gh proxy). Trust `tests/README.md`, `docs/en/`, and these AGENTS.md files instead.
+- `CLAUDE.md` is a partial legacy overview and does not map all adapter, compatibility-registry, or dispatcher modules. Use `tests/README.md`, `docs/en/`, and these AGENTS.md files for the complete module and validation boundaries.
 
 ## Child guides
 

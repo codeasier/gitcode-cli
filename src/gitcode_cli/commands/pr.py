@@ -1080,8 +1080,7 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
         ) from exc
     if not isinstance(item, dict) or item.get("draft") is not undo:
         raise click.ClickException(
-            "The requested draft state was not confirmed after the update. "
-            "Verify the pull request before retrying."
+            "The requested draft state was not confirmed after the update. Verify the pull request before retrying."
         )
     if undo:
         safe_echo(f"Converted pull request #{safe_number(item, number)} to draft")

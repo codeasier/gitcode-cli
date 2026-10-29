@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from ..client import GitCodeClient
 from .files import FileService
@@ -18,6 +19,9 @@ class RepoService:
 
     def get(self, owner: str, repo: str) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}")
+
+    def get_branch(self, owner: str, repo: str, branch: str) -> Any | None:
+        return self.client.get(f"/repos/{owner}/{repo}/branches/{quote(branch, safe='')}")
 
     def contents(self, owner: str, repo: str, path: str, **params: Any) -> Any | None:
         """Read a decoded relative path through the canonical Contents service."""

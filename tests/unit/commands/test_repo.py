@@ -746,6 +746,7 @@ class TestRepoDelete:
 
 class TestRepoSync:
     def test_sync_puts_sync_endpoint(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"fork": True}
         mock_client.put.return_value = {"repo_sync_result": True}
 
         result = runner.invoke(main, ["repo", "sync"])
@@ -756,10 +757,19 @@ class TestRepoSync:
         assert sync_call.args[0] == "/repos/owner/repo/sync_repo"
 
     def test_sync_positional_repository(self, runner, mock_client):
+        mock_client.get.return_value = {"fork": True}
         result = runner.invoke(main, ["repo", "sync", "other/repo"])
 
         assert result.exit_code == 0
         assert mock_client.put.call_args_list[0].args[0] == "/repos/other/repo/sync_repo"
+
+    def test_sync_non_fork_reports_clear_error_before_write(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"fork": False}
+        result = runner.invoke(main, ["repo", "sync"])
+        assert result.exit_code == 1
+        assert "owner/repo is not a fork" in result.output
+        assert "Synced" not in result.output
+        mock_client.put.assert_not_called()
 
 
 class TestRepoHelpSections:

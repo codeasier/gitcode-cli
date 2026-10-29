@@ -252,5 +252,15 @@ class RepoAdapter:
         return AdapterActionResult(message="deleted")
 
     def sync_repo(self, owner: str, repo: str) -> AdapterActionResult:
+        current = self.service.get(owner, repo)
+        fork = current.get("fork") if isinstance(current, dict) else None
+        # Official schema uses integer flags, while its concrete example uses bool.
+        # Do not coerce missing values, strings, floats or arbitrary integers.
+        if type(fork) not in (bool, int) or fork not in (0, 1):
+            raise click.ClickException(
+                f"Cannot verify whether {owner}/{repo} is a fork; no synchronization request was sent."
+            )
+        if not fork:
+            raise click.ClickException(f"Repository {owner}/{repo} is not a fork; no synchronization request was sent.")
         item = self.service.sync(owner, repo)
         return AdapterActionResult(item=item, message="synced")

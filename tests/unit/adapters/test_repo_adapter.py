@@ -338,13 +338,72 @@ class TestRepoAdapterWrite:
         assert result.message == "deleted"
 
     def test_sync_puts_sync_repo(self, adapter, service):
+        service.get.return_value = {"fork": True}
         service.sync.return_value = {"repo_sync_result": True}
 
         result = adapter.sync_repo("owner", "repo")
 
         service.sync.assert_called_once_with("owner", "repo")
+        service.get.assert_called_once_with("owner", "repo")
         assert result.message == "synced"
         assert result.item == {"repo_sync_result": True}
+
+
+@pytest.mark.parametrize("fork", [False, 0])
+def test_sync_non_fork_is_clear_and_never_sends_write(adapter, service, fork):
+    service.get.return_value = {"fork": fork}
+    with pytest.raises(click.ClickException, match="owner/repo is not a fork; no synchronization request"):
+        adapter.sync_repo("owner", "repo")
+    service.get.assert_called_once_with("owner", "repo")
+    service.sync.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        None,
+        [],
+        {},
+        {"fork": None},
+        {"fork": "false"},
+        {"fork": "true"},
+        {"fork": "1"},
+        {"fork": 1.0},
+        {"fork": 0.0},
+        {"fork": 2},
+        {"fork": -1},
+        {"fork": []},
+    ],
+)
+def test_sync_unknown_forkness_is_not_guessed(adapter, service, item):
+    service.get.return_value = item
+    with pytest.raises(click.ClickException, match="Cannot verify whether owner/repo is a fork"):
+        adapter.sync_repo("owner", "repo")
+    service.sync.assert_not_called()
+
+
+@pytest.mark.parametrize("fork", [True, 1])
+def test_sync_confirmed_fork_preserves_single_existing_sync_call(adapter, service, fork):
+    service.get.return_value = {"fork": fork}
+    service.sync.return_value = {"repo_sync_result": True}
+    result = adapter.sync_repo("owner", "repo")
+    assert result.message == "synced"
+    assert service.mock_calls == [call.get("owner", "repo"), call.sync("owner", "repo")]
+
+
+def test_sync_read_failure_never_reaches_write(adapter, service):
+    service.get.side_effect = APIError("synthetic unavailable", status_code=403)
+    with pytest.raises(APIError):
+        adapter.sync_repo("owner", "repo")
+    service.sync.assert_not_called()
+
+
+def test_sync_write_failure_is_not_retried(adapter, service):
+    service.get.return_value = {"fork": True}
+    service.sync.side_effect = APIError("synthetic failure", status_code=500)
+    with pytest.raises(APIError):
+        adapter.sync_repo("owner", "repo")
+    service.sync.assert_called_once_with("owner", "repo")
 
 
 @pytest.mark.parametrize(

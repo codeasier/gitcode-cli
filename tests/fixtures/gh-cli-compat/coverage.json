@@ -113,5 +113,383 @@
         {"name": "--branch", "reason": "per-branch README selection is not implemented by gc repo view"}
       ]
     }
+  },
+  "help_surface": {
+    "schema_version": 1,
+    "baseline_version": "2.89.0",
+    "gc_invariant_basis": "The pinned gh snapshot does not record usage or aliases.",
+    "commands": {
+      "": {
+        "gc_invariants": {
+          "usage": "cli <command> <subcommand> [flags]",
+          "aliases": []
+        },
+        "missing_commands": {
+          "browse": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "codespace": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "gist": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "org": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "project": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "release": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "cache": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "run": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "workflow": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "co": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "agent-task": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "alias": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "api": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "attestation": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "config": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "copilot": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "extension": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "gpg-key": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "label": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "licenses": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "preview": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "ruleset": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "search": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "secret": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "ssh-key": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "status": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          },
+          "variable": {
+            "category": "deferred",
+            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
+          }
+        },
+        "additional_commands": {
+          "compat": {
+            "category": "extension",
+            "reason": "gc exposes its own compatibility registry report.",
+            "value": "Inspect cli ↔ cli compatibility"
+          },
+          "setup": {
+            "category": "extension",
+            "reason": "gc has an opt-in integration setup command.",
+            "value": "Configure optional cli integrations"
+          },
+          "version": {
+            "category": "extension",
+            "reason": "gc offers an explicit version subcommand in addition to --version.",
+            "value": "Show cli version"
+          }
+        },
+        "changed_commands": {
+          "auth": {
+            "category": "semantics",
+            "reason": "gc authentication stores a GitCode token; it does not configure native Git credentials.",
+            "value": "Authenticate cli with platform"
+          }
+        },
+        "additional_flags": {
+          "-R": {
+            "category": "extension",
+            "reason": "gc exposes repository selection globally as well as on repository commands.",
+            "value": {
+              "target": "--repo",
+              "takes_value": true
+            }
+          },
+          "--repo": {
+            "category": "extension",
+            "reason": "gc exposes repository selection globally as well as on repository commands.",
+            "value": {
+              "target": "--repo",
+              "takes_value": true
+            }
+          },
+          "-h": {
+            "category": "extension",
+            "reason": "gc deliberately reserves -h as the short help alias.",
+            "value": {
+              "target": "--help",
+              "takes_value": false
+            }
+          }
+        }
+      },
+      "issue": {
+        "gc_invariants": {
+          "usage": "cli issue <command> [flags]",
+          "aliases": []
+        },
+        "missing_flags": {
+          "-R": {
+            "category": "semantics",
+            "reason": "gc accepts repository selection at the root or concrete subcommand, not on this intermediate group."
+          },
+          "--repo": {
+            "category": "semantics",
+            "reason": "gc accepts repository selection at the root or concrete subcommand, not on this intermediate group."
+          }
+        },
+        "missing_commands": {
+          "lock": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "pin": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "transfer": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "unlock": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "unpin": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          }
+        }
+      },
+      "issue create": {
+        "gc_invariants": {
+          "usage": "cli issue create [flags]",
+          "aliases": [
+            "cli issue new"
+          ]
+        },
+        "missing_flags": {
+          "-p": {
+            "category": "deferred",
+            "reason": "GitHub project association is not exposed by gc create."
+          },
+          "--project": {
+            "category": "deferred",
+            "reason": "GitHub project association is not exposed by gc create."
+          },
+          "--recover": {
+            "category": "deferred",
+            "reason": "Recovery of prior create input is not implemented by gc."
+          }
+        },
+        "additional_flags": {
+          "--json": {
+            "category": "extension",
+            "reason": "gc create additionally supports JSON output selection.",
+            "value": {
+              "target": "--json",
+              "takes_value": true
+            }
+          },
+          "-q": {
+            "category": "extension",
+            "reason": "gc create additionally supports jq output filtering.",
+            "value": {
+              "target": "--jq",
+              "takes_value": true
+            }
+          },
+          "--jq": {
+            "category": "extension",
+            "reason": "gc create additionally supports jq output filtering.",
+            "value": {
+              "target": "--jq",
+              "takes_value": true
+            }
+          }
+        }
+      },
+      "pr": {
+        "gc_invariants": {
+          "usage": "cli pr <command> [flags]",
+          "aliases": []
+        },
+        "missing_flags": {
+          "-R": {
+            "category": "semantics",
+            "reason": "gc accepts repository selection at the root or concrete subcommand, not on this intermediate group."
+          },
+          "--repo": {
+            "category": "semantics",
+            "reason": "gc accepts repository selection at the root or concrete subcommand, not on this intermediate group."
+          }
+        },
+        "missing_commands": {
+          "checks": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "lock": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "revert": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "unlock": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          },
+          "update-branch": {
+            "category": "deferred",
+            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
+          }
+        },
+        "additional_commands": {
+          "audit": {
+            "category": "extension",
+            "reason": "gc provides GitCode-specific R1–R4 merge-readiness auditing.",
+            "value": "Audit pull requests against merge-readiness rules"
+          }
+        },
+        "changed_commands": {
+          "checkout": {
+            "category": "wording",
+            "reason": "gc describes the same local checkout surface using its own concise wording.",
+            "value": "Check out a pull request locally"
+          },
+          "close": {
+            "category": "wording",
+            "reason": "gc uses the shorter noun phrase in this command summary.",
+            "value": "Close pull request"
+          },
+          "edit": {
+            "category": "wording",
+            "reason": "gc uses the plural noun phrase in this command summary.",
+            "value": "Edit pull requests"
+          },
+          "reopen": {
+            "category": "wording",
+            "reason": "gc uses the shorter noun phrase in this command summary.",
+            "value": "Reopen pull request"
+          }
+        }
+      },
+      "pr create": {
+        "gc_invariants": {
+          "usage": "cli pr create [flags]",
+          "aliases": [
+            "cli pr new"
+          ]
+        },
+        "missing_flags": {
+          "-p": {
+            "category": "deferred",
+            "reason": "GitHub project association is not exposed by gc create."
+          },
+          "--project": {
+            "category": "deferred",
+            "reason": "GitHub project association is not exposed by gc create."
+          },
+          "--recover": {
+            "category": "deferred",
+            "reason": "Recovery of prior create input is not implemented by gc."
+          },
+          "--no-maintainer-edit": {
+            "category": "platform",
+            "reason": "The GitCode-backed create flow does not expose GitHub maintainer-edit controls."
+          }
+        },
+        "additional_flags": {
+          "--json": {
+            "category": "extension",
+            "reason": "gc create additionally supports JSON output selection.",
+            "value": {
+              "target": "--json",
+              "takes_value": true
+            }
+          },
+          "-q": {
+            "category": "extension",
+            "reason": "gc create additionally supports jq output filtering.",
+            "value": {
+              "target": "--jq",
+              "takes_value": true
+            }
+          },
+          "--jq": {
+            "category": "extension",
+            "reason": "gc create additionally supports jq output filtering.",
+            "value": {
+              "target": "--jq",
+              "takes_value": true
+            }
+          }
+        }
+      }
+    }
   }
 }

@@ -57,7 +57,7 @@ def test_patch_rejects_terminal_without_writing_any_patch_bytes(patch_client, mo
     patch_client.request.return_value = PATCH_HEADER + body
     terminal = MagicMock()
     terminal.isatty.return_value = True
-    monkeypatch.setattr("gitcode_cli.commands.pr.click.get_binary_stream", lambda name: terminal)
+    monkeypatch.setattr("gitcode_cli.commands.pr.click.open_file", lambda filename, mode: terminal)
 
     result = _runner().invoke(
         main, ["--token", "synthetic-patch-token", "pr", "diff", "42", "-R", "owner/repo", "--patch"]

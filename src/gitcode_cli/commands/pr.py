@@ -926,7 +926,7 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     if patch:
-        output = click.get_binary_stream("stdout")
+        output = click.open_file("-", mode="wb")
         if output.isatty():
             raise click.ClickException("--patch requires redirected stdout; use --patch > review.patch.")
         # A mail patch is data: never strip ANSI bytes or translate newlines.

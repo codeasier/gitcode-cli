@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
@@ -114,16 +115,17 @@ def test_cross_repository_command_deletes_only_verified_fork(command, url, cli_r
     monkeypatch.setattr("gitcode_cli.context.AppContext.client", lambda _: client)
     git = MagicMock(return_value=MagicMock(returncode=0))
     monkeypatch.setattr(pr_git, "_git", git)
+    source_git = MagicMock()
+    monkeypatch.setattr(pr_git, "_git_source", source_git)
     args = ["https://gitcode.com/base/project/pulls/1"] if url else ["1", "-R", "base/project"]
     result = cli_runner.invoke(main, ["pr", command, *args, "--delete-branch"])
     assert result.exit_code == 0, result.output
     client.get.assert_called_once_with("/repos/base/project/pulls/1")
-    git.assert_called_with(
+    source_git.assert_called_once_with(
+        pr_git.PRHead("https://gitcode.com/fork/project.git", "feature", SHA),
         "push",
-        f"--force-with-lease=refs/heads/feature:{SHA}",
-        "--",
-        "https://gitcode.com/fork/project.git",
         ":refs/heads/feature",
+        f"--force-with-lease=refs/heads/feature:{SHA}",
     )
 
 
@@ -182,13 +184,14 @@ def test_malformed_resource_path_never_becomes_a_branch(suffix, cli_runner, mock
 def test_delete_uses_source_repository_and_explicit_sha_lease(monkeypatch):
     git = MagicMock(return_value=subprocess.CompletedProcess([], 0, "", ""))
     monkeypatch.setattr(pr_git, "_git", git)
+    source_git = MagicMock()
+    monkeypatch.setattr(pr_git, "_git_source", source_git)
     assert pr_git.delete_head(pr_head()) == "feature"
-    git.assert_called_with(
+    source_git.assert_called_once_with(
+        pr_git.PRHead("https://gitcode.com/fork/project.git", "feature", SHA),
         "push",
-        f"--force-with-lease=refs/heads/feature:{SHA}",
-        "--",
-        "https://gitcode.com/fork/project.git",
         ":refs/heads/feature",
+        f"--force-with-lease=refs/heads/feature:{SHA}",
     )
 
 
@@ -212,6 +215,7 @@ def test_unverified_head_never_reaches_git(head, monkeypatch):
 def test_checkout_rejects_source_move_before_local_switch(monkeypatch):
     git = MagicMock(return_value=subprocess.CompletedProcess([], 0, "b" * 40, ""))
     monkeypatch.setattr(pr_git, "_git", git)
+    monkeypatch.setattr(pr_git, "_git_source", MagicMock())
     with pytest.raises(GCError, match="changed during fetch"):
         pr_git.checkout_head(pr_head(), None)
     assert not any(call.args[0] == "checkout" for call in git.call_args_list)
@@ -268,16 +272,15 @@ def test_real_git_lease_keeps_concurrently_updated_branch(tmp_path, monkeypatch)
     second = git("rev-parse", "HEAD", cwd=local).stdout.strip()
     git("push", remote, "HEAD:refs/heads/feature", cwd=local)
     monkeypatch.chdir(local)
-    original = pr_git._git
+    original = pr_git._git_source
 
-    def mapped_git(*args, **kwargs):
-        return original(
-            *(str(remote) if arg == "https://gitcode.com/fork/project.git" else arg for arg in args), **kwargs
-        )
+    def mapped_git(source, *args):
+        return original(replace(source, url=remote.as_uri()), *args)
 
-    monkeypatch.setattr(pr_git, "_git", mapped_git)
+    monkeypatch.setattr(pr_git, "_git_source", mapped_git)
     with pytest.raises(GCError):
         pr_git.delete_head(pr_head(first))
     assert git("rev-parse", "--verify", "refs/heads/feature", cwd=remote).stdout.strip() == second
     pr_git.delete_head(pr_head(second))
     assert git("show-ref", "--verify", "refs/heads/feature", cwd=remote, check=False).returncode != 0
+

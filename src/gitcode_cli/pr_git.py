@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import subprocess
 from dataclasses import dataclass
 
@@ -34,6 +35,38 @@ class PRHead:
     url: str
     branch: str
     sha: str
+
+
+def _git_source(source: PRHead, command: str, refspec: str, *options: str) -> None:
+    """Refuse URL rewrites, then pin this invocation to the verified source.
+
+    Git applies insteadOf once per configured URL; an explicit pushurl also
+    disables pushInsteadOf. A fresh exact alias therefore expands to the
+    canonical URL without subsequently rewriting that URL. Configuration is
+    command-scoped: native credential helpers remain available, but no remote
+    or configuration is saved. The second configuration prevents a rewrite
+    added after the check from changing this operation's destination.
+    """
+    remote = "gc-pr-" + secrets.token_hex(16)
+    occupied = _git("config", "--name-only", "--get-regexp", rf"^remote\.{remote}\.", check=False)
+    if occupied.returncode != 1:
+        raise GCError("Unable to reserve a private Git remote; branch operation refused.")
+    configured = ("-c", f"remote.{remote}.url={source.url}")
+    direction = ("--push",) if command == "push" else ()
+    effective = _git(*configured, "remote", "get-url", *direction, "--all", remote)
+    if effective.stdout.splitlines() != [source.url]:
+        # The rewritten URL can contain credentials. Never include it in errors.
+        raise GCError("Git URL rewriting changes the verified PR source; branch operation refused.")
+    alias = remote + ":"
+    pinned = (
+        "-c",
+        f"remote.{remote}.url={alias}",
+        "-c",
+        f"remote.{remote}.pushurl={alias}",
+        "-c",
+        f"url.{source.url}.insteadOf={alias}",
+    )
+    _git(*pinned, command, *options, "--", remote, refspec)
 
 
 def _source_identity(source: object) -> tuple[str, str]:
@@ -80,7 +113,7 @@ def delete_head(item: object) -> str:
     ref = f"refs/heads/{source.branch}"
     # The explicit lease is checked by the server at deletion time. A prior
     # ls-remote alone would leave a race with another push.
-    _git("push", f"--force-with-lease={ref}:{source.sha}", "--", source.url, f":{ref}")
+    _git_source(source, "push", f":{ref}", f"--force-with-lease={ref}:{source.sha}")
     return source.branch
 
 
@@ -88,7 +121,7 @@ def checkout_head(item: object, branch: str | None) -> str:
     source = resolve_head(item)
     local = branch or source.branch
     _check_branch(local)
-    _git("fetch", "--no-tags", "--", source.url, f"refs/heads/{source.branch}")
+    _git_source(source, "fetch", f"refs/heads/{source.branch}", "--no-tags")
     fetched = _git("rev-parse", "--verify", "FETCH_HEAD^{commit}").stdout.strip()
     if fetched.lower() != source.sha:
         raise GCError("PR branch changed during fetch. Refresh the PR before retrying checkout.")
@@ -103,3 +136,4 @@ def checkout_head(item: object, branch: str | None) -> str:
         # another concurrent fetch can overwrite.
         _git("checkout", "-b", local, source.sha, "--")
     return local
+

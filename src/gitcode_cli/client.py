@@ -34,6 +34,10 @@ class GitCodeClient:
         self.base_url = base_url
         self._client = httpx.Client(timeout=30.0)
 
+    def close(self) -> None:
+        """Release transport resources for long-lived service consumers."""
+        self._client.close()
+
     def request(
         self,
         method: str,

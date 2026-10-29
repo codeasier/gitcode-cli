@@ -12,7 +12,7 @@ Translation between what a `gh` user asked for and what the GitCode API can actu
 | `capabilities.py` | `CAPABILITY_MESSAGES` — every user-visible "GitCode cannot do X" message, keyed by constants like `ISSUE_LIST_APP` or `PR_EDIT_BASE`, plus `unsupported(key)` which builds the `ClickException`. |
 | `issues.py` | `IssueAdapter(service, user_service=None)` — list (with pagination and client-side multi-label AND filtering), create (label existence check, milestone title→number resolution), close/reopen (idempotency checks against current state), comment history (edit/delete last own comment), edit (label/assignee merge logic), status (approximation), develop (browser no-op). |
 | `pulls.py` | `PullRequestAdapter(service)` — list (pagination + `--limit` normalization), create (incl. `--dry-run` payload echo), merge, review (see degradation below), edit, status (approximation). |
-| `repos.py` | `RepoAdapter(service)` — repository CRUD/fork/sync translation, paginated list with client-side visibility/language/fork filters, and best-effort base64 README decoding. README URL paths preserve encoded `?`, `#`, and `%` filename characters; do not unquote directly into an API path. |
+| `repos.py` | `RepoAdapter(service)` — repository CRUD/fork/sync translation, paginated list with client-side visibility/language/fork filters, and best-effort base64 README decoding. README URL paths are decoded once at this boundary, then passed as decoded text to `RepoService.contents` / `FileService` for canonical encoding. Literal `?`, `#`, `%` and percent-looking filenames remain filename data, never URL syntax. Do not interpolate decoded text directly into an API path; invalid relative paths remain a best-effort README omission. |
 
 ## The `AdapterActionResult` protocol
 

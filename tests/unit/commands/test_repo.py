@@ -73,6 +73,48 @@ def _contents_result(text: str) -> dict:
 
 
 class TestRepoView:
+    @pytest.mark.parametrize(
+        ("url_path", "api_path"),
+        [
+            ("README.md", "README.md"),
+            ("docs/hello%20world.md", "docs/hello%20world.md"),
+            ("docs/说明.md", "docs/%E8%AF%B4%E6%98%8E.md"),
+            ("docs/%E8%AF%B4%E6%98%8E.md", "docs/%E8%AF%B4%E6%98%8E.md"),
+            ("docs/README%23x.md?ref=main#section", "docs/README%23x.md"),
+            ("docs/README%3Fx.md", "docs/README%3Fx.md"),
+            ("docs/100%25.md", "docs/100%25.md"),
+            ("docs/literal%252F.md", "docs/literal%252F.md"),
+        ],
+    )
+    def test_readme_url_to_file_service_encodes_path_once(
+        self, runner, mock_client, mock_repo, repo_detail, url_path, api_path
+    ):
+        repo_detail["readme_url"] = "https://gitcode.com/owner/repo/blob/main/" + url_path
+        mock_client.get.side_effect = [repo_detail, _contents_result("# Path preserved")]
+
+        result = runner.invoke(main, ["repo", "view"])
+
+        assert result.exit_code == 0
+        assert "# Path preserved" in result.output
+        assert [call.args[0] for call in mock_client.get.call_args_list] == [
+            "/repos/owner/repo",
+            "/repos/owner/repo/contents/" + api_path,
+        ]
+
+    @pytest.mark.parametrize("url_path", ["docs/../file", "docs/%2e%2e/file", "docs//file", "docs/%5Cfile"])
+    def test_invalid_readme_path_is_best_effort_without_a_contents_request(
+        self, runner, mock_client, mock_repo, repo_detail, url_path
+    ):
+        repo_detail["readme_url"] = "https://gitcode.com/owner/repo/blob/main/" + url_path
+        mock_client.get.return_value = repo_detail
+
+        result = runner.invoke(main, ["repo", "view"])
+
+        assert result.exit_code == 0
+        assert "Visibility:" in result.output
+        assert "README:" not in result.output
+        mock_client.get.assert_called_once_with("/repos/owner/repo")
+
     def test_default_prints_metadata_and_readme(self, runner, mock_client, mock_repo, repo_detail):
         mock_client.get.side_effect = [repo_detail, _contents_result("# Title\n\nreadme body")]
 

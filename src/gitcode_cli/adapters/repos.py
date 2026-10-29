@@ -4,7 +4,7 @@ import base64
 import binascii
 import re
 from typing import Any
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import unquote, urlsplit
 
 import click
 
@@ -70,10 +70,11 @@ class RepoAdapter:
                 return None
             match = _README_BLOB_RE.search(readme_path)
             if match:
-                path = quote(unquote(match.group("path")), safe="/")
+                # URL decoding belongs here; FileService owns API path encoding.
+                path = unquote(match.group("path"))
         try:
             data = self.service.contents(owner, repo, path)
-        except APIError:
+        except (APIError, ValueError):
             return None
         if not isinstance(data, dict):
             return None

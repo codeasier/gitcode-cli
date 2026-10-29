@@ -278,13 +278,14 @@ class TestRepoAdapterWrite:
 @pytest.mark.parametrize(
     ("url_path", "expected"),
     [
-        ("docs/README%23x.md?ref=main#section", "docs/README%23x.md"),
-        ("docs/README%3Fx.md", "docs/README%3Fx.md"),
-        ("docs/100%25.md", "docs/100%25.md"),
-        ("docs/hello%20world.md", "docs/hello%20world.md"),
+        ("docs/README%23x.md?ref=main#section", "docs/README#x.md"),
+        ("docs/README%3Fx.md", "docs/README?x.md"),
+        ("docs/100%25.md", "docs/100%.md"),
+        ("docs/hello%20world.md", "docs/hello world.md"),
+        ("docs/literal%252F.md", "docs/literal%2F.md"),
     ],
 )
-def test_readme_url_preserves_encoded_file_path_delimiters(adapter, service, url_path, expected):
+def test_readme_url_decodes_once_for_the_service_boundary(adapter, service, url_path, expected):
     service.contents.return_value = _contents_payload("readme body")
     item = {"readme_url": "https://gitcode.com/owner/repo/blob/main/" + url_path}
     assert adapter.get_readme("owner", "repo", item) == "readme body"

@@ -550,7 +550,9 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None,
 @click.option("--remove-label")
 @click.option("--remove-reviewer")
 @click.option("-m", "--milestone")
-@click.option("--remove-milestone", is_flag=True, help="Remove the milestone from the pull request.")
+@click.option(
+    "--remove-milestone", is_flag=True, help="Currently unsupported: no verified milestone-clearing API contract."
+)
 @click.pass_context
 def pr_edit(
     ctx: click.Context,
@@ -571,6 +573,8 @@ def pr_edit(
 ) -> None:
     if base is not None:
         raise unsupported("PR_EDIT_BASE")
+    if remove_milestone:
+        raise unsupported("PR_EDIT_REMOVE_MILESTONE")
     app = ctx.obj["app"]
     owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())

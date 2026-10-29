@@ -565,13 +565,13 @@ class TestIssueClose:
             call.patch("/repos/owner/issues/42", json={"repo": "repo", "state": "close", "title": "Test"}),
         ]
 
-    def test_close_duplicate_of_preserves_comment_and_reason(self, runner, mock_client, mock_repo):
+    def test_close_duplicate_of_preserves_comment_without_reason(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
 
         result = runner.invoke(
             main,
-            ["issue", "close", "42", "--duplicate-of", "12", "--comment", "Superseded", "--reason", "not_planned"],
+            ["issue", "close", "42", "--duplicate-of", "12", "--comment", "Superseded"],
         )
 
         assert result.exit_code == 0
@@ -580,7 +580,7 @@ class TestIssueClose:
             json={"body": "Superseded\n\nThis issue is considered a duplicate of 12."},
         )
         patch_kwargs = mock_client.patch.call_args.kwargs
-        assert patch_kwargs["json"]["state_reason"] == "not_planned"
+        assert patch_kwargs["json"] == {"repo": "repo", "state": "close", "title": "Test"}
 
     def test_close_duplicate_of_help_describes_approximation(self, runner):
         result = runner.invoke(main, ["issue", "close", "--help"])
@@ -613,23 +613,26 @@ class TestIssueCloseIdempotency:
         mock_client.post.assert_called_once()
         mock_client.patch.assert_not_called()
 
-    def test_close_with_comment_and_reason(self, runner, mock_client, mock_repo):
+    def test_close_with_comment_and_reason_rejects_before_comment(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42", "-c", "done", "-r", "completed"])
-        assert result.exit_code == 0
-        assert "Closed issue" in result.output
-        post_calls = [c for c in mock_client.post.call_args_list if "comments" in str(c)]
-        assert len(post_calls) == 1
+        assert result.exit_code == 1
+        assert "no verified GitCode API contract for closing reasons" in result.output
+        mock_client.get.assert_not_called()
+        mock_client.post.assert_not_called()
+        mock_client.patch.assert_not_called()
 
-    def test_close_with_reason_sends_state_close_and_state_reason(self, runner, mock_client, mock_repo):
+    @pytest.mark.parametrize("reason", ["completed", "not_planned", "not planned"])
+    def test_close_with_reason_never_sends_unverified_field(self, runner, mock_client, mock_repo, reason):
         mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
-        result = runner.invoke(main, ["issue", "close", "42", "-r", "completed"])
-        assert result.exit_code == 0
-        patch_kwargs = mock_client.patch.call_args.kwargs
-        assert patch_kwargs["json"]["state"] == "close"
-        assert patch_kwargs["json"]["state_reason"] == "completed"
+        result = runner.invoke(main, ["issue", "close", "42", "-r", reason])
+        assert result.exit_code == 1
+        assert "No request was sent" in result.output
+        mock_client.get.assert_not_called()
+        mock_client.post.assert_not_called()
+        mock_client.patch.assert_not_called()
 
 
 class TestIssueComment:

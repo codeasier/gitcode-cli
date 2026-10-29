@@ -1,4 +1,4 @@
-"""Setting-only milestone resolution; legacy clearing and people stay unchanged."""
+"""Verified milestone setting and fail-closed clearing behavior."""
 
 from unittest.mock import MagicMock, call
 
@@ -181,7 +181,7 @@ def test_created_number_missing_does_not_repeat_post(item):
     service.get.assert_not_called()
 
 
-def test_dry_run_and_unchanged_legacy_removal():
+def test_dry_run_resolves_setting_but_removal_is_rejected_before_requests():
     service, milestones = MagicMock(), MagicMock()
     milestones.list_milestones.return_value = [{"number": 7, "title": "v1"}]
     adapter = PullRequestAdapter(service, milestone_service=milestones)
@@ -189,7 +189,7 @@ def test_dry_run_and_unchanged_legacy_removal():
     service.create.assert_not_called()
     service.get.assert_not_called()
     milestones.reset_mock()
-    _edit(adapter, "v1", remove=True)
-    service.update.assert_called_once_with("owner", "repo", 42, milestone="")
-    milestones.list_milestones.assert_not_called()
-    service.get.assert_not_called()
+    with pytest.raises(click.ClickException, match="no verified GitCode API contract for clearing a PR milestone"):
+        _edit(adapter, "v1", remove=True)
+    assert not service.mock_calls
+    assert not milestones.mock_calls

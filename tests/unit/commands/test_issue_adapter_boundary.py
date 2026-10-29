@@ -110,7 +110,7 @@ class TestIssueCommandAdapterBoundary:
             mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
             result = runner.invoke(
                 main,
-                ["issue", "close", "42", "-c", "done", "-r", "completed"],
+                ["issue", "close", "42", "-c", "done"],
             )
 
         assert result.exit_code == 0
@@ -121,10 +121,10 @@ class TestIssueCommandAdapterBoundary:
             "repo",
             "42",
             comment="done",
-            reason="completed",
+            reason=None,
         )
 
-    def test_issue_close_accepts_gh_not_planned_reason(
+    def test_issue_close_rejects_reason_before_constructing_services(
         self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock
     ) -> None:
         adapter = MagicMock()
@@ -142,15 +142,11 @@ class TestIssueCommandAdapterBoundary:
             mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
             result = runner.invoke(main, ["issue", "close", "42", "-r", "not planned"])
 
-        assert result.exit_code == 0
-        assert "Closed issue #42 (Bug title)" in result.output
-        adapter.close_issue.assert_called_once_with(
-            "owner",
-            "repo",
-            "42",
-            comment=None,
-            reason="not_planned",
-        )
+        assert result.exit_code == 1
+        assert "no verified GitCode API contract for closing reasons" in result.output
+        issue_service_ctor.assert_not_called()
+        issue_adapter_ctor.assert_not_called()
+        adapter.close_issue.assert_not_called()
 
     def test_issue_develop_rejects_unsupported_base_after_issue_validation(
         self, runner: CliRunner, mock_repo: None, mock_app_client: MagicMock

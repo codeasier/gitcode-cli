@@ -1,7 +1,8 @@
-"""Checkout-only contracts, never collected by the published 0.1.6 test job.
+"""Explicit shared-service contracts, separate from ordinary tests/ selection.
 
-CI installs the CLI checkout as a separate distribution and verifies its hashes
-before explicitly selecting this directory. No sibling-source import is used.
+CI selects this directory for verified published CLI artifacts and checkout
+compatibility. Both install the CLI separately and check its hashes before
+running these contracts; no sibling-source import is used.
 """
 
 import json

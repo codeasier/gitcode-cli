@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "package": "pygitcode",
+  "version": "0.1.7",
+  "source_sha": "2f110178d754299214dcdbd94ce41788eb2044ab",
+  "artifacts": {
+    "wheel": {
+      "filename": "pygitcode-0.1.7-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/44/37/40c8e9164e4e59b42ec2c67ee0f23d3f7cce0158bc7bf26102c3f6fb18d2/pygitcode-0.1.7-py3-none-any.whl",
+      "sha256": "923f5b0bf78275185e23e4fe3f982d504086927429a93f2de7c9226729e70e7e",
+      "size": 74822
+    },
+    "sdist": {
+      "filename": "pygitcode-0.1.7.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/5d/4d/c59ac590785366bcb81b257e2876aac046e26a7f7f259fd86158c3e36ea0/pygitcode-0.1.7.tar.gz",
+      "sha256": "455df55f49d40af1ff32d6c59671df97a47d0626d930ebcfe764d1574d26d575",
+      "size": 63461
+    }
+  },
+  "source_files": {
+    "gitcode_cli/__init__.py": "bfa736254bdcb337ecef1b2cb4e218c530c03ba2f355b6605ea6a3b68ffe3a5e",
+    "gitcode_cli/client.py": "6e580b879e27c4c543b8448880a5ad5ef2ed8146b89c228d7f0b795f081bfbaa",
+    "gitcode_cli/services/__init__.py": "54e4addd2c686a9164eeda1558b76d5679dbb40b11a0dbfb32abf3bb296e342a",
+    "gitcode_cli/services/files.py": "a5ac0fd9c446a3bc72772817f80edbd18cd1a34d503c06271964a9de1f70ebe7",
+    "gitcode_cli/services/issues.py": "21245776f524aa20d35490a8582c019a541ce326c53defca218323376f5401ac",
+    "gitcode_cli/services/pulls.py": "094e205374d89573771188c557ab36cbf667cd1654308cb9fe2655977f1ed45c",
+    "gitcode_cli/services/repos.py": "b0c95bbe5c720f1e63b035e1103064a191f085f9048a13ac94d62f0f979b9390",
+    "gitcode_cli/services/users.py": "a44e266f365ef3277419f7b472c2d972c2a9fc73da9ca336f29feb67af9a53e0"
+  }
+}

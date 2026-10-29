@@ -12,7 +12,7 @@ license = "MIT"
 authors = [{name = "Codeasier"}]
 dependencies = [
   "mcp==2.3.0",
-  "pygitcode==0.1.6",
+  "pygitcode==0.1.7",
   "httpx>=0.28.1,<1",
   "anyio>=4.9,<5",
   "pydantic>=2.12,<3",

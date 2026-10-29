@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
-from urllib.parse import quote
 
 from mcp.types import Tool, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -606,8 +605,7 @@ class GitCodeTools:
         if action == "get_branch":
             return self.api.get(f"{prefix}/branches/{segment(data['branch'])}")
         if action == "get_file_contents":
-            path = quote(data.pop("path"), safe="/")
-            return self.api.get(f"{prefix}/contents/{path}", params=data)
+            return self.api.files.get(owner, repo, data.pop("path"), **data)
         if action == "get_repository_tree":
             sha = data.pop("sha")
             data["recursive"] = 1 if data["recursive"] else 0
@@ -631,7 +629,7 @@ class GitCodeTools:
         if action == "create_branch":
             return self.api.post(f"{prefix}/branches", json=data)
         if action in FILE_WRITE_METHODS:
-            return write_file(self.api, prefix, action, data)
+            return write_file(self.api, owner, repo, action, data)
         if action == "list_issues":
             items = self.api.issues.list(owner, repo, **data)
             return self.api.page_result(items, page=data["page"], per_page=data["per_page"])

@@ -79,7 +79,7 @@ def prepare_fixture(uid: int, gid: int) -> None:
 
     helper = migration_helper()
     helper.isolate_process()
-    helper.installed_metadata()  # No new-package license requirement for the old image.
+    helper.installed_metadata(legacy=True)  # Old image: MCP 0.3.0 with pygitcode 0.1.6.
     require(helper.VERSION == helper.LEGACY_VERSION, "Legacy fixture version changed")
     with tempfile.TemporaryDirectory(prefix="synthetic-oauth-") as temporary:
         fixture = Path(temporary) / "fixture"

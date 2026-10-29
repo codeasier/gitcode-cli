@@ -37,6 +37,9 @@ class IssueService:
         """Remove one label without replacing the Issue's other labels."""
         if not name or "," in name:
             raise ValueError("Provide exactly one nonempty label name")
+        # quote(..., safe="") preserves dot segments, which urljoin would normalize.
+        if name in {".", ".."}:
+            raise ValueError("Label name cannot be '.' or '..'")
         return self.client.delete(f"/repos/{owner}/{repo}/issues/{number}/labels/{quote(name, safe='')}")
 
     def create(self, owner: str, repo: str, **data: Any) -> Any | None:

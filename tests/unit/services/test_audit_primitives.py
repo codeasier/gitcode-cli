@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from gitcode_cli.client import GitCodeClient
@@ -52,6 +53,53 @@ def test_remove_label_rejects_batch(name):
     with pytest.raises(ValueError):
         IssueService(client).remove_label("owner", "repo", "42", name)
     client.delete.assert_not_called()
+
+
+@pytest.fixture
+def transport_client():
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(204)
+
+    client = GitCodeClient("synthetic")
+    client.close()
+    client._client = httpx.Client(transport=httpx.MockTransport(handle))
+    try:
+        yield client, requests
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("name", [".", ".."])
+def test_remove_label_rejects_dot_segments_before_transport(name, transport_client):
+    client, requests = transport_client
+    with pytest.raises(ValueError, match="Label name cannot be"):
+        IssueService(client).remove_label("owner", "repo", "42", name)
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("name", "encoded"),
+    [
+        ("resolved", "resolved"),
+        ("needs / audit", "needs%20%2F%20audit"),
+        ("v1.2", "v1.2"),
+        (".hidden", ".hidden"),
+        ("...", "..."),
+        ("%2e%2e", "%252e%252e"),
+        ("a?b#c%", "a%3Fb%23c%25"),
+    ],
+)
+def test_remove_label_transport_targets_only_one_encoded_label(name, encoded, transport_client):
+    client, requests = transport_client
+    assert IssueService(client).remove_label("owner", "repo", "42", name) is None
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "DELETE"
+    assert request.url.raw_path.split(b"?", 1)[0] == f"/api/v5/repos/owner/repo/issues/42/labels/{encoded}".encode()
+    assert request.content == b""
 
 
 def test_get_branch_encodes_slashes():

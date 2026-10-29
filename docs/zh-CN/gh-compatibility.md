@@ -77,7 +77,7 @@ gc pr diff 42 --patch > review.patch
 
 历史参数不能与行内评论、讨论回复或 web 参数混用。编辑支持 `--body`、`--body-file`（`-` 表示标准输入）与 `--editor`，编辑器预填选中评论的正文。未显式指定正文来源时，交互模式打开编辑器，非交互模式要求提供正文来源。取消编辑或正文为空时不写入。
 
-评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。
+评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
 
 ## GitCode 差异与限制
 

@@ -270,7 +270,14 @@ def pr_merge(
     pr_item = service.get(owner, repo, number)
     adapter = PullRequestAdapter(service)
     item = adapter.merge_pr(owner, repo, number, merge_method=merge_method, body=body, subject=subject, admin=admin)
-    safe_echo(item["message"])
+    # The API schema uses an integer flag; its success example uses a boolean.
+    merged = item.get("merged") if isinstance(item, dict) else None
+    if merged is not True and not (type(merged) is int and merged == 1):
+        raise click.ClickException(
+            "Pull request merge was not confirmed. Verify its state before retrying; no branch deletion was attempted."
+        )
+    message = item.get("message")
+    safe_echo(message if isinstance(message, str) and message else f"Merged pull request #{number}")
     if delete_branch:
         try:
             branch = pr_item.get("head", {}).get("ref")
@@ -908,7 +915,7 @@ def pr_close(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("--name-only", is_flag=True, help="Display only names of changed files.")
-@click.option("--patch", is_flag=True, help="Display the per-commit mail-format patch.")
+@click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")
 @click.pass_context
 def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
     if name_only and patch:
@@ -919,7 +926,12 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     if patch:
-        click.echo(service.patch(owner, repo, int(number)), nl=False)
+        output = click.get_binary_stream("stdout")
+        if output.isatty():
+            raise click.ClickException("--patch requires redirected stdout; use --patch > review.patch.")
+        # A mail patch is data: never strip ANSI bytes or translate newlines.
+        output.write(service.patch(owner, repo, int(number)).encode("utf-8"))
+        output.flush()
         return
     if name_only:
         files = service.list_files(owner, repo, int(number))

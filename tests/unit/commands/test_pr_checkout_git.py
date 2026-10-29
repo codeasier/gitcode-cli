@@ -134,3 +134,41 @@ def test_patch_preserves_mail_series_and_can_be_applied_with_git_am(checkout_rep
     _git(work, "am", input_text=result.output)
     assert _git(work, "rev-parse", "HEAD^{tree}").stdout == _git(work, "rev-parse", f"{latest_sha}^{{tree}}").stdout
     assert _git(work, "log", "-2", "--format=%s").stdout.splitlines() == ["Latest PR commit", "First PR commit"]
+
+
+def test_patch_with_real_escape_bytes_round_trips_through_git_am(checkout_repo):
+    work, _, latest_sha, client = checkout_repo
+    _git(work, "fetch", "origin", "feature")
+    _git(work, "checkout", "--detach", latest_sha)
+    content = b"ANSI \x1b[31mred\x1b[0m\nOSC \x1b]0;untrusted title\x07\n"
+    (work / "file.txt").write_bytes(content)
+    _git(work, "commit", "-am", "Preserve escape bytes")
+    expected_tree = _git(work, "rev-parse", "HEAD^{tree}").stdout
+    patch_bytes = subprocess.run(
+        ["git", "format-patch", "--stdout", "--binary", "main..HEAD"],
+        cwd=work,
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert b"\x1b[31m" in patch_bytes and b"\x1b]0;" in patch_bytes
+    client.request.return_value = patch_bytes.decode("utf-8")
+    _git(work, "checkout", "main")
+
+    result = CliRunner().invoke(main, ["pr", "diff", "42", "-R", "owner/repo", "--patch"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout_bytes == patch_bytes
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "am"],
+        cwd=work,
+        input=result.stdout_bytes,
+        capture_output=True,
+        check=True,
+    )
+    assert _git(work, "rev-parse", "HEAD^{tree}").stdout == expected_tree
+    assert (work / "file.txt").read_bytes() == content
+    assert _git(work, "log", "-3", "--format=%s").stdout.splitlines() == [
+        "Preserve escape bytes",
+        "Latest PR commit",
+        "First PR commit",
+    ]

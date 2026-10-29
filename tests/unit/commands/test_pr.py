@@ -43,7 +43,7 @@ def mock_client(monkeypatch):
         return_value={"number": 42, "html_url": "https://example.com/42", "title": "Test", "head": {"ref": "feature"}}
     )
     client.patch = MagicMock(return_value={"number": 42, "html_url": "https://example.com/42", "title": "Test"})
-    client.put = MagicMock(return_value={"message": "Merged"})
+    client.put = MagicMock(return_value={"merged": True, "message": "Merged"})
     client.delete = MagicMock(return_value=None)
     client.request = MagicMock(return_value="diff text")
 
@@ -775,6 +775,104 @@ class TestPrClose:
 
 
 class TestPrMerge:
+    @pytest.mark.parametrize("delete_branch", [False, True])
+    @pytest.mark.parametrize(
+        "response",
+        [
+            None,
+            [],
+            42,
+            "Merged",
+            {},
+            {"message": "Merged"},
+            *[
+                {"merged": value, "message": "Merged"}
+                for value in (False, None, 0, -1, 2, 1.0, "true", "false", "1", [], {})
+            ],
+        ],
+    )
+    def test_pr_merge_requires_explicit_success(self, runner, mock_client, mock_repo, response, delete_branch):
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        mock_client.put.return_value = response
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
+
+        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+            result = runner.invoke(main, args)
+
+        assert result.exit_code == 1
+        output = _output_text(result)
+        assert "merge was not confirmed" in output
+        assert "Verify its state before retrying" in output
+        assert "no branch deletion was attempted" in output
+        assert "Merged" not in output
+        assert "Deleted remote branch" not in output
+        assert "Traceback" not in output
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42")
+        mock_client.put.assert_called_once_with("/repos/owner/repo/pulls/42/merge", json={"merge_method": "merge"})
+        git.assert_not_called()
+
+    @pytest.mark.parametrize("delete_branch", [False, True])
+    @pytest.mark.parametrize("merged", [True, 1])
+    def test_pr_merge_explicit_success_allows_cleanup(self, runner, mock_client, mock_repo, merged, delete_branch):
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        mock_client.put.return_value = {"merged": merged, "message": "Merged"}
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
+
+        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+            result = runner.invoke(main, args)
+
+        assert result.exit_code == 0
+        assert result.output.startswith("Merged\n")
+        assert mock_client.put.call_count == 1
+        if delete_branch:
+            git.assert_called_once_with(["git", "push", "origin", "--delete", "feature"], check=True)
+            assert "Deleted remote branch feature" in result.output
+        else:
+            git.assert_not_called()
+
+    @pytest.mark.parametrize("message", [None, "", [], {"unexpected": "value"}])
+    def test_pr_merge_success_has_safe_message_fallback(self, runner, mock_client, mock_repo, message):
+        mock_client.put.return_value = {"merged": True, "message": message}
+
+        result = runner.invoke(main, ["--token", "synthetic-merge-token", "pr", "merge", "42"])
+
+        assert result.exit_code == 0
+        assert result.output == "Merged pull request #42\n"
+        assert mock_client.put.call_count == 1
+
+    def test_pr_merge_success_without_message(self, runner, mock_client, mock_repo):
+        mock_client.put.return_value = {"merged": True}
+
+        result = runner.invoke(main, ["--token", "synthetic-merge-token", "pr", "merge", "42"])
+
+        assert result.exit_code == 0
+        assert result.output == "Merged pull request #42\n"
+
+    @pytest.mark.parametrize("delete_branch", [False, True])
+    @pytest.mark.parametrize("error", [APIError("Merge refused", 409), NetworkError("Synthetic timeout")])
+    def test_pr_merge_exception_does_not_retry_or_delete(self, runner, mock_client, mock_repo, error, delete_branch):
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        mock_client.put.side_effect = error
+        args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
+        if delete_branch:
+            args.append("--delete-branch")
+
+        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+            result = runner.invoke(main, args)
+
+        assert result.exit_code == 1
+        output = _output_text(result)
+        assert str(error) in output
+        assert "Merged" not in output
+        assert "Deleted remote branch" not in output
+        assert "Traceback" not in output
+        assert mock_client.put.call_count == 1
+        git.assert_not_called()
+
     def test_pr_merge(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42"])
         assert result.exit_code == 0

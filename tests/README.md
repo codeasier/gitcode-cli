@@ -7,7 +7,7 @@ This test suite mirrors the `gc` architecture so failures can be isolated by lay
 - `unit/test_cli.py` and `unit/commands/`: CLI and command behavior, including argument parsing, exit behavior, and command-to-adapter delegation.
 - `unit/adapters/`: translation from `gh`-style command semantics into GitCode-compatible service calls, including degraded or approximated behavior.
 - `unit/services/`: low-level GitCode API request construction, including HTTP method, path, and request payload filtering.
-- `contracts/`: contract checks against extracted GitCode API docs under `tests/fixtures/gitcode-api-contracts/raw/`.
+- `contracts/`: extracted-doc service contracts and strict HTTP transport checks against `tests/fixtures/gitcode-api-contracts/raw/`.
 - `e2e/`: offline process smoke tests of the installed `gc` and `gitcode` console scripts, with isolated HOME/config/work directories and a credential-free child environment.
 
 ## Why this split exists
@@ -51,7 +51,7 @@ The initial process scenarios cover root/auth/issue/PR help, installed version r
 | --- | --- | --- |
 | Help compatibility | Existing gh 2.89.0 JSON baseline plus exact displayed command/flag/arity/summary checks for root, issue/pr groups and create commands on both entrypoints; explicit differences in the existing coverage JSON | Expand beyond these five commands and add independently sourced gh usage/argument/alias metadata and flag-description semantics; current gc usage/aliases are local invariants, not evidence of gh parity. |
 | CLI behavior | Isolated no-network subprocess harness; existing CliRunner command/unit coverage | Strict mocked/recorded issue and PR golden flows, full output/error matrix, and isolated wheel installation for both entrypoints. A parent-process HTTP mock does not intercept subprocess HTTP. |
-| API contracts | Extracted-doc service contracts now in every CLI PR matrix; separate respx client units | Add real-transport strict request matching (including unregistered-request failure) for high-risk paths, payloads and authentication. |
+| API contracts | Extracted-doc service contracts plus real-client/HTTPX strict matching for Issue create/list and PR comment/review; unmatched requests and body/query/auth drift fail | Expand endpoint/workflow coverage and independently refresh upstream contracts; CLI query-token checks are not MCP OAuth or live account acceptance. |
 | Recorded | Marker registered, no recording/replay suite yet | Define fixture provenance/versioning, refresh procedure and credential/body redaction before committing recordings. |
 | Live/destructive | Markers registered only; explicitly excluded from ordinary PR CI | Obtain a dedicated authorized sandbox and credentials; define run IDs, concurrency isolation, `finally` cleanup/janitor and separate destructive opt-in. Only then add manual/nightly/release execution. |
 
@@ -64,4 +64,10 @@ The initial process scenarios cover root/auth/issue/PR help, installed version r
 The selected scope is root, `issue`, `issue create`, `pr` and `pr create`, through both `gc` and `gitcode`. Local `new` aliases are also executed with `--help` and compared with their canonical create command. The fixture records absent root/subcommands as deferred, not as unsupported GitCode platform APIs. Existing broader one-directional unit checks remain intact.
 
 The pinned gh snapshot does **not** contain usage, positional arguments or aliases. Accordingly, usage and aliases in `gc_invariants` are explicitly gc-only expectations, not reconstructed gh evidence. Its command summaries describe parent-menu entries: those displayed entries are compared, not the command's full introductory prose. Option metavar names are normalized to value-vs-switch arity; option descriptions and richer type semantics are not compared yet (for example, `issue create --template` uses a local file in gc rather than gh's named template). This subset does not establish complete gh compatibility or behavioral equivalence, and #124 stays open.
+
+## Strict HTTP contract subset
+
+`contracts/test_http_transport_contracts.py` keeps the real services, `GitCodeClient`, JSON serialization and HTTPX request preparation in the call path. A [strict RESPX router](https://lundberg.github.io/respx/api/#configuration) intercepts HTTPX before any network request: both `assert_all_mocked` and `assert_all_called` are explicitly enabled, with no pass-through routes. Tests use a reserved `.invalid` host and synthetic token, never ambient credentials. Registered methods/paths and allowed fields come from the existing extracted API fixtures, while callbacks assert exact query parameters, authentication placement, Accept/Content-Type and JSON payload/types. Negative guard cases prove that unregistered paths/methods and unexpected body/query/token values fail rather than silently receive mock success.
+
+Coverage includes the owner-only Issue-create path with `repo` in the body, optional-field omission, PR general/inline `path` + integer `position` comments, the review `force: false` default and explicitly requested boolean value, list-query merging, HTTP 401/403/404/422 propagation and non-retry of synthetic timeout/connection failures. The review fixture documents only `force`: these checks do not claim support for GitHub review events, review text or a complete approval state machine. They verify CLI query-token behavior for Issue/PR endpoints, not MCP bearer/OAuth behavior or production permissions. Existing MagicMock service contracts remain useful and unchanged; this adds their missing serialized-HTTP boundary without replacing source-compatibility or live verification.
 

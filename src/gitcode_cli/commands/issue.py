@@ -414,7 +414,7 @@ def issue_create(
     "-r",
     "--reason",
     type=click.Choice(["completed", "not_planned", "not planned"]),
-    help="Reason for closing.",
+    help="Currently unsupported: no verified close-reason API contract.",
 )
 @click.pass_context
 def issue_close(
@@ -425,6 +425,8 @@ def issue_close(
     duplicate_of: str | None,
     reason: str | None,
 ) -> None:
+    if reason is not None:
+        raise unsupported("ISSUE_CLOSE_REASON")
     app = ctx.obj["app"]
     owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     approximated = duplicate_of is not None

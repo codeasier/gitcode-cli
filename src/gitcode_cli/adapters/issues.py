@@ -8,7 +8,7 @@ from ..errors import APIError, GCError
 from ..services import IssueService, UserService
 from ._current_user import resolve_me
 from .base import AdapterActionResult
-from .capabilities import capability_message
+from .capabilities import capability_message, unsupported
 
 
 def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
@@ -265,6 +265,8 @@ class IssueAdapter:
         comment: str | None,
         reason: str | None,
     ) -> AdapterActionResult:
+        if reason is not None:
+            raise unsupported("ISSUE_CLOSE_REASON")
         current = self.service.get(owner, repo, number)
         if current and current.get("state") == "closed":
             if comment:
@@ -274,8 +276,6 @@ class IssueAdapter:
         payload: dict[str, Any] = {"state": "close", "title": self._current_title(current)}
         if comment:
             self.service.comment(owner, repo, number, comment)
-        if reason:
-            payload["state_reason"] = reason
         item = self.service.update(owner, repo, number, **payload)
         return AdapterActionResult(item=item, message="closed")
 

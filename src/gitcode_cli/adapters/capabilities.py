@@ -3,6 +3,10 @@ from __future__ import annotations
 import click
 
 CAPABILITY_MESSAGES = {
+    "ISSUE_CLOSE_REASON": (
+        "gc currently does not support 'issue close --reason': no verified GitCode API contract for closing reasons. "
+        "No request was sent; omit --reason to close without recording a reason."
+    ),
     "ISSUE_COMMENT_LAST_NOT_FOUND": "No editable issue comment from the current user was found.",
     "ISSUE_COMMENT_OWNERSHIP_UNVERIFIABLE": (
         "Unable to verify the current user's issue comments on GitCode; refusing to edit or delete comments safely."
@@ -23,6 +27,11 @@ CAPABILITY_MESSAGES = {
     "PR_EDIT_BASE": (
         "GitCode's pull request update API does not support changing the base branch; "
         "-B/--base cannot be used with 'gc pr edit'."
+    ),
+    "PR_EDIT_REMOVE_MILESTONE": (
+        "gc currently does not support 'pr edit --remove-milestone': "
+        "no verified GitCode API contract for clearing a PR milestone. "
+        "No request was sent; omit --remove-milestone to edit other fields."
     ),
     "PR_REVIEW_REQUEST_CHANGES": (
         "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."

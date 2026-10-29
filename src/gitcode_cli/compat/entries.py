@@ -179,8 +179,9 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "issue close",
         "-r/--reason",
-        CompatStatus.IMPLEMENTED,
-        "Supports completed/not_planned; gh additionally supports duplicate",
+        CompatStatus.UNSUPPORTED,
+        "Currently unavailable in gc: no verified closing-reason API contract; rejects before any request",
+        unsupported_key="ISSUE_CLOSE_REASON",
     ),
     _e(
         "issue close",
@@ -449,7 +450,13 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e("pr edit", "--remove-reviewer", CompatStatus.IMPLEMENTED, "Native approval reviewers; DELETE JSON, verified"),
     _e("pr edit", "-m/--milestone", CompatStatus.IMPLEMENTED),
-    _e("pr edit", "--remove-milestone", CompatStatus.IMPLEMENTED),
+    _e(
+        "pr edit",
+        "--remove-milestone",
+        CompatStatus.UNSUPPORTED,
+        "Currently unavailable in gc: no verified milestone-clearing API contract; rejects before any request",
+        unsupported_key="PR_EDIT_REMOVE_MILESTONE",
+    ),
     _e("pr edit", "--add-project", CompatStatus.NOT_IN_CLI),
     _e("pr edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("pr diff", "-R/--repo", CompatStatus.IMPLEMENTED),

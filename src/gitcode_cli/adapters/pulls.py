@@ -12,7 +12,7 @@ from ._milestones import milestone_number, resolve_pr_milestone
 from ._pr_labels import PRLabelPlan
 from ._pr_people import PRPeoplePlan
 from .base import AdapterActionResult
-from .capabilities import capability_message
+from .capabilities import capability_message, unsupported
 
 
 def _normalize_multi_values(values: tuple[str, ...] | None) -> str | None:
@@ -309,9 +309,9 @@ class PullRequestAdapter:
         milestone: str | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
-        resolved_milestone = (
-            None if remove_milestone else resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
-        )
+        if remove_milestone:
+            raise unsupported("PR_EDIT_REMOVE_MILESTONE")
+        resolved_milestone = resolve_pr_milestone(self.milestone_service, owner, repo, milestone)
         people = PRPeoplePlan(
             self.service,
             self.user_service,
@@ -336,9 +336,6 @@ class PullRequestAdapter:
             }.items()
             if v is not None
         }
-        if remove_milestone:
-            # Legacy clearing behavior is deliberately outside this setting-only repair.
-            data["milestone"] = ""
         item = self.service.update(owner, repo, number, **data) if data else before
         labels_changed = labels.apply(owner, repo, number, before) if labels.requested and before is not None else False
         if before is not None:

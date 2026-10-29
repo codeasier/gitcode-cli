@@ -22,6 +22,12 @@ UPDATE_PATH = "/api/v5/repos/owner/issues/42"
 
 @pytest.fixture
 def http_cli(monkeypatch):
+    def reject_ambient_credentials(*args, **kwargs):
+        raise AssertionError("HTTP contracts must not read ambient credentials or configuration")
+
+    monkeypatch.setattr("gitcode_cli.cli.get_token", reject_ambient_credentials)
+    monkeypatch.setattr("gitcode_cli.config.get_token", reject_ambient_credentials)
+    monkeypatch.setattr("gitcode_cli.config.load_config", reject_ambient_credentials)
     with respx.mock(assert_all_mocked=True, assert_all_called=True) as router:
         client = GitCodeClient(token=TOKEN, base_url=f"{ORIGIN}/api/v5/")
         monkeypatch.setattr(AppContext, "client", lambda self: client)
@@ -58,7 +64,7 @@ def _route(router, method, path, *, responses=None, payload=None, error=None):
 
 
 def _edit(runner, *options):
-    return runner.invoke(main, ["issue", "edit", "42", "-R", "owner/repo", *options])
+    return runner.invoke(main, ["--token", TOKEN, "issue", "edit", "42", "-R", "owner/repo", *options])
 
 
 @pytest.mark.parametrize("name", ["bug", "help wanted", "scope/bug", "标签%2F?#"])

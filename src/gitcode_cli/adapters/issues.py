@@ -357,9 +357,7 @@ class IssueAdapter:
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
         data: dict[str, Any] = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
-        empty_label_edit = False
-        current: dict[str, Any] | None = None
-        removed: set[str] = set()
+        empty_label_edit: tuple[dict[str, Any] | None, set[str]] | None = None
 
         if add_assignee is not None:
             data["assignee"] = add_assignee
@@ -382,13 +380,14 @@ class IssueAdapter:
             if merged:
                 data["labels"] = ",".join(merged)
             else:
-                empty_label_edit = True
+                empty_label_edit = (current, removed)
 
         if milestone is not None:
             data["milestone"] = milestone
         if remove_milestone:
             data["milestone"] = 0
-        if empty_label_edit:
+        if empty_label_edit is not None:
+            current, removed = empty_label_edit
             return self._edit_without_labels(owner, repo, number, current=current, removed=removed, data=data)
         return self.service.update(owner, repo, number, **data)
 
@@ -434,7 +433,7 @@ class IssueAdapter:
             raise click.ClickException(
                 f"Issue edit not fully confirmed: field update completed={fields_updated}; "
                 f"{deleted} label deletion request(s) succeeded; {stage} failed: {exc}. "
-                "The failed request may have taken effect. Inspect the Issue before retrying; "
+                "Some mutations may have taken effect. Inspect the Issue before retrying; "
                 "no automatic retry or rollback was attempted."
             ) from exc
         return item

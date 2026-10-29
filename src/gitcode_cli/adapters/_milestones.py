@@ -21,9 +21,7 @@ def milestone_number(value: Any) -> int | None:
     return None
 
 
-def _matching_numbers(items: Any, seen: set[int], title: str) -> list[int]:
-    if not isinstance(items, list):
-        raise click.ClickException("Milestone title lookup returned an invalid list; no PR write was attempted.")
+def _matching_numbers(items: list[Any], seen: set[int], title: str) -> list[int]:
     matches = []
     for item in items:
         number = milestone_number(item.get("number")) if isinstance(item, dict) else None
@@ -53,6 +51,8 @@ def resolve_pr_milestone(service: IssueService | None, owner: str, repo: str, va
     seen: set[int] = set()
     for page in range(1, 101):
         items = service.list_milestones(owner, repo, state="all", page=page, per_page=100)
+        if not isinstance(items, list):
+            raise click.ClickException("Milestone title lookup returned an invalid list; no PR write was attempted.")
         matches.extend(_matching_numbers(items, seen, title))
         if len(items) < 100:
             break

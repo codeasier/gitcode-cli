@@ -523,7 +523,43 @@ class TestRepoFork:
 
         assert result.exit_code == 0
         assert "✓ Created fork my-org/repo" in result.output
-        assert mock_client.post.call_args.kwargs["json"] == {"org": "my-org"}
+        assert mock_client.post.call_args.kwargs["json"] == {"organization": "my-org"}
+
+    @pytest.mark.parametrize("item", [{}, {"full_name": "personal/repo"}])
+    @pytest.mark.parametrize("clone", [False, True])
+    def test_org_destination_must_be_confirmed_before_success_or_clone(self, runner, mock_client, item, clone):
+        mock_client.post.return_value = item
+        args = ["repo", "fork", "owner/repo", "--org", "my-org"]
+        if clone:
+            args.append("--clone")
+
+        with patch("gitcode_cli.commands.repo.subprocess.call") as git:
+            result = runner.invoke(main, args, env={"GC_TOKEN": "synthetic-fork-token"})
+
+        assert result.exit_code == 1
+        assert "verify your GitCode repositories before retrying" in result.output
+        assert "Created fork" not in result.output
+        git.assert_not_called()
+        mock_client.post.assert_called_once_with("/repos/owner/repo/forks", json={"organization": "my-org"})
+        mock_client.delete.assert_not_called()
+
+    def test_org_fork_clone_runs_only_after_destination_confirmation(self, runner, mock_client):
+        mock_client.post.return_value = {
+            "full_name": "my-org/repo",
+            "namespace": {"full_path": "my-org"},
+            "http_url_to_repo": "https://gitcode.com/my-org/repo.git",
+        }
+
+        with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as git:
+            result = runner.invoke(
+                main,
+                ["repo", "fork", "owner/repo", "--org", "my-org", "--clone"],
+                env={"GC_TOKEN": "synthetic-fork-token"},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Created fork my-org/repo" in result.output
+        git.assert_called_once_with(["git", "clone", "https://gitcode.com/my-org/repo.git"])
 
     def test_fork_name_is_unsupported(self, runner, mock_client):
         result = runner.invoke(main, ["repo", "fork", "owner/repo", "--fork-name", "new-name"])

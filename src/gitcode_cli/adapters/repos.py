@@ -50,6 +50,28 @@ def _drop_none(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
 
 
+def _confirm_fork_organization(item: Any, organization: str) -> None:
+    """Require canonical destination evidence before claiming an org fork succeeded."""
+    namespaces: list[str] = []
+    if isinstance(item, dict):
+        namespace = item.get("namespace")
+        if isinstance(namespace, dict):
+            path = namespace.get("full_path") or namespace.get("path")
+            if isinstance(path, str) and path:
+                namespaces.append(path)
+        full_name = item.get("full_name")
+        if isinstance(full_name, str) and "/" in full_name:
+            path, name = full_name.rsplit("/", 1)
+            if path and name:
+                namespaces.append(path)
+    if not namespaces or any(path != organization for path in namespaces):
+        raise click.ClickException(
+            "Fork destination did not confirm the requested organization. "
+            "The request may have created a fork; verify your GitCode repositories before retrying. "
+            "No clone was attempted."
+        )
+
+
 class RepoAdapter:
     def __init__(self, service: RepoService):
         self.service = service
@@ -170,7 +192,12 @@ class RepoAdapter:
         return self.service.create_personal(**payload)
 
     def fork_repo(self, owner: str, repo: str, *, org: str | None = None) -> AdapterActionResult:
-        item = self.service.fork(owner, repo, org=org)
+        organization = org.strip() if org is not None else None
+        if organization == "":
+            raise click.UsageError("--org must specify a nonempty organization path")
+        item = self.service.fork(owner, repo, organization=organization)
+        if organization is not None:
+            _confirm_fork_organization(item, organization)
         return AdapterActionResult(item=item, message="forked")
 
     def edit_repo(

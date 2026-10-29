@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from unittest.mock import MagicMock, call
 
+import click
 import pytest
 
 from gitcode_cli.adapters.repos import RepoAdapter
@@ -227,18 +228,83 @@ class TestRepoAdapterCreate:
 
 class TestRepoAdapterWrite:
     def test_fork_posts_and_wraps_result(self, adapter, service):
-        service.fork.return_value = {"full_name": "me/repo"}
+        service.fork.return_value = {"full_name": "my-org/repo"}
 
         result = adapter.fork_repo("owner", "repo", org="my-org")
 
-        service.fork.assert_called_once_with("owner", "repo", org="my-org")
-        assert result.item == {"full_name": "me/repo"}
+        service.fork.assert_called_once_with("owner", "repo", organization="my-org")
+        assert result.item == {"full_name": "my-org/repo"}
         assert result.message == "forked"
 
     def test_fork_without_org_omits_parameter(self, adapter, service):
         service.fork.return_value = {}
         adapter.fork_repo("owner", "repo", org=None)
-        service.fork.assert_called_once_with("owner", "repo", org=None)
+        service.fork.assert_called_once_with("owner", "repo", organization=None)
+
+    @pytest.mark.parametrize(
+        "item",
+        [
+            {"namespace": {"path": "my-org"}},
+            {"namespace": {"full_path": "my-org", "path": "my-org"}},
+            {"full_name": "my-org/repo", "namespace": {"full_path": "my-org"}},
+        ],
+    )
+    def test_fork_accepts_matching_canonical_namespace(self, adapter, service, item):
+        service.fork.return_value = item
+
+        result = adapter.fork_repo("owner", "repo", org="my-org")
+
+        assert result.item == item
+        service.fork.assert_called_once_with("owner", "repo", organization="my-org")
+
+    def test_fork_nested_organization_uses_full_path_not_leaf_name(self, adapter, service):
+        service.fork.return_value = {
+            "full_name": "parent/team/repo",
+            "namespace": {"path": "team", "full_path": "parent/team"},
+        }
+
+        adapter.fork_repo("owner", "repo", org="parent/team")
+
+        service.fork.assert_called_once_with("owner", "repo", organization="parent/team")
+
+    @pytest.mark.parametrize(
+        "item",
+        [
+            None,
+            [],
+            {},
+            {"full_name": "repo"},
+            {"full_name": "my-org/"},
+            {"namespace": {"full_path": 42}},
+            {"namespace": {"name": "my-org"}},
+            {"full_name": "personal/repo"},
+            {"namespace": {"path": "personal"}},
+            {"full_name": "my-org/repo", "namespace": {"full_path": "personal"}},
+            {"full_name": "personal/repo", "namespace": {"full_path": "my-org"}},
+        ],
+    )
+    def test_fork_unconfirmed_destination_fails_without_retry(self, adapter, service, item):
+        service.fork.return_value = item
+
+        with pytest.raises(click.ClickException, match="verify your GitCode repositories before retrying"):
+            adapter.fork_repo("owner", "repo", org="my-org")
+
+        assert service.mock_calls == [call.fork("owner", "repo", organization="my-org")]
+
+    @pytest.mark.parametrize("org", ["", " ", "\t\n"])
+    def test_fork_empty_org_does_not_fall_back_to_personal_namespace(self, adapter, service, org):
+        with pytest.raises(click.UsageError, match="nonempty organization"):
+            adapter.fork_repo("owner", "repo", org=org)
+
+        service.fork.assert_not_called()
+
+    def test_fork_http_error_is_not_retried(self, adapter, service):
+        service.fork.side_effect = APIError("Organization is unavailable", 403)
+
+        with pytest.raises(APIError, match="Organization is unavailable"):
+            adapter.fork_repo("owner", "repo", org="my-org")
+
+        assert service.mock_calls == [call.fork("owner", "repo", organization="my-org")]
 
     def test_edit_sends_only_changed_fields(self, adapter, service):
         service.update.return_value = {"full_name": "owner/repo"}

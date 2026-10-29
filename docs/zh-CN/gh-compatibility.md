@@ -43,6 +43,43 @@ Issue/PR URL 与显式 host 或 `GC_GH_TARGET` 冲突时会被拒绝。直接使
 | `ls` → `list`、`new` → `create` 等命令别名 | 支持 |
 | 重复传入 `--label` 等多值参数 | 支持 |
 | `--add-label` / `--remove-label` 等编辑辅助参数 | 支持 |
+| `auth status --json hosts`、`--jq`、`--template` | 支持；格式化选项需要配合 `--json` |
+| `pr reopen --comment`、`pr diff --name-only` | 支持 |
+| `pr checkout --detach`、`--force` | 支持，使用已验证的 PR 源仓库 |
+| `pr comment --edit-last`、`--create-if-none`、`--delete-last`、`--yes` | 支持，限当前用户的普通 PR 评论 |
+| `pr diff --patch` | 支持，返回按提交划分的邮件格式补丁 |
+
+### 结构化认证状态
+
+`gc auth status --json hosts` 通过 GitCode API 验证当前用户，返回以 `gitcode.com` 为键的 `hosts` 映射。输出始终不包含 token；无法获取的 scopes 与 Git 协议字段省略。缺少 token 时返回 `{"hosts": {}}`；API 或网络认证验证失败时返回 `state: "error"` 的条目，退出码仍为 0。配置损坏、JSON 字段错误、jq 表达式错误或格式化参数错误仍会失败。gh proxy 启用时也保持纯机器可读输出。
+
+```bash
+gc auth status --json hosts
+gc auth status --json hosts --jq '.hosts["gitcode.com"][0].login'
+gc pr diff 42 --name-only
+gc pr reopen 42 --comment "Ready for another review"
+gc pr checkout 42 --detach
+gc pr checkout 42 --force
+```
+
+`--template` 复用 CLI 已有的 Go template 子集。`pr diff --name-only` 通过单次请求读取完整文件变更集合，包含二进制、重命名和删除的文件。[文件变更端点](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-files/)未声明分页参数。`pr reopen --comment` 先重开 PR 再发表评论；评论失败时命令以失败退出，并明确报告 PR 已重开。
+
+PR checkout 从已验证的源仓库拉取，不再假定源分支位于 `origin`。`--detach` 检出已核实的不可变 head SHA，不创建或重置本地分支。`--force` 只重置 upstream 对应同一源仓库及分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改。缺失、不相关或不明确的 upstream 均拒绝，remote 名称不必是 `origin`。不使用 `--force` 时，已有分支必须已指向核实的 SHA。新分支从该 SHA 创建；若现存 remote 中恰有一个使用规范 HTTPS/SSH 源 URL 及标准分支 fetch 映射，则保留对应 upstream。缺少 tracking ref 时，以 compare-and-swap 保护创建，绝不覆盖已有 ref。否则不擅自建立 upstream，之后使用 `--force` 前须明确配置源 remote/upstream。自定义端口、HTTPS URL 内嵌凭据和 remote helper 不作为 upstream 身份证明，不保存临时路由 remote。所有模式均要求 API 提供完整 head SHA；API 查询到拉取之间 head 已变化时，在改变本地检出状态前报错。URL 固定针对 Git 配置重写，不会禁用原生 HTTPS 重定向或替代 Git 认证。
+
+### PR 评论历史与补丁
+
+```bash
+gc pr comment 42 --edit-last --body "Updated review summary"
+gc pr comment 42 --edit-last --create-if-none --body-file summary.md
+gc pr comment 42 --delete-last --yes
+gc pr diff 42 --patch > review.patch
+```
+
+评论历史操作读取全部分页，按创建时间选取当前用户最新的**普通 PR 评论**，不依赖更新时间或 API 返回顺序。身份判断优先使用稳定用户 ID，其次使用 login，始终不使用显示名称。行内评论与讨论回复不参与选择。身份、评论类型、分页或创建时间无法确认时，命令在写入前失败。`--create-if-none` 必须配合 `--edit-last`，且仅在完整、有效的历史中不存在匹配评论时创建。`--yes` 必须配合 `--delete-last`；否则删除前会确认，默认选择否。
+
+历史参数不能与行内评论、讨论回复或 web 参数混用。编辑支持 `--body`、`--body-file`（`-` 表示标准输入）与 `--editor`，编辑器预填选中评论的正文。未显式指定正文来源时，交互模式打开编辑器，非交互模式要求提供正文来源。取消编辑或正文为空时不写入。
+
+评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
 
 ## GitCode 差异与限制
 
@@ -65,4 +102,3 @@ Issue/PR URL 与显式 host 或 `GC_GH_TARGET` 冲突时会被拒绝。直接使
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 
 squash/title 契约已于 2026-10-30 对照[合并 PR](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge)和[更新 Issue](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number)文档核实；离线契约测试不代表已验证真实 sandbox 兼容性。
-

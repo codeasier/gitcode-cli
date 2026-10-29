@@ -117,7 +117,60 @@ def delete_head(item: object) -> str:
     return source.branch
 
 
-def checkout_head(item: object, branch: str | None) -> str:
+def _remote_matches(source: PRHead, remote: str) -> bool:
+    urls = _git("remote", "get-url", "--all", "--", remote).stdout.splitlines()
+    if len(urls) != 1:
+        return False
+    if urls[0] == source.url:
+        return True
+    try:
+        owner, repo = validate_gitcode_repo(*parse_remote_url_with_host(source.url))
+    except RepoResolutionError:
+        return False
+    # Compare canonical spellings, not merely a parser which discards ports or
+    # userinfo. An alternate service on the same hostname is not proven to be
+    # the same repository. Git helpers/custom ports fail closed here.
+    return urls[0] in {
+        f"{prefix}{owner}/{repo}{suffix}"
+        for prefix in (
+            "https://gitcode.com/",
+            "git@gitcode.com:",
+            "ssh://git@gitcode.com/",
+            "git@ssh.gitcode.com:",
+            "ssh://git@ssh.gitcode.com/",
+        )
+        for suffix in ("", ".git")
+    }
+
+
+def _matches_upstream(source: PRHead, ref: str) -> bool:
+    tracking = _git("for-each-ref", "--format=%(upstream:remotename)%00%(upstream:remoteref)", ref).stdout.strip()
+    parts = tracking.split("\0")
+    if len(parts) != 2 or parts[0] in ("", ".") or parts[1] != f"refs/heads/{source.branch}":
+        return False
+    return _remote_matches(source, parts[0])
+
+
+def _verified_tracking_ref(source: PRHead) -> str | None:
+    candidates = []
+    for remote in _git("remote").stdout.splitlines():
+        if not _remote_matches(source, remote):
+            continue
+        mapping = _git("config", "--get-all", f"remote.{remote}.fetch", check=False)
+        if mapping.returncode or mapping.stdout.splitlines() != [f"+refs/heads/*:refs/remotes/{remote}/*"]:
+            continue
+        candidates.append(f"refs/remotes/{remote}/{source.branch}")
+    if len(candidates) != 1:
+        return None
+    ref = candidates[0]
+    if _git("show-ref", "--verify", "--quiet", ref, check=False).returncode:
+        # A PR branch may have appeared since clone. Create only a missing
+        # tracking ref; never overwrite a concurrent fetch's existing value.
+        _git("update-ref", ref, source.sha, "0" * 40)
+    return ref
+
+
+def checkout_head(item: object, branch: str | None, *, detach: bool = False, force: bool = False) -> str:
     source = resolve_head(item)
     local = branch or source.branch
     _check_branch(local)
@@ -125,15 +178,24 @@ def checkout_head(item: object, branch: str | None) -> str:
     fetched = _git("rev-parse", "--verify", "FETCH_HEAD^{commit}").stdout.strip()
     if fetched.lower() != source.sha:
         raise GCError("PR branch changed during fetch. Refresh the PR before retrying checkout.")
+    if detach:
+        _git("checkout", "--detach", source.sha, "--")
+        return local
     ref = f"refs/heads/{local}"
     existing = _git("rev-parse", "--verify", ref, check=False)
     if existing.returncode == 0:
-        if existing.stdout.strip().lower() != source.sha:
+        if force and not _matches_upstream(source, ref):
+            raise GCError(f"Branch '{local}' does not track the verified PR source branch; force checkout refused.")
+        if not force and existing.stdout.strip().lower() != source.sha:
             raise GCError(f"Branch '{local}' already exists at another commit. Use --branch with a new name.")
         _git("checkout", local, "--")
+        if force:
+            _git("reset", "--hard", source.sha, "--")
     else:
+        tracking_ref = _verified_tracking_ref(source)
         # Use the immutable object ID, not FETCH_HEAD or a tracking ref which
         # another concurrent fetch can overwrite.
         _git("checkout", "-b", local, source.sha, "--")
+        if tracking_ref:
+            _git("branch", f"--set-upstream-to={tracking_ref}", "--", local)
     return local
-

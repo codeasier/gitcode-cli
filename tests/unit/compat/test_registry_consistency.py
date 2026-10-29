@@ -54,9 +54,8 @@ class TestRegistryBasics:
         for entry in _ENTRIES:
             if entry.status is CompatStatus.UNSUPPORTED:
                 assert entry.unsupported_key, f"{entry.label()}: UNSUPPORTED entries must set unsupported_key"
-                assert entry.unsupported_key in CAPABILITY_MESSAGES, (
-                    f"{entry.label()}: capability key {entry.unsupported_key!r} missing from CAPABILITY_MESSAGES"
-                )
+                message = f"{entry.label()}: capability key {entry.unsupported_key!r} missing from CAPABILITY_MESSAGES"
+                assert entry.unsupported_key in CAPABILITY_MESSAGES, message
 
     def test_other_statuses_have_no_guard_keys(self) -> None:
         for entry in _ENTRIES:
@@ -105,56 +104,17 @@ class TestRegistryMatchesRuntime:
         for entry in _ENTRIES:
             if entry.unsupported_key is None:
                 continue
-            assert entry.unsupported_key in CAPABILITY_MESSAGES, (
-                f"{entry.label()}: {entry.unsupported_key!r} not in CAPABILITY_MESSAGES"
-            )
+            message = f"{entry.label()}: {entry.unsupported_key!r} not in CAPABILITY_MESSAGES"
+            assert entry.unsupported_key in CAPABILITY_MESSAGES, message
 
 
-class TestPendingFlagsBehaveAsPending:
-    """End-to-end: invoking a PENDING flag raises the documented message."""
-
-    @pytest.mark.parametrize(
-        ("args", "flag_name"),
-        [
-            (["pr", "comment", "1", "--create-if-none"], "pr comment --create-if-none"),
-            (["pr", "comment", "1", "--delete-last"], "pr comment --delete-last"),
-            (["pr", "comment", "1", "--edit-last"], "pr comment --edit-last"),
-            (["pr", "comment", "1", "--yes"], "pr comment --yes"),
-            (["pr", "reopen", "1", "--comment", "reopening"], "pr reopen --comment"),
-            (["pr", "diff", "1", "--name-only"], "pr diff --name-only"),
-            (["pr", "diff", "1", "--patch"], "pr diff --patch"),
-            (["pr", "checkout", "1", "--detach"], "pr checkout --detach"),
-            (["pr", "checkout", "1", "--force"], "pr checkout --force"),
-            (["auth", "status", "--json", "token"], "auth status --json"),
-            (["auth", "status", "--jq", ".token"], "auth status --jq"),
-            (["auth", "status", "--template", "{{.token}}"], "auth status --template"),
-        ],
-    )
-    def test_pending_flag_invocation_fails(self, args: list[str], flag_name: str) -> None:
-        # Paranoia: this list must mirror every PENDING entry whose guard we want to
-        # verify at runtime. The full registry→guard consistency is enforced
-        # separately in TestRegistryMatchesRuntime; this list catches the case
-        # where a guard message drifted.
-        from click.testing import CliRunner
-
-        from gitcode_cli.cli import main
-
-        result = CliRunner().invoke(main, args)
-        assert result.exit_code != 0, result.output
-        assert f"gh-compatible command/flag '{flag_name}' is recognized but not implemented yet." in result.output
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [e for e in iter_entries() if e.status is CompatStatus.PENDING],
-)
-def test_every_pending_entry_has_runtime_match(entry) -> None:
+def test_every_pending_entry_has_runtime_match() -> None:
     """Each PENDING entry's pending_key must show up in some command module."""
     sources = _commands_source()
-    for text in sources.values():
-        if entry.pending_key and entry.pending_key in _pending_calls(text):
-            return
-    pytest.fail(f"{entry.label()}: pending_key {entry.pending_key!r} has no matching `_pending_gh_compat()` call")
+    for entry in iter_entries(statuses=[CompatStatus.PENDING]):
+        matched = entry.pending_key and any(entry.pending_key in _pending_calls(text) for text in sources.values())
+        message = f"{entry.label()}: pending_key {entry.pending_key!r} has no matching `_pending_gh_compat()` call"
+        assert matched, message
 
 
 @pytest.mark.parametrize(

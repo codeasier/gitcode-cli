@@ -4,7 +4,7 @@ from typing import Any
 
 import click
 
-from ..errors import APIError
+from ..errors import APIError, GCError
 from ..services import IssueService, UserService
 from .base import AdapterActionResult
 from .capabilities import capability_message
@@ -64,6 +64,22 @@ def _extract_assignee_names(issue: dict[str, Any] | None) -> list[str]:
         name = _extract_login(assignee)
         return [name] if name else []
     return []
+
+
+def _label_names_for_removal(issue: Any) -> list[str]:
+    """Do not mistake an incomplete response for an Issue with no labels."""
+    if not isinstance(issue, dict) or not isinstance(issue.get("labels"), (list, str)):
+        raise ValueError("Issue response has missing or malformed labels")
+    labels = issue["labels"]
+    if isinstance(labels, str):
+        return [name.strip() for name in labels.split(",") if name.strip()]
+    names: list[str] = []
+    for label in labels:
+        name = (label.get("name") or label.get("title")) if isinstance(label, dict) else label
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Issue response has a malformed label name")
+        names.append(name.strip())
+    return names
 
 
 def _matches_all_labels(issue: dict[str, Any], labels: tuple[str, ...] | None) -> bool:
@@ -342,11 +358,11 @@ class IssueAdapter:
     ) -> dict[str, Any] | None:
         current = (
             self.service.get(owner, repo, number)
-            if title is None or remove_assignee or add_labels or remove_labels
+            if title is None or remove_assignee is not None or add_labels or remove_labels
             else None
         )
-        title = title if title is not None else self._current_title(current)
         data: dict[str, Any] = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
+        empty_label_edit: tuple[dict[str, Any] | None, set[str]] | None = None
 
         if add_assignee is not None:
             data["assignee"] = add_assignee
@@ -364,12 +380,20 @@ class IssueAdapter:
                 if normalized and normalized not in removed and normalized not in seen:
                     seen.add(normalized)
                     merged.append(normalized)
-            data["labels"] = ",".join(merged)
+            if merged:
+                data["labels"] = ",".join(merged)
+            else:
+                empty_label_edit = (current, removed)
 
         if milestone is not None:
             data["milestone"] = milestone
         if remove_milestone:
             data["milestone"] = 0
+        if empty_label_edit is not None:
+            current, removed = empty_label_edit
+            return self._edit_without_labels(owner, repo, number, current=current, removed=removed, data=data)
+        if "title" not in data:
+            data["title"] = self._current_title(current)
         return self.service.update(owner, repo, number, **data)
 
     @staticmethod
@@ -378,6 +402,55 @@ class IssueAdapter:
         if not isinstance(title, str) or not title.strip():
             raise APIError("Unable to obtain the current Issue title required for update; no update sent.")
         return title
+
+    def _edit_without_labels(
+        self,
+        owner: str,
+        repo: str,
+        number: str,
+        *,
+        current: dict[str, Any] | None,
+        removed: set[str],
+        data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        # GitCode ignores labels="". Delete only the named labels present in the
+        # snapshot instead; never replace concurrent or unrelated labels with [].
+        try:
+            names = _label_names_for_removal(current)
+            pending = list(dict.fromkeys(name for name in names if name in removed))
+            if any("," in name or name in {".", ".."} for name in pending):
+                raise ValueError("Label removal requires individual names other than '.' or '..'")
+        except ValueError as exc:
+            raise click.ClickException(f"Cannot safely remove labels: {exc}") from exc
+
+        if data and "title" not in data:
+            data["title"] = self._current_title(current)
+        fields_updated = False
+        deleted = 0
+        stage = "field update"
+        item = current
+        try:
+            if data:
+                item = self.service.update(owner, repo, number, **data)
+                fields_updated = True
+            stage = "label deletion"
+            for name in pending:
+                self.service.remove_label(owner, repo, number, name)
+                deleted += 1
+            if not pending:
+                return item
+            stage = "readback"
+            item = self.service.get(owner, repo, number)
+            if removed.intersection(_label_names_for_removal(item)):
+                raise ValueError("requested labels are still present")
+        except (GCError, ValueError) as exc:
+            raise click.ClickException(
+                f"Issue edit not fully confirmed: field update completed={fields_updated}; "
+                f"{deleted} label deletion request(s) succeeded; {stage} failed: {exc}. "
+                "Some mutations may have taken effect. Inspect the Issue before retrying; "
+                "no automatic retry or rollback was attempted."
+            ) from exc
+        return item
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:
         if self.user_service is None:

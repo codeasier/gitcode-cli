@@ -14,6 +14,31 @@ from gitcode_cli.errors import GCError
 SHA = "a" * 40
 
 
+@pytest.mark.parametrize(
+    ("url", "matches"),
+    [
+        ("https://gitcode.com/fork/project.git", True),
+        ("https://gitcode.com/fork/project", True),
+        ("git@gitcode.com:fork/project.git", True),
+        ("ssh://git@ssh.gitcode.com/fork/project.git", True),
+        ("https://gitcode.com:8443/fork/project.git", False),
+        ("https://synthetic-user@gitcode.com/fork/project.git", False),
+        ("ssh://git@gitcode.com:2222/fork/project.git", False),
+        ("https://github.com/fork/project.git", False),
+        ("https://gitcode.com/other/project.git", False),
+        ("ext::synthetic-helper", False),
+        ("https://gitcode.com/fork/project.git\nhttps://gitcode.com/other/project.git", False),
+        ("", False),
+    ],
+)
+def test_force_upstream_requires_canonical_source_identity(monkeypatch, url, matches):
+    git = MagicMock(return_value=MagicMock(stdout=url))
+    monkeypatch.setattr(pr_git, "_git", git)
+    source = pr_git.PRHead("https://gitcode.com/fork/project.git", "feature", SHA)
+    assert pr_git._remote_matches(source, "source") is matches
+    git.assert_called_once_with("remote", "get-url", "--all", "--", "source")
+
+
 @pytest.fixture(autouse=True)
 def synthetic_auth(monkeypatch):
     monkeypatch.setenv("GC_TOKEN", "synthetic-target-test-token")
@@ -283,4 +308,3 @@ def test_real_git_lease_keeps_concurrently_updated_branch(tmp_path, monkeypatch)
     assert git("rev-parse", "--verify", "refs/heads/feature", cwd=remote).stdout.strip() == second
     pr_git.delete_head(pr_head(second))
     assert git("show-ref", "--verify", "refs/heads/feature", cwd=remote, check=False).returncode != 0
-

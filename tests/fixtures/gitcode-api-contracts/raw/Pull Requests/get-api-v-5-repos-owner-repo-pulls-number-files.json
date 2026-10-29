@@ -1,0 +1,17 @@
+{
+  "category": "Pull Requests",
+  "name": "Pull Request Commit文件列表",
+  "slug": "get-api-v-5-repos-owner-repo-pulls-number-files",
+  "docUrl": "https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-files/",
+  "method": "GET",
+  "path": "/api/v5/repos/{owner}/{repo}/pulls/{number}/files",
+  "pathParams": [
+    {"name": "owner", "type": "string", "required": true},
+    {"name": "repo", "type": "string", "required": true},
+    {"name": "number", "type": "integer", "required": true}
+  ],
+  "queryParams": [{"name": "access_token", "type": "string", "required": false}],
+  "requestBodyFields": [],
+  "responseFields": [{"name": "items[].filename", "type": "string"}],
+  "notes": "Request contract and filename response field checked against the official v5 reference on 2026-10-30. No page or per_page parameters are documented. Other response fields are omitted from this focused fixture."
+}

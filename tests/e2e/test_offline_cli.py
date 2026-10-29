@@ -67,7 +67,7 @@ def test_auth_config_roundtrip_is_isolated(run_gc, isolated_home):
     [
         (["auth", "login", "--with-token"], "No token provided on stdin", 1),
         (["auth", "logout"], "Not logged in", 1),
-        (["auth", "status", "--json", "hosts"], "recognized but not implemented yet", 1),
+        (["auth", "status", "--json", "invalid"], "Available JSON fields", 2),
         (["issue", "list", "-R", "invalid"], "Invalid repo format", 1),
         (["not-a-command"], "No such command", 2),
     ],
@@ -78,6 +78,15 @@ def test_local_errors_have_stderr_and_exit_code(run_gc, args, message, code):
     assert result.stdout == ""
     assert message in result.stderr
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("entrypoint", ["gc", "gitcode"])
+def test_logged_out_auth_json_is_machine_readable_without_network(run_gc, entrypoint):
+    result = run_gc(["auth", "status", "--json", "hosts"], entrypoint=entrypoint, env={"GC_GH_PROXY_ACTIVE": "1"})
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {"hosts": {}}
+    assert result.stderr == ""
 
 
 def test_missing_repository_fails_locally(run_gc):

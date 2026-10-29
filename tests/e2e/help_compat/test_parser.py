@@ -69,6 +69,24 @@ def test_unregistered_drift_is_rejected(mutation):
         assert_surface(actual, NODE, POLICY)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        HELP + "\nGLOBAL FLAGS\n  --surprise  Unexpected\n",
+        HELP + "\nGlobal flags\n  --surprise  Unexpected\n",
+        HELP.replace("\nFLAGS\n", "\nOPTIONS\n"),
+        HELP.replace("  --draft", "  --surprise  Unexpected\n  --draft"),
+        HELP.replace("-t, --title", "--title"),
+        HELP.replace("-t, --title", "-t, --other"),
+        HELP.replace("--draft", "--draft TEXT"),
+        HELP.replace("Create a new", "Remove an old"),
+    ],
+)
+def test_raw_help_mutations_cannot_hide_drift(text):
+    with pytest.raises(AssertionError):
+        assert_surface(parse_help(text), NODE, POLICY)
+
+
 @pytest.mark.parametrize("entry", [{"category": "deferred", "reason": ""}, {"category": "unknown", "reason": "why"}])
 def test_differences_require_recognized_reason(entry):
     policy = {**POLICY, "missing_flags": {"-t": entry}}

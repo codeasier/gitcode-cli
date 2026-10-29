@@ -7,6 +7,7 @@ import re
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 FLAG_ROW = re.compile(r"(?P<aliases>--?[\w-]+(?:,\s*--?[\w-]+)*)(?:\s+(?P<value>.+))?$")
 CATEGORIES = {"deferred", "platform", "semantics", "wording", "extension"}
+SECTIONS = {"USAGE", "ALIASES", "FLAGS", "INHERITED FLAGS", "ARGUMENTS", "JSON FIELDS", "EXAMPLES", "LEARN MORE"}
 
 
 def normalize(text: str) -> str:
@@ -38,10 +39,12 @@ def parse_help(text: str) -> dict:
     section = "INTRO"
     for line in ANSI.sub("", text).splitlines():
         if re.fullmatch(r"[A-Z][A-Z ]+", line):
+            assert line in SECTIONS or line.endswith("COMMANDS"), f"Unknown help section: {line}"
             assert line not in sections, f"Duplicate help section: {line}"
             section = line
             sections[section] = []
         else:
+            assert section == "INTRO" or not line or line.startswith(" "), f"Unrecognized help structure: {line}"
             sections[section].append(line)
     assert sections.get("USAGE"), "Help must contain a USAGE section"
     result = {
@@ -53,9 +56,9 @@ def parse_help(text: str) -> dict:
     }
     for title, lines in sections.items():
         if title.endswith("COMMANDS"):
-            for name, description in _rows(lines, flags=False):
-                assert name.endswith(":"), f"Malformed command row: {name}"
-                name = name[:-1]
+            for label, description in _rows(lines, flags=False):
+                assert label.endswith(":"), f"Malformed command row: {label}"
+                name = label[:-1]
                 assert name not in result["commands"], f"Duplicate command: {name}"
                 result["commands"][name] = normalize(description)
         elif title in {"FLAGS", "INHERITED FLAGS"}:
@@ -81,7 +84,6 @@ def baseline_surface(node: dict) -> dict:
     return {
         "flags": flags,
         "commands": {child["path"][-1]: normalize(child["summary"]) for child in node["subcommands"]},
-        "summary": normalize(node["summary"]) if "summary" in node else None,
     }
 
 
@@ -114,8 +116,8 @@ def assert_surface(actual: dict, node: dict, policy: dict) -> None:
     expected = expected_surface(node, policy)
     for field in ("flags", "commands"):
         assert actual[field] == expected[field], f"Unregistered {field} drift: {actual[field]} != {expected[field]}"
-    if expected["summary"] is not None:
-        assert actual["summary"] == expected["summary"], "Command summary differs from the gh baseline"
+    # Baseline summaries are parent-menu labels, already compared in commands.
+    # They are not the full introductory prose of this command's own help.
     # These two fields are deliberately gc invariants: the gh snapshot lacks them.
     assert actual["usage"] == policy["gc_invariants"]["usage"], "gc usage changed"
     assert actual["aliases"] == policy["gc_invariants"]["aliases"], "gc aliases changed"

@@ -46,7 +46,7 @@ GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令
 | --- | --- |
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`，而不是只依赖 URL 路径。 |
-| PR 行内评论 | GitCode 使用 `path + position` 模型；GitHub 的 `line`、`side`、`commit` 坐标不能直接等价映射。 |
+| PR 行内评论 | GitCode 使用 `path + position` 模型，`position` 为文件绝对行号。`--line` 校验行号位于 PR diff 中后原样传递；`--position` 跳过 diff 校验。`--side` 仅选择校验侧，不会发送给 GitCode，因此 LEFT 侧锚定仅为尽力支持，不保证准确。不支持选择 commit。 |
 | PR review request changes | `gc pr review --request-changes` 会近似为 PR 评论，因为 GitCode review API 与 GitHub 不同。 |
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
 | Draft/ready 操作 | `gc pr ready --undo` 通过 GitCode 的 PR 更新能力切换 draft 状态，但语义可能不同于 GitHub draft PR。 |

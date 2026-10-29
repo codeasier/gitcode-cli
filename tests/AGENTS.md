@@ -2,6 +2,8 @@
 
 Parent scope: repository root ([../AGENTS.md](../AGENTS.md)) for install commands and CI wiring. `README.md` in this directory explains the intent of the split; this guide adds the boundaries agents need when changing code.
 
+This directory tests the root CLI distribution only. MCP tests live at `packages/gitcode-mcp/tests/` and use that package's `pyproject.toml`; the root's `testpaths`, coverage floor and pre-commit hooks do not validate them. See the root guide's separate MCP CI section.
+
 ## Layout mirrors the source layers
 
 | Directory / file | Exercises | Typical focus command |
@@ -12,16 +14,17 @@ Parent scope: repository root ([../AGENTS.md](../AGENTS.md)) for install command
 | `unit/services/` | REST path/method/payload construction | `python -m pytest tests/unit/services` |
 | `unit/compat/` | Registry consistency and report rendering | `python -m pytest tests/unit/compat` |
 | `contracts/` | Service calls vs extracted GitCode API docs (fixtures below) | `python -m pytest tests/contracts` |
-| Root-level `unit/test_*.py` | One file per core module: `test_client.py` (respx-mocked HTTP), `test_config.py`, `test_repo.py`, `test_gh_proxy.py`, `test_utils.py`, `test_formatters.py`, `test_errors.py`, `test_context.py` | `python -m pytest tests/unit/test_gh_proxy.py` |
+| Root-level `unit/test_*.py` | One file per core module: `test_client.py` (respx-mocked HTTP), `test_config.py`, `test_repo.py`, `test_gh_proxy.py`, `test_utils.py`, `test_formatters.py`, `test_errors.py`, `test_context.py`, `test_audit.py`, `test_helptext.py` | `python -m pytest tests/unit/test_gh_proxy.py` |
 
 `tests/README.md` and `docs/en/development.md` also show the maintainers' conda form (`conda run -n gitcode-cli python -m pytest ...`); CI and `.github/CONTRIBUTING.md` use the plain form. They are equivalent entry points.
 
 ## Boundaries and gotchas
 
-- **CI never runs `tests/contracts/`.** Both `ci.yml` and the pre-commit pytest hook invoke `tests/unit/` only. The contract suite executes when you run the full suite (`python -m pytest tests`, via `testpaths` in `pyproject.toml`) — run it explicitly before touching `services/`.
-- **Coverage gate is always on.** `pyproject.toml` `addopts` apply `--cov=gitcode_cli --cov-fail-under=90` (plus an HTML report writing `htmlcov/`, gitignored) to every pytest invocation, including single-file focus runs. CI adds `--cov-report=xml` and keeps the same 90% floor on the unit suite only.
+- **CLI CI does not run `tests/contracts/`.** Both `ci.yml` and the pre-commit pytest hook invoke `tests/unit/` only. The contract suite executes when you run the full suite (`python -m pytest tests`, via `testpaths` in `pyproject.toml`) — run it explicitly before touching `services/`.
+- **CLI coverage gate is enabled by default.** `pyproject.toml` `addopts` apply `--cov=gitcode_cli --cov-fail-under=90` (plus an HTML report writing `htmlcov/`, gitignored) to CLI pytest invocations using this configuration, including single-file focus runs. CI adds `--cov-report=xml` and keeps the same 90% floor on the unit suite only.
 - **`pythonpath = ["src"]`** is set for pytest, so tests import `gitcode_cli` without installing the package.
-- **No test talks to the real API.** Command tests patch `AppContext.client` wholesale via the `mock_app_context` fixture in `conftest.py`; `test_client.py` uses `respx`; adapter/boundary tests use `MagicMock` services. Keep new command tests on `mock_app_context` (or `CliRunner` with it) rather than introducing real HTTP.
+- **Keep CLI tests off the real API.** Command tests patch `AppContext.client` wholesale via the `mock_app_context` fixture in `conftest.py`; `test_client.py` uses `respx`; adapter/boundary tests use `MagicMock` services. Keep new command tests on `mock_app_context` (or `CliRunner` with it) rather than introducing real HTTP.
+- **MCP has independent CI and fixtures.** Its path-filtered workflow runs Python 3.11–3.13 package tests and offline migration/clean-install checks, plus synthetic Compose named-volume takeover/rollback. A green CLI run is not evidence of MCP compatibility. Changes to shared transport/service interfaces need explicit cross-package validation against the actual dependency version; never substitute production credentials or OAuth state.
 
 ## Fixtures
 

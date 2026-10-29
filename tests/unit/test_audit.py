@@ -1,0 +1,572 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+from gitcode_cli.audit import (
+    AuditThresholds,
+    audit_error_result,
+    audit_pull_request,
+    evaluate_audit,
+    is_fatal_audit_error,
+    loc_and_paths_from_files,
+    loc_from_diff,
+    loc_from_list_item,
+    paths_from_diff,
+)
+from gitcode_cli.errors import APIError, AuthError, NetworkError
+
+
+def _pr(**overrides):
+    data = {
+        "number": 42,
+        "title": "Example",
+        "html_url": "https://gitcode.com/owner/repo/merge_requests/42",
+        "body": "",
+        "milestone": None,
+        "labels": [],
+        "mergeable_state": {"resolve_discussion_passed": True},
+    }
+    data.update(overrides)
+    return data
+
+
+class TestEvaluateAuditReasons:
+    def test_pass_with_milestone_small_loc(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "MindStudio 26.2.0"}),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["overall"] is True
+        assert result["verdict"] == "PASS"
+        assert result["reasons"] == []
+        assert result["failedRules"] == []
+
+    def test_r1_fails_without_milestone_or_linked_issues(self):
+        result = evaluate_audit(pr=_pr(), issues=[], comments=[], loc=12, file_paths=[])
+        assert result["r1"] is False
+        assert result["failedRules"] == ["R1"]
+        assert result["reasons"] == ["R1: no milestone and no officially linked issues"]
+        assert result["rules"]["R1"]["reasons"] == result["reasons"]
+
+    def test_r1_ignores_body_issue_mentions(self):
+        result = evaluate_audit(
+            pr=_pr(body="Fixes #481"),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r1"] is False
+        assert "R1:" in result["reasons"][0]
+
+    def test_r1_passes_with_official_issue(self):
+        result = evaluate_audit(
+            pr=_pr(),
+            issues=[{"number": 481}],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r1"] is True
+        assert result["issues"] == ["481"]
+
+    def test_r2_reports_unresolved_diff_comments(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[
+                {"comment_type": "diff_comment", "resolved": False},
+                {"comment_type": "diff_comment", "resolved": False},
+                {"comment_type": "pr_comment", "resolved": None},
+            ],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is False
+        assert result["unresolved"] == 2
+        assert result["reasons"] == ["R2: 2 unresolved diff_comment(s)"]
+
+    def test_r2_does_not_treat_missing_resolved_as_unresolved(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[{"comment_type": "diff_comment"}],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["unresolved"] == 0
+
+    def test_r2_reports_resolve_discussion_gate(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state={"resolve_discussion_passed": False}),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is False
+        assert result["reasons"] == ["R2: mergeable_state.resolve_discussion_passed=false"]
+
+    def test_r3_does_not_count_review_keyword_comments(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[{"comment_type": "pr_comment", "body": "【review】looks good"}],
+            loc=190,
+            file_paths=["src/main.py"],
+        )
+        assert result["r3"] is False
+        assert result["reviewCnt"] == 0
+        assert result["reasons"] == ["R3: loc 190 > 100, no diff_comment, and no test-path files"]
+
+    def test_r3_passes_with_diff_comment_or_test_path(self):
+        reviewed = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[{"comment_type": "diff_comment", "resolved": True}],
+            loc=190,
+            file_paths=["src/main.py"],
+        )
+        tested = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=190,
+            file_paths=["tests/foo_test.py"],
+        )
+        assert reviewed["r3"] is True
+        assert tested["r3"] is True
+        assert tested["hasTest"] is True
+
+    def test_r3_recognizes_common_test_basenames(self):
+        for path in ("test_foo.py", "src/test_auth.py", "TestFoo.java", "lib/Test.cpp", "src/test.cpp"):
+            result = evaluate_audit(
+                pr=_pr(milestone={"title": "m"}),
+                issues=[],
+                comments=[],
+                loc=190,
+                file_paths=[path],
+            )
+            assert result["r3"] is True, path
+            assert result["hasTest"] is True, path
+
+    def test_r3_does_not_treat_docs_or_testdata_as_test_paths(self):
+        for path in ("docs/testing-guide.md", "assets/testdata.json", "src/testflow.js", "contest.cpp"):
+            result = evaluate_audit(
+                pr=_pr(milestone={"title": "m"}),
+                issues=[],
+                comments=[],
+                loc=190,
+                file_paths=[path],
+            )
+            assert result["hasTest"] is False, path
+            assert result["r3"] is False, path
+            assert result["reasons"] == ["R3: loc 190 > 100, no diff_comment, and no test-path files"]
+
+    def test_r4_passes_when_string_label_contains_keyword(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, labels=["评审纪要"]),
+            issues=[],
+            comments=[],
+            loc=2104,
+            file_paths=["tests/foo_test.py"],
+        )
+        assert result["r4"] is True
+        assert result["hasMinutes"] is True
+
+    def test_r4_reports_missing_minutes(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=2104,
+            file_paths=["tests/foo_test.py"],
+        )
+        assert result["r4"] is False
+        assert result["reasons"] == ["R4: loc 2104 > 1000, and '评审纪要' not found in body, comments, or labels"]
+
+    def test_multiple_failed_rules_keep_ordered_reasons(self):
+        result = evaluate_audit(
+            pr=_pr(mergeable_state={"resolve_discussion_passed": False}),
+            issues=[],
+            comments=[{"comment_type": "diff_comment", "resolved": False}],
+            loc=2104,
+            file_paths=["src/main.py"],
+        )
+        assert result["failedRules"] == ["R1", "R2", "R4"]
+        assert result["reasons"] == [
+            "R1: no milestone and no officially linked issues",
+            "R2: 1 unresolved diff_comment(s); mergeable_state.resolve_discussion_passed=false",
+            "R4: loc 2104 > 1000, and '评审纪要' not found in body, comments, or labels",
+        ]
+
+    def test_r1_ignores_empty_milestone_and_malformed_issues(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={}),
+            issues=["skip", {"title": "no number"}],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r1"] is False
+        assert result["milestone"] is None
+        assert result["issues"] == []
+
+    def test_unavailable_loc_fails_size_rules(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=None,
+            file_paths=[],
+        )
+        assert result["loc"] is None
+        assert result["r3"] is False
+        assert result["r4"] is False
+        assert result["reasons"] == ["R3: loc unavailable", "R4: loc unavailable"]
+
+
+class TestLocHelpers:
+    def test_loc_from_list_item_requires_integer_counts(self):
+        assert loc_from_list_item(None) is None
+        assert loc_from_list_item({"added_lines": "1", "removed_lines": 2}) is None
+        assert loc_from_list_item({"added_lines": 1, "removed_lines": 2}) == 3
+
+    def test_loc_from_diff_skips_file_headers(self):
+        diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n+added\n-removed\n context\n"
+        assert loc_from_diff(diff) == 2
+        assert paths_from_diff(diff) == ["a"]
+
+    def test_loc_from_diff_counts_deleted_dash_prefix_lines(self):
+        diff = "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n---- item\n+added\n"
+        assert loc_from_diff(diff) == 2
+
+    def test_loc_from_diff_skips_git_binary_patch_lines(self):
+        diff = (
+            "diff --git a/foo.bin b/foo.bin\n"
+            "GIT binary patch\n"
+            "literal 12\n"
+            "+abc\n"
+            "-def\n"
+            "diff --git a/bar.py b/bar.py\n"
+            "--- a/bar.py\n"
+            "+++ b/bar.py\n"
+            "+x\n"
+        )
+        assert loc_from_diff(diff) == 1
+
+    def test_paths_from_diff_uses_new_path_for_renames(self):
+        diff = "diff --git a/tests/x.py b/src/x.py\n"
+        assert paths_from_diff(diff) == ["src/x.py"]
+
+    def test_paths_from_diff_skips_deleted_files(self):
+        diff = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n"
+            "deleted file mode 100644\n"
+            "--- a/tests/foo.py\n"
+            "+++ /dev/null\n"
+            "-old\n"
+            "diff --git a/src/main.py b/src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "+new\n"
+        )
+        assert paths_from_diff(diff) == ["src/main.py"]
+
+    def test_paths_from_diff_skips_quoted_deleted_files(self):
+        diff = 'diff --git "a/tests/foo.py" "b/tests/foo.py"\n--- "a/tests/foo.py"\n+++ "/dev/null"\n-old\n'
+        assert paths_from_diff(diff) == []
+
+    def test_paths_from_diff_keeps_file_when_added_line_looks_like_dev_null(self):
+        diff = "diff --git a/setup.sh b/setup.sh\n--- a/setup.sh\n+++ b/setup.sh\n@@ -0,0 +1,1 @@\n+++ /dev/null\n"
+        assert paths_from_diff(diff) == ["setup.sh"]
+        assert loc_from_diff(diff) == 1
+
+    def test_loc_and_paths_from_files_coerces_string_counts(self):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {
+                    "filename": "tests/foo_test.py",
+                    "additions": "3",
+                    "deletions": "1",
+                    "patch": {"new_path": "tests/foo_test.py"},
+                }
+            ]
+        )
+        assert loc == 4
+        assert "tests/foo_test.py" in paths
+
+    def test_loc_and_paths_from_files_skips_invalid_entries(self):
+        loc, paths = loc_and_paths_from_files(["skip", {"additions": object(), "deletions": 1}])
+        assert loc == 1
+        assert paths == []
+
+    def test_loc_and_paths_from_files_missing_counts_return_none(self):
+        loc, paths = loc_and_paths_from_files([{"filename": "src/main.py"}])
+        assert loc is None
+        assert paths == ["src/main.py"]
+
+
+class TestAuditPullRequest:
+    def test_collects_api_data_and_returns_reasons(self):
+        service = MagicMock()
+        service.get.return_value = _pr(added_lines=None)
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py", "additions": 12, "deletions": 0}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(
+            service,
+            "owner",
+            "repo",
+            42,
+            listed={"number": 42, "added_lines": 12, "removed_lines": 0},
+        )
+
+        assert result["reasons"] == ["R1: no milestone and no officially linked issues"]
+        assert result["hasTest"] is None
+        service.list_files.assert_not_called()
+        service.diff.assert_not_called()
+
+    def test_uses_custom_minutes_keyword(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"}, body="reviewed-by alice")
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "tests/a_test.py", "additions": 50, "deletions": 2000}]
+
+        result = audit_pull_request(
+            service,
+            "owner",
+            "repo",
+            42,
+            listed={"added_lines": 50, "removed_lines": 2000},
+            thresholds=AuditThresholds(minutes_keyword="reviewed-by"),
+        )
+        assert result["r4"] is True
+        assert result["hasMinutes"] is True
+
+    def test_falls_back_to_listed_fields_and_diff_when_detail_is_sparse(self):
+        service = MagicMock()
+        service.get.return_value = None
+        service.list_issues.return_value = ["skip", {"number": 9}]
+        service.list_comments.return_value = None
+        service.list_files.return_value = []
+        service.diff.return_value = "diff --git a/src/a.py b/src/a.py\n+one\n"
+
+        result = audit_pull_request(
+            service,
+            "owner",
+            "repo",
+            42,
+            listed={
+                "number": 42,
+                "title": "From list",
+                "html_url": "https://example.com/42",
+                "body": "评审纪要: ok",
+                "milestone": {"title": "m"},
+                "labels": ["docs"],
+            },
+        )
+
+        assert result["title"] == "From list"
+        assert result["url"] == "https://example.com/42"
+        assert result["milestone"] == "m"
+        assert result["issues"] == ["9"]
+        assert result["loc"] == 1
+        assert result["hasMinutes"] is True
+        assert result["overall"] is True
+
+    def test_uses_list_files_counts_when_list_item_has_no_loc(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py", "additions": 12, "deletions": 3}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 15
+        assert result["hasTest"] is False
+        service.diff.assert_not_called()
+
+    def test_falls_back_to_diff_when_file_counts_are_missing(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = "diff --git a/src/main.py b/src/main.py\n+one\n+two\n"
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 2
+        service.diff.assert_called_once_with("owner", "repo", 42)
+
+    def test_keeps_loc_unavailable_when_diff_is_empty(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] is None
+        assert result["r3"] is False
+        assert result["r4"] is False
+        assert "R3: loc unavailable" in result["reasons"]
+
+    def test_tolerates_non_dict_mergeable_state_and_non_string_body(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state="clean", body=12),
+            issues=[],
+            comments=[{"comment_type": "pr_comment", "body": None}],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["hasMinutes"] is False
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_treats_null_resolve_discussion_as_passed(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state={"resolve_discussion_passed": None}),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_empty_mergeable_state_is_unknown_without_failing(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state={}),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["overall"] is True
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_r2_notes_unknown_merge_state_without_failing(self):
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}, mergeable_state=None),
+            issues=[],
+            comments=[],
+            loc=12,
+            file_paths=[],
+        )
+        assert result["r2"] is True
+        assert result["overall"] is True
+        assert result["failedRules"] == []
+        assert result["reasons"] == ["R2: merge state unknown"]
+
+    def test_deleted_test_path_does_not_count_as_has_test(self):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {
+                    "filename": "tests/foo_test.py",
+                    "additions": 0,
+                    "deletions": 200,
+                    "patch": {"old_path": "tests/foo_test.py"},
+                }
+            ]
+        )
+        result = evaluate_audit(
+            pr=_pr(milestone={"title": "m"}),
+            issues=[],
+            comments=[],
+            loc=loc,
+            file_paths=paths,
+        )
+        assert loc == 200
+        assert paths == []
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+
+    def test_deleted_test_file_does_not_pass_r3_via_diff_fallback(self):
+        deleted_diff = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n"
+            "deleted file mode 100644\n"
+            "--- a/tests/foo.py\n"
+            "+++ /dev/null\n"
+            "-line\n"
+        )
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [
+            {
+                "filename": "tests/foo.py",
+                "additions": 0,
+                "deletions": 150,
+                "patch": {"old_path": "tests/foo.py"},
+            }
+        ]
+        service.diff.return_value = deleted_diff
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 150
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+        service.diff.assert_not_called()
+
+    def test_deleted_test_file_diff_paths_do_not_count_when_file_counts_missing(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"}, added_lines=0, removed_lines=150)
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "tests/foo.py", "patch": {"old_path": "tests/foo.py"}}]
+        service.diff.return_value = (
+            "diff --git a/tests/foo.py b/tests/foo.py\n--- a/tests/foo.py\n+++ /dev/null\n-line\n"
+        )
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["hasTest"] is False
+        assert result["r3"] is False
+
+    def test_uses_detail_line_counts_in_number_mode(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"}, added_lines=12, removed_lines=3)
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py"}]
+        service.diff.return_value = ""
+
+        result = audit_pull_request(service, "owner", "repo", 42)
+
+        assert result["loc"] == 15
+        assert result["r3"] is True
+        service.list_files.assert_not_called()
+        service.diff.assert_not_called()
+
+    def test_audit_error_result_is_fail_with_reason(self):
+        result = audit_error_result(7, APIError("rate limited", 429), listed={"number": 7, "title": "Big PR"})
+        assert result["verdict"] == "FAIL"
+        assert result["overall"] is False
+        assert result["number"] == 7
+        assert result["title"] == "Big PR"
+        assert result["reasons"] == ["audit error: rate limited"]
+        assert result["failedRules"] == ["R1", "R2", "R3", "R4"]
+        assert result["rules"]["R3"]["reasons"] == ["audit error: rate limited"]
+
+    def test_only_http_401_is_a_fatal_audit_error(self):
+        assert is_fatal_audit_error(APIError("Authentication failed", 401))
+        assert not is_fatal_audit_error(AuthError("no token"))
+        assert not is_fatal_audit_error(APIError("forbidden", 403))
+        assert not is_fatal_audit_error(APIError("rate limited", 429))
+        assert not is_fatal_audit_error(NetworkError("timeout"))

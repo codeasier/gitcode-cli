@@ -4,7 +4,7 @@ Parent scope: the `gitcode_cli` package ([../AGENTS.md](../AGENTS.md)). Build/te
 
 ## What this directory owns
 
-The authoritative registry of `gc` ↔ `gh` compatibility status, replacing the hand-maintained table from GitCode issue #68. It is metadata, not behavior: nothing here talks to the network or parses argv (with one exception — `gh_proxy` uses it as an allowlist, see below).
+The authoritative registry of `gc` ↔ `gh` compatibility status, replacing the hand-maintained table from GitCode issue #68. It is metadata: nothing here talks to the network or parses argv. The separate `gh_proxy` consumer parses argv and uses registry subcommand rows as an allowlist.
 
 | File | Role |
 |---|---|
@@ -27,10 +27,11 @@ The authoritative registry of `gc` ↔ `gh` compatibility status, replacing the 
 
 - every `pending` entry's `pending_key` appears as a literal `_pending_gh_compat("<key>")` call in `src/gitcode_cli/commands/*.py`, and vice versa;
 - every `unsupported` entry's `unsupported_key` exists in `CAPABILITY_MESSAGES` and is raised via `unsupported(...)` in the command layer;
-- every `implemented`/`pending`/`unsupported` flag is actually registered with Click, and every `not_in_cli` flag is absent;
 - no duplicate `(command, flag)` pairs; at least 100 entries total (guards against accidental wipes).
 
-Practical consequence: change `entries.py` in the same PR as the corresponding command/adapter code. A registry-only edit or a code-only edit will fail the unit suite.
+Selected Click commands and flags are checked separately by `tests/unit/commands/test_cli_gh_compat.py` against the gh baseline and coverage exclusions. Do not assume the consistency suite exhaustively proves presence/absence or behavior for every registry flag.
+
+Practical consequence: keep `entries.py`, command/adapter code and focused tests consistent in the same PR. The guard/key checks catch many partial changes, but do not replace behavior review.
 
 ## Consumers
 
@@ -41,4 +42,4 @@ Practical consequence: change `entries.py` in the same PR as the corresponding c
 | `tests/unit/compat/test_compat_report.py` | Rendering/statistics checks. |
 | `tests/unit/commands/test_cli_gh_compat.py` | Cross-checks the Click command tree against `tests/fixtures/gh-cli-compat/command_baseline.json` (a `gh --help` dump of gh 2.89.0) using `coverage.json` exclusion lists. |
 
-When adding a top-level command group beyond `auth`/`issue`/`pr`, note that `render_markdown_report()` and `statistics()` hard-code the `("auth", "issue", "pr")` iteration — extend that tuple or the new group will silently vanish from reports, and `gh_proxy` will refuse its subcommands.
+When adding a top-level command group, inspect `render_markdown_report()`'s explicit group loops and extend report tests; `statistics()` itself derives group names from entries. Proxy routing uses `iter_entries()`, not the rendered report: new subcommands need subcommand-level registry rows to pass its allowlist. Click registration, report inclusion and proxy host selection are separate integration points.

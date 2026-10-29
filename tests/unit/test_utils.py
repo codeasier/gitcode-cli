@@ -129,6 +129,10 @@ class TestParsePrUrl:
         result = parse_pr_url("https://gitcode.com/owner/repo/pulls/42")
         assert result == ("owner", "repo", "42")
 
+    def test_match_merge_requests(self):
+        result = parse_pr_url("https://gitcode.com/owner/repo/merge_requests/42")
+        assert result == ("owner", "repo", "42")
+
     def test_match_http(self):
         result = parse_pr_url("http://gitcode.com/owner/repo/pull/1")
         assert result == ("owner", "repo", "1")

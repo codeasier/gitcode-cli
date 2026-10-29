@@ -341,6 +341,7 @@ ENTRIES: list[CompatEntry] = [
     _e("pr comment", "-e/--editor", CompatStatus.IMPLEMENTED),
     _e("pr comment", "-w/--web", CompatStatus.IMPLEMENTED),
     _e("pr comment", "--path", CompatStatus.IMPLEMENTED, "gc extension; not in gh", gc_extension=True),
+    _e("pr comment", "--discussion-id", CompatStatus.IMPLEMENTED, "gc extension; not in gh", gc_extension=True),
     _e("pr comment", "--position", CompatStatus.IMPLEMENTED, "gc extension; not in gh", gc_extension=True),
     _e("pr comment", "--line", CompatStatus.IMPLEMENTED, "gc extension; not in gh", gc_extension=True),
     _e("pr comment", "--side", CompatStatus.IMPLEMENTED, "gc extension; not in gh", gc_extension=True),

@@ -4,11 +4,18 @@ Guidance for coding agents working in this repository. Language: the repo's prim
 
 ## What this repository is
 
-`pygitcode` is a single Python package (src-layout) that provides the `gc` / `gitcode` CLI for GitCode (`https://api.gitcode.com/api/v5/`), modeled after GitHub's `gh` CLI. Runtime dependencies are only `click` and `httpx`. Python >= 3.9.
+This repository contains two independently installable Python distributions:
+
+| Distribution | Source / configuration | Runtime boundary |
+|---|---|---|
+| `pygitcode` | `src/gitcode_cli/`, root `pyproject.toml` | Python >= 3.9; `click` and `httpx`; provides `gc` / `gitcode`, modeled after GitHub's `gh` CLI. |
+| `codeasier-gitcode-mcp` | `packages/gitcode-mcp/` and its own `pyproject.toml` | Python >= 3.11; provides `gitcode-mcp` / `gitcode-clone`; separately versioned and currently pins the published `pygitcode==0.1.6`. |
+
+A root editable install or root test run does not install or validate the MCP package. Do not assume MCP imports the sibling CLI checkout: its API layer subclasses `GitCodeClient` and reuses `IssueService` / `PullRequestService` from its installed dependency. Keep transport signatures compatible with downstream overrides when changing the CLI client.
 
 ## Architecture and data flow
 
-Request flow is a strict four-layer pipeline. Each layer is tested in isolation by a mirroring test layer (see `tests/AGENTS.md`):
+The main CLI layering is below, with tests organized by layer (see `tests/AGENTS.md`). It is not a mandatory hop-by-hop path for every command: simple reads call services directly, and `pr audit` delegates to `audit.py`.
 
 ```
 commands/*.py (Click UX, flag parsing, output shaping)
@@ -37,28 +44,38 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 
 - Token resolution order (`src/gitcode_cli/config.py`): `--token` flag > `GC_TOKEN` env var > `~/.config/gc/config.json` (written by `gc auth login`). Missing token raises `ConfigError`.
 - Repo resolution (`src/gitcode_cli/repo.py`): explicit `-R [HOST/]OWNER/REPO` or `git remote get-url origin` (HTTPS, `ssh://`, and SCP-style SSH URLs are all parsed).
-- All `GCError` subclasses are caught once in `_GCMainGroup.invoke` (`src/gitcode_cli/cli.py`) and become `error: ...` on stderr with exit code 1. Command code raises typed errors; it does not print-and-exit itself.
-- Every HTTP request carries the token as an `access_token` query parameter (GitCode's auth model — not a header).
+- Unhandled `GCError` subclasses are converted by `_GCMainGroup.invoke` (`src/gitcode_cli/cli.py`) to `error: ...` on stderr with exit code 1. Prefer typed errors; `pr audit` additionally collects per-PR errors and handles an authentication abort explicitly.
+- The CLI client injects `access_token` into request query parameters. Keep credentials out of logs, fixtures, committed files and tool arguments; MCP has its own transport/authentication behavior, documented under `docs/gitcode/`.
 
 ## Build, run, test boundaries
 
 | Task | Command | Evidence |
 |---|---|---|
 | Dev install | `pip install -e ".[dev]"` | `docs/en/development.md`, `.github/CONTRIBUTING.md` |
-| Full test suite (unit + contracts) | `python -m pytest tests` | `pyproject.toml` `[tool.pytest.ini_options]` `testpaths = ["tests"]`; `tests/README.md` shows the maintainers' conda variant `conda run -n gitcode-cli python -m pytest tests` |
+| Full CLI test suite (unit + contracts; excludes MCP) | `python -m pytest tests` | `pyproject.toml` `[tool.pytest.ini_options]` `testpaths = ["tests"]`; `tests/README.md` shows the maintainers' conda variant `conda run -n gitcode-cli python -m pytest tests` |
 | Unit tests only | `python -m pytest tests/unit/` | This is what CI and pre-commit run — contract tests do **not** run in CI |
-| Lint / format | `python -m ruff check src/ tests/` and `python -m ruff format src/ tests/` | `ci.yml` lint job; config in `pyproject.toml` (line length 120, py39 target) |
+| Lint / format check | `python -m ruff check src/ tests/` and `python -m ruff format --check src/ tests/` | `ci.yml` lint job; config in `pyproject.toml` (line length 120, py39 target) |
 | Type check | `python -m basedpyright src/` | `ci.yml` typecheck job; `[tool.basedpyright]` includes only `src` |
-| All checks at once | `pre-commit run --all-files` | `.pre-commit-config.yaml` (ruff, basedpyright, pytest unit with coverage gate) |
+| CLI pre-commit checks (not MCP or contracts) | `pre-commit run --all-files` | `.pre-commit-config.yaml` (ruff, basedpyright, pytest unit with coverage gate) |
 
-- pytest `addopts` always enable `--cov=gitcode_cli --cov-fail-under=90` plus an HTML report, so any pytest run writes `.coverage` and `htmlcov/` (both gitignored) and fails below 90% coverage.
-- CI (`ci.yml`) runs the unit suite on Python 3.9–3.13, plus separate lint and typecheck jobs, on `main` pushes and PRs.
+- The root pytest configuration's `addopts` enable `--cov=gitcode_cli --cov-fail-under=90` plus an HTML report, so CLI pytest runs using that configuration write `.coverage` and `htmlcov/` (both gitignored) and fail below 90% coverage.
+- CLI CI (`ci.yml`) runs the unit suite on Python 3.9–3.13, plus a matrix aggregate, lint and typecheck jobs, on `main` pushes and PRs.
 
-## Release lifecycle
+### MCP validation is separate
 
-- Version is dynamic (`pyproject.toml` reads `gitcode_cli.__version__`, which is `0.0.0-dev` in-tree). Do not hand-bump it for releases: `.github/workflows/publish.yml` rewrites it from `v*` tags at build time, publishes to PyPI, and creates a GitHub Release.
+Use the package directory and its configuration, as `.github/workflows/gitcode-mcp.yml` does: install `.[dev]` there, run `python -I -m pytest -c pyproject.toml tests`, and use `python -m ruff check --config pyproject.toml .` / `python -m ruff format --check --config pyproject.toml .`. Clear inherited `PYTEST_ADDOPTS`; do not apply the CLI coverage gate or its Python 3.9 settings to MCP.
+
+- MCP CI is path-filtered to `packages/gitcode-mcp/**`, `deploy/gitcode-mcp/**`, `docs/gitcode/**` and its workflow file. A CLI-only or AGENTS-only PR does not automatically exercise it.
+- Its Python 3.11–3.13 jobs lint, test, build wheel/sdist, clean-install both distributions and verify offline migration compatibility against the immutable legacy source. The separate named-volume job checks Compose volume reuse and rollback with synthetic state.
+- Acceptance script paths are `packages/gitcode-mcp/scripts/migration_acceptance.py` and `volume_acceptance.py`; see [migration guidance](docs/gitcode/migration.md). CI acceptance is not a production deployment or live OAuth connection test. Do not use real credentials, production state or volumes for it.
+
+## Release lifecycle and operational boundaries
+
+- The CLI version is dynamic (`pyproject.toml` reads `gitcode_cli.__version__`, which is `0.0.0-dev` in-tree). Do not hand-bump it for releases: `.github/workflows/publish.yml` rewrites it from `v*` tags at build time, publishes to PyPI, and creates a GitHub Release.
 - A `v*` tag fails to publish unless `CHANGELOG.md` contains a non-empty `## [x.y.z]` section for that version — the workflow validates it.
 - `dev<commit-hash>` tags build `{base}.devYYYYMMDD+{hash}` versions to TestPyPI (`publish-dev.yml`), deriving the base from the latest `v*` tag.
+
+- These tag-triggered workflows publish the CLI, not the MCP distribution. The current MCP workflow builds and uploads artifacts without publication; its package version and dependency pin are separate. Follow [MCP package guidance](packages/gitcode-mcp/README.md) and [deployment guidance](docs/gitcode/deployment.md); code review or CI does not authorize tagging, publishing, credential changes or a production switch.
 
 ## Known misleading artifacts
 
@@ -71,4 +88,5 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 | Python package | [src/gitcode_cli/AGENTS.md](src/gitcode_cli/AGENTS.md) | Per-module map, layer invariants, gh-proxy subsystem lifecycle, platform-dependent behavior |
 | Compat registry | [src/gitcode_cli/compat/AGENTS.md](src/gitcode_cli/compat/AGENTS.md) | The gc ↔ gh status registry and its test-enforced lockstep contract |
 | Adapter layer | [src/gitcode_cli/adapters/AGENTS.md](src/gitcode_cli/adapters/AGENTS.md) | gh-semantics translation, capability keys, `AdapterActionResult` protocol, pagination |
-| Tests | [tests/AGENTS.md](tests/AGENTS.md) | Test layers, focusing commands, fixtures, coverage gate, conftest contracts |
+| CLI tests | [tests/AGENTS.md](tests/AGENTS.md) | Test layers, focusing commands, fixtures, coverage gate, conftest contracts |
+| MCP package and operations | [packages/gitcode-mcp/README.md](packages/gitcode-mcp/README.md), [docs/gitcode/README.md](docs/gitcode/README.md) | Independent installation, authentication, migration and deployment boundaries |

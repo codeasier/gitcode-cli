@@ -273,7 +273,14 @@ def pr_merge(
     pr_item = service.get(owner, repo, number)
     adapter = PullRequestAdapter(service)
     item = adapter.merge_pr(owner, repo, number, merge_method=merge_method, body=body, subject=subject, admin=admin)
-    safe_echo(item["message"])
+    # The API schema uses an integer flag; its success example uses a boolean.
+    merged = item.get("merged") if isinstance(item, dict) else None
+    if merged is not True and not (type(merged) is int and merged == 1):
+        raise click.ClickException(
+            "Pull request merge was not confirmed. Verify its state before retrying; no branch deletion was attempted."
+        )
+    message = item.get("message")
+    safe_echo(message if isinstance(message, str) and message else f"Merged pull request #{number}")
     if delete_branch:
         try:
             branch = pr_item.get("head", {}).get("ref")

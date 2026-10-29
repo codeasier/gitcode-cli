@@ -6,6 +6,7 @@ import click
 
 from ..errors import APIError, GCError
 from ..services import IssueService, UserService
+from ._current_user import resolve_me
 from .base import AdapterActionResult
 from .capabilities import capability_message
 
@@ -186,13 +187,7 @@ class IssueAdapter:
         search: str | None,
         limit: int | None,
     ) -> Any:
-        if author == "@me":
-            if self.user_service is None:
-                raise click.ClickException("failed to resolve @me: current user lookup is unavailable")
-            current_login = _extract_login(self.user_service.current())
-            if not current_login:
-                raise click.ClickException("failed to resolve @me: current user has no login")
-            author = current_login
+        author, assignee = resolve_me(self.user_service, author, assignee)
         params = {
             "state": state,
             "labels": _normalize_multi_values(labels),
@@ -238,6 +233,7 @@ class IssueAdapter:
         labels: tuple[str, ...] | None,
         milestone: str | None,
     ) -> dict[str, Any] | None:
+        (assignee,) = resolve_me(self.user_service, assignee)
         normalized_labels = _normalize_labels(labels)
         if normalized_labels:
             available_labels = _extract_label_options(self._list_all_labels(owner, repo))
@@ -356,6 +352,7 @@ class IssueAdapter:
         milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
+        add_assignee, remove_assignee = resolve_me(self.user_service, add_assignee, remove_assignee)
         current = (
             self.service.get(owner, repo, number)
             if title is None or remove_assignee is not None or add_labels or remove_labels

@@ -652,7 +652,7 @@ def pr_list(
         open_in_browser(f"https://gitcode.com/{owner}/{repo}/pulls")
         return
     service = PullRequestService(app.client())
-    adapter = PullRequestAdapter(service)
+    adapter = PullRequestAdapter(service, UserService(service.client))
     search, state, merged_after, merged_before = _extract_search_filters(search, state)
     list_kwargs = {
         "state": state,

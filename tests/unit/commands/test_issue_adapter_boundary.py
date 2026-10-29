@@ -71,10 +71,12 @@ class TestIssueCommandAdapterBoundary:
 
         issue_service_ctor = MagicMock()
         issue_adapter_ctor = MagicMock(return_value=adapter)
+        user_service_ctor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("gitcode_cli.commands.issue.IssueService", issue_service_ctor)
             mp.setattr("gitcode_cli.commands.issue.IssueAdapter", issue_adapter_ctor)
+            mp.setattr("gitcode_cli.commands.issue.UserService", user_service_ctor)
             result = runner.invoke(
                 main,
                 ["issue", "create", "-t", "Bug", "-b", "Body", "-l", "bug", "-m", "v1.0"],
@@ -82,7 +84,8 @@ class TestIssueCommandAdapterBoundary:
 
         assert result.exit_code == 0
         issue_service_ctor.assert_called_once_with(mock_app_client)
-        issue_adapter_ctor.assert_called_once_with(issue_service_ctor.return_value)
+        user_service_ctor.assert_called_once_with(issue_service_ctor.return_value.client)
+        issue_adapter_ctor.assert_called_once_with(issue_service_ctor.return_value, user_service_ctor.return_value)
         adapter.create_issue.assert_called_once_with(
             "owner",
             "repo",

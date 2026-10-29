@@ -279,6 +279,12 @@ def preparation(command: list[str], cwd: Path) -> None:
     require(result.returncode == 0, "wheel preparation failed (build/install; output withheld)")
 
 
+def wheel_reference(wheel: Path, digest: str) -> str:
+    """Give even older pip an explicit verified archive hash to record."""
+    require(len(digest) == 64 and all(c in "0123456789abcdef" for c in digest), "invalid wheel SHA-256")
+    return wheel.resolve(strict=True).as_uri() + "#sha256=" + digest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", type=Path, required=True)
@@ -321,7 +327,8 @@ def main() -> None:
         venv.EnvBuilder(with_pip=True, system_site_packages=False).create(target)
         python = target / "bin/python"
         require(python.is_file(), "this CI smoke requires the POSIX venv layout")
-        preparation([str(python), "-m", "pip", "install", "--no-cache-dir", str(wheels[0])], root)
+        reference = wheel_reference(wheels[0], manifest["sha256"])
+        preparation([str(python), "-m", "pip", "install", "--no-cache-dir", reference], root)
         install_guard(python, target)
         env = runtime_environment(root)
         probe = offline_run([str(python), "-c", PROBE], root, env, probe=True)

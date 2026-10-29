@@ -183,6 +183,19 @@ def test_identity_success_preserves_stdout():
     assert smoke.identity_output(subprocess.CompletedProcess([], 0, "identity", "")) == "identity"
 
 
+def test_wheel_reference_pins_hash_and_encodes_local_path(tmp_path):
+    wheel = tmp_path / "wheel with # and space.whl"
+    wheel.write_bytes(b"synthetic wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    assert smoke.wheel_reference(wheel, digest) == wheel.as_uri() + "#sha256=" + digest
+
+
+@pytest.mark.parametrize("digest", ["", "a" * 63, "g" * 64, "A" * 64])
+def test_wheel_reference_rejects_invalid_digest(tmp_path, digest):
+    with pytest.raises(RuntimeError, match="invalid wheel SHA-256"):
+        smoke.wheel_reference(tmp_path / "unused.whl", digest)
+
+
 @pytest.mark.parametrize("name", ["gc", "gitcode"])
 def test_missing_entrypoint_fails_instead_of_skipping(tmp_path, name):
     with pytest.raises(RuntimeError, match="missing console script"):

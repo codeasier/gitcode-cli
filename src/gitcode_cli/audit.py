@@ -55,12 +55,13 @@ def _as_text(value: Any) -> str:
 
 
 def _optional_int(value: Any) -> int | None:
-    if value is None:
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
         return None
     try:
-        return int(value)
-    except (TypeError, ValueError):
+        count = int(value)
+    except ValueError:
         return None
+    return count if count >= 0 else None
 
 
 def _resolve_discussion_passed(pr: dict[str, Any]) -> bool:
@@ -85,7 +86,7 @@ def loc_from_list_item(item: dict[str, Any] | None) -> int | None:
         return None
     added = item.get("added_lines")
     removed = item.get("removed_lines")
-    if isinstance(added, int) and isinstance(removed, int):
+    if type(added) is int and type(removed) is int and added >= 0 and removed >= 0:
         return added + removed
     return None
 
@@ -182,24 +183,24 @@ def _current_file_path(item: dict[str, Any]) -> str | None:
 
 
 def loc_and_paths_from_files(files: list[Any]) -> tuple[int | None, list[str]]:
+    """Return a total only when every file supplies both valid line counts."""
     paths: list[str] = []
     loc = 0
-    have_counts = False
+    complete_counts = bool(files)
     for item in files:
         if not isinstance(item, dict):
+            complete_counts = False
             continue
         path = _current_file_path(item)
         if path:
             paths.append(path)
-        if "additions" not in item and "deletions" not in item:
+        additions = _optional_int(item.get("additions"))
+        deletions = _optional_int(item.get("deletions"))
+        if additions is None or deletions is None:
+            complete_counts = False
             continue
-        additions = _optional_int(item["additions"]) if "additions" in item else None
-        deletions = _optional_int(item["deletions"]) if "deletions" in item else None
-        if additions is None and deletions is None:
-            continue
-        loc += (additions or 0) + (deletions or 0)
-        have_counts = True
-    return (loc if have_counts else None), paths
+        loc += additions + deletions
+    return (loc if complete_counts else None), paths
 
 
 def _label_names(labels: Any) -> list[str]:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from gitcode_cli.audit import (
     AuditThresholds,
     audit_error_result,
@@ -231,6 +233,59 @@ class TestEvaluateAuditReasons:
 
 
 class TestLocHelpers:
+    @pytest.mark.parametrize("field", ["added_lines", "removed_lines"])
+    @pytest.mark.parametrize("value", [None, True, False, -1, 1.5, "1"])
+    def test_aggregate_counts_reject_invalid_values(self, field, value):
+        item = {"added_lines": 1, "removed_lines": 0, field: value}
+        assert loc_from_list_item(item) is None
+
+    @pytest.mark.parametrize("field", ["additions", "deletions"])
+    @pytest.mark.parametrize("value", [None, True, False, -1, 1.5, "bad", "-1", "1.5"])
+    def test_any_invalid_file_count_makes_the_total_unknown(self, field, value):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {"filename": "src/a.py", "additions": 1, "deletions": 0},
+                {"filename": "src/b.py", "additions": 2, "deletions": 0, field: value},
+            ]
+        )
+        assert loc is None
+        assert paths == ["src/a.py", "src/b.py"]
+
+    @pytest.mark.parametrize("counts", [{}, {"additions": 2}, {"deletions": 0}])
+    def test_any_missing_file_count_makes_the_total_unknown(self, counts):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {"filename": "src/a.py", "additions": 1, "deletions": 0},
+                {"filename": "src/b.py", **counts},
+            ]
+        )
+        assert loc is None
+        assert paths == ["src/a.py", "src/b.py"]
+
+    def test_non_object_file_makes_otherwise_valid_counts_unknown(self):
+        loc, paths = loc_and_paths_from_files([{"filename": "src/a.py", "additions": 1, "deletions": 0}, None])
+        assert loc is None
+        assert paths == ["src/a.py"]
+
+    def test_empty_files_do_not_prove_zero_loc(self):
+        assert loc_and_paths_from_files([]) == (None, [])
+
+    def test_complete_zero_counts_are_known(self):
+        assert loc_and_paths_from_files([{"filename": "src/a.py", "additions": "0", "deletions": 0}]) == (
+            0,
+            ["src/a.py"],
+        )
+
+    def test_complete_counts_include_deleted_files(self):
+        loc, paths = loc_and_paths_from_files(
+            [
+                {"filename": "src/a.py", "additions": "3", "deletions": 1},
+                {"filename": "src/old.py", "status": "removed", "additions": 0, "deletions": "2"},
+            ]
+        )
+        assert loc == 6
+        assert paths == ["src/a.py"]
+
     def test_loc_from_list_item_requires_integer_counts(self):
         assert loc_from_list_item(None) is None
         assert loc_from_list_item({"added_lines": "1", "removed_lines": 2}) is None
@@ -300,9 +355,9 @@ class TestLocHelpers:
         assert loc == 4
         assert "tests/foo_test.py" in paths
 
-    def test_loc_and_paths_from_files_skips_invalid_entries(self):
+    def test_loc_and_paths_from_files_rejects_incomplete_counts(self):
         loc, paths = loc_and_paths_from_files(["skip", {"additions": object(), "deletions": 1}])
-        assert loc == 1
+        assert loc is None
         assert paths == []
 
     def test_loc_and_paths_from_files_missing_counts_return_none(self):
@@ -312,6 +367,69 @@ class TestLocHelpers:
 
 
 class TestAuditPullRequest:
+    @pytest.mark.parametrize("diff_available", [False, True])
+    def test_partial_file_counts_never_pass_without_complete_fallback(self, diff_available):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [
+            {"filename": "src/a.py", "additions": 1, "deletions": 0},
+            {"filename": "src/b.py"},
+        ]
+        service.diff.return_value = (
+            "diff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -0,0 +1,1 @@\n+one\n"
+            "diff --git a/src/b.py b/src/b.py\n--- a/src/b.py\n+++ b/src/b.py\n@@ -0,0 +1,2 @@\n+two\n+three\n"
+            if diff_available
+            else ""
+        )
+
+        result = audit_pull_request(service, "owner", "repo", 42, thresholds=AuditThresholds(th1=1))
+
+        service.diff.assert_called_once_with("owner", "repo", 42)
+        assert result["loc"] == (3 if diff_available else None)
+        assert result["verdict"] == "FAIL"
+        assert result["overall"] is False
+        assert result["r3"] is False
+        if not diff_available:
+            assert result["r4"] is False
+            assert "R3: loc unavailable" in result["reasons"]
+            assert "R4: loc unavailable" in result["reasons"]
+
+    @pytest.mark.parametrize("source", ["listed", "detail"])
+    @pytest.mark.parametrize("value", [True, -1])
+    def test_invalid_aggregate_counts_continue_to_file_evidence(self, source, value):
+        service = MagicMock()
+        detail = _pr(milestone={"title": "m"})
+        invalid = {"added_lines": value, "removed_lines": 0}
+        listed = invalid if source == "listed" else None
+        service.get.return_value = {**detail, **invalid} if source == "detail" else detail
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [{"filename": "src/main.py", "additions": 12, "deletions": 3}]
+
+        result = audit_pull_request(service, "owner", "repo", 42, listed=listed)
+
+        assert result["loc"] == 15
+        service.list_files.assert_called_once_with("owner", "repo", 42)
+        service.diff.assert_not_called()
+
+    def test_partial_file_counts_do_not_mask_diff_failure(self):
+        service = MagicMock()
+        service.get.return_value = _pr(milestone={"title": "m"})
+        service.list_issues.return_value = []
+        service.list_comments.return_value = []
+        service.list_files.return_value = [
+            {"filename": "src/a.py", "additions": 1, "deletions": 0},
+            {"filename": "src/b.py"},
+        ]
+        service.diff.side_effect = NetworkError("Synthetic diff failure")
+
+        with pytest.raises(NetworkError, match="Synthetic diff failure"):
+            audit_pull_request(service, "owner", "repo", 42)
+
+        service.diff.assert_called_once_with("owner", "repo", 42)
+
     def test_collects_api_data_and_returns_reasons(self):
         service = MagicMock()
         service.get.return_value = _pr(added_lines=None)

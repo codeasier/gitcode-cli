@@ -7,7 +7,7 @@ This test suite mirrors the `gc` architecture so failures can be isolated by lay
 - `unit/test_cli.py` and `unit/commands/`: CLI and command behavior, including argument parsing, exit behavior, and command-to-adapter delegation.
 - `unit/adapters/`: translation from `gh`-style command semantics into GitCode-compatible service calls, including degraded or approximated behavior.
 - `unit/services/`: low-level GitCode API request construction, including HTTP method, path, and request payload filtering.
-- `contracts/`: extracted-doc service contracts and strict HTTP transport checks against `tests/fixtures/gitcode-api-contracts/raw/`.
+- `contracts/`: extracted-doc service contracts, strict HTTP transport checks, and in-process Issue/PR CLI golden flows against `tests/fixtures/gitcode-api-contracts/raw/`.
 - `e2e/`: offline process smoke tests of the installed `gc` and `gitcode` console scripts, with isolated HOME/config/work directories and a credential-free child environment.
 - `packaging/wheel_smoke.py`: the CI-only clean-wheel acceptance step, separate from the editable-install pytest suite.
 
@@ -61,12 +61,20 @@ For both `gc` and `gitcode`, the smoke checks help and exact version output, sep
 | Layer | Current evidence | Next acceptance gate |
 | --- | --- | --- |
 | Help compatibility | Existing gh 2.89.0 JSON baseline plus exact displayed command/flag/arity/summary checks for root, issue/pr groups and create commands on both entrypoints; explicit differences in the existing coverage JSON | Expand beyond these five commands and add independently sourced gh usage/argument/alias metadata and flag-description semantics; current gc usage/aliases are local invariants, not evidence of gh parity. |
-| CLI behavior | Isolated no-network editable subprocess harness; clean-wheel installation and both entrypoints on Python 3.9–3.13 CI; existing CliRunner command/unit coverage | Strict mocked/recorded issue and PR golden flows, full output/error matrix, sdist and additional OS coverage. A parent-process HTTP mock does not intercept subprocess HTTP. |
+| CLI behavior | Isolated no-network editable subprocess harness; clean-wheel installation and both entrypoints on Python 3.9–3.13 CI; ordered Issue create/view/close and PR create/view/edit/close CliRunner flows through real services/client and strict HTTP mocks | Wider mocked workflows/output/error coverage, recorded/provider-backed flows, sdist and additional OS coverage. These in-process mocks do not intercept subprocess HTTP. |
 | API contracts | Extracted-doc service contracts plus real-client/HTTPX strict matching for Issue create/list and PR comment/review; unmatched requests and body/query/auth drift fail | Expand endpoint/workflow coverage and independently refresh upstream contracts; CLI query-token checks are not MCP OAuth or live account acceptance. |
 | Recorded | Marker registered, no recording/replay suite yet | Define fixture provenance/versioning, refresh procedure and credential/body redaction before committing recordings. |
 | Live/destructive | Markers registered only; explicitly excluded from ordinary PR CI | Obtain a dedicated authorized sandbox and credentials; define run IDs, concurrency isolation, `finally` cleanup/janitor and separate destructive opt-in. Only then add manual/nightly/release execution. |
 
 `e2e`, `compat`, `recorded`, `live` and `destructive` markers are registered. Registering a marker does not implement or authorize its layer. There is no live workflow or live test in this batch; do not add one relying only on environment-variable presence. In particular, branch preparation may need separately authorized native Git credentials, and PR cleanup must not silently approve or merge. Keep #124 open until the remaining gates are delivered with evidence.
+
+## In-process CLI golden-flow subset
+
+`contracts/test_cli_golden_flows.py` joins the Click entrypoint, real adapters/services, `GitCodeClient` and HTTPX request preparation in one ordered scenario. It reuses the shared CLI/config/data fixtures and extracted endpoint docs. Only the client origin is redirected to a reserved `.invalid` host; `AppContext.client`, token resolution and all command/business logic remain real. Config/cwd are temporary and the environment token is synthetic. Strict RESPX matching rejects unregistered requests; a global request script also rejects reordered calls, unexpected payload/query/authentication changes, duplicate writes and incomplete flows. A negative CLI probe proves that unregistered HTTP raises rather than receiving implicit mock success.
+
+The bounded scenarios cover Issue create from stdin → JSON view → close → human closed-state view → idempotent close, and PR create with one JSON readback → human view → title/body-file edit → JSON view → close → JSON closed-state view. They assert separate stdout/stderr, exit status, response-derived fields and exact request counts. Additional cases verify that a successful create followed by forbidden or wrong-identity readback reports partial completion without success JSON or a repeated write, a rejected close does not print success, and PR close rejects an unconfirmed response state.
+
+These tests run in the existing `tests/contracts/` selection in ordinary CLI CI and the CLI job of source-compatibility CI. To retain the 90% coverage floor, use the complete offline command above rather than treating a single golden-flow file as full acceptance. The fixtures are synthetic, not provider recordings or a live state machine. This is an **in-process mocked API workflow**, not subprocess HTTP interception, recorded replay, live account acceptance or a complete human/JSON/jq/template/error matrix. The existing process and clean-wheel suites remain separate; recording provenance and live sandbox gates in the boundary matrix remain outstanding.
 
 ## Structured help subset
 

@@ -5,12 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.7] - 2026-10-29
+
+本次发布新增 `gc repo` 仓库命令组，补齐 `gh` 的仓库管理能力，并引入文件读写服务基元与独立维护的 GitCode MCP 运行时，让仓库操作与 MCP 集成场景更完整。
 
 ### Added
 
 - 新增 `gc repo` 命令组，补齐 `gh` 仓库命令缺口：`repo view`（含 README 展示与 `--json/-q/-t`）、`repo list`（分页及可见性/语言/fork/source 客户端过滤）、`repo create`（支持 org 创建、`--public/--private`、`--add-readme`、模板与 `--clone`）、`repo clone`、`repo fork`（`--clone`/`--org`）、`repo edit`、`repo rename`（同步更新本地 origin 远端）、`repo delete`、`repo sync`（基于 GitCode fork 同步 API） ([#145](https://github.com/codeasier/gitcode-cli/pull/145))
 - gh proxy 现支持 `repo` 子命令的位置参数主机路由，并将已实现的 repo 子命令纳入 GitCode 目标白名单；`archive`/`unarchive`/`deploy-key`/`set-default` 等在注册表中按 GitCode API 实况标记为不可用并注明原因 ([#145](https://github.com/codeasier/gitcode-cli/pull/145))
+- 新增 `FileService`、`RepoService` 与 `RepoAdapter`，为 GitCode Contents API 提供无凭据的单文件读写基元，并封装 `repo` 命令所需的仓库接口 ([#160](https://github.com/codeasier/gitcode-cli/pull/160))
+- 仓库新增独立维护的 `codeasier-gitcode-mcp` 0.3.0 运行时（31 个工具，支持 stdio、Streamable HTTP 与 OAuth），采用独立的 `mcp-v*` 发布标签与变更日志，不随 `pygitcode` 安装 ([#157](https://github.com/codeasier/gitcode-cli/pull/157), [#159](https://github.com/codeasier/gitcode-cli/pull/159))
+
+### Changed
+
+- 仓库及 Contents 相关请求在 `access_token` 之外补充 `private-token` 请求头，兼容 GitCode 仓库接口的鉴权要求 ([#145](https://github.com/codeasier/gitcode-cli/pull/145))
+- 新增架构导向的 `AGENTS.md` 层级与 MCP 部署、OAuth、迁移文档，明确 CLI 与 MCP 两个分发包的边界 ([#144](https://github.com/codeasier/gitcode-cli/pull/144), [#157](https://github.com/codeasier/gitcode-cli/pull/157))
 
 ## [0.1.6] - 2026-09-12
 

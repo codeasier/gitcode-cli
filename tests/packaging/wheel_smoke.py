@@ -56,7 +56,20 @@ for name, action in (
         raise AssertionError("offline guard did not reject " + name)
 print(json.dumps(blocked))
 """
-IDENTITY = """import hashlib
+ARCHIVE_CHECK = """def confirm_archive_hash(archive, expected):
+    assert isinstance(archive, dict), "missing wheel archive identity"
+    if "hashes" in archive:
+        hashes = archive["hashes"]
+        assert isinstance(hashes, dict) and hashes.get("sha256") == expected, "wheel hash mismatch"
+    else:
+        assert archive.get("hash") == "sha256=" + expected, "missing or wrong legacy wheel hash"
+    if "hash" in archive:
+        assert archive["hash"] == "sha256=" + expected, "inconsistent legacy wheel hash"
+
+"""
+IDENTITY = (
+    ARCHIVE_CHECK
+    + """import hashlib
 import importlib.metadata
 import json
 import pathlib
@@ -81,7 +94,7 @@ entrypoints = {e.name: e.value for e in dist.entry_points if e.group == "console
 assert entrypoints == {"gc": "gitcode_cli.cli:main", "gitcode": "gitcode_cli.cli:main"}
 direct = json.loads(dist.read_text("direct_url.json") or "{}")
 assert not direct.get("dir_info", {}).get("editable", False)
-assert direct.get("archive_info", {}).get("hashes", {}).get("sha256") == expected["sha256"]
+confirm_archive_hash(direct.get("archive_info"), expected["sha256"])
 package = pathlib.Path(gitcode_cli.__file__).resolve().parent
 assert prefix in package.parents
 actual = {str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -93,6 +106,7 @@ for name, module in list(sys.modules.items()):
         assert package == origin.parent or package in origin.parents
 print(json.dumps({"version": dist.version, "package_files": len(actual), "entrypoints": sorted(entrypoints)}))
 """
+)
 
 
 def require(condition: bool, message: str) -> None:

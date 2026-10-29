@@ -150,6 +150,9 @@ def test_set_uses_number_and_confirms_once(operation):
         {"milestone": None},
         {"milestone": {"number": True}},
         {"milestone": {"number": 8}},
+        {"number": 43, "milestone": {"number": 7}},
+        {"number": True, "milestone": {"number": 7}},
+        {"milestone": {"number": 7}},
         NetworkError("Synthetic timeout"),
     ],
 )

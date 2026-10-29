@@ -17,6 +17,42 @@ smoke = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(smoke)
 
 
+@pytest.mark.parametrize(
+    "archive",
+    [
+        {"hashes": {"sha256": "a" * 64}},
+        {"hash": "sha256=" + "a" * 64},
+        {"hashes": {"sha256": "a" * 64}, "hash": "sha256=" + "a" * 64},
+    ],
+)
+def test_archive_identity_accepts_modern_and_legacy_pip_metadata(archive):
+    namespace = {}
+    exec(smoke.ARCHIVE_CHECK, namespace)
+    namespace["confirm_archive_hash"](archive, "a" * 64)
+    assert smoke.IDENTITY.startswith(smoke.ARCHIVE_CHECK)
+
+
+@pytest.mark.parametrize(
+    "archive",
+    [
+        None,
+        {},
+        {"hashes": {"sha256": "b" * 64}},
+        {"hash": "sha256=" + "b" * 64},
+        {"hash": "md5=" + "a" * 64},
+        {"hashes": {}, "hash": "sha256=" + "a" * 64},
+        {"hashes": None, "hash": "sha256=" + "a" * 64},
+        {"hashes": {"sha256": "b" * 64}, "hash": "sha256=" + "a" * 64},
+        {"hashes": {"sha256": "a" * 64}, "hash": "sha256=" + "b" * 64},
+    ],
+)
+def test_archive_identity_rejects_missing_wrong_or_contradictory_hashes(archive):
+    namespace = {}
+    exec(smoke.ARCHIVE_CHECK, namespace)
+    with pytest.raises(AssertionError):
+        namespace["confirm_archive_hash"](archive, "a" * 64)
+
+
 def test_runtime_environment_does_not_inherit_secrets_or_paths(tmp_path, monkeypatch):
     forbidden = {
         "GC_TOKEN": "synthetic-ambient-token",

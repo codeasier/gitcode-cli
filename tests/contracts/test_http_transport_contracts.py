@@ -9,6 +9,7 @@ import httpx
 import pytest
 import respx
 
+from gitcode_cli.adapters import IssueAdapter, PullRequestAdapter
 from gitcode_cli.client import GitCodeClient
 from gitcode_cli.errors import APIError, NetworkError
 from gitcode_cli.services.issues import IssueService
@@ -21,6 +22,9 @@ ISSUE_CREATE = ("Issues", "post-api-v-5-repos-owner-issues.json")
 ISSUE_LIST = ("Issues", "get-api-v-5-repos-owner-repo-issues.json")
 PR_COMMENT = ("Pull Requests", "post-api-v-5-repos-owner-repo-pulls-number-comments.json")
 PR_REVIEW = ("Pull Requests", "post-api-v-5-repos-owner-repo-pulls-number-review.json")
+ISSUE_GET = ("Issues", "get-api-v-5-repos-owner-repo-issues-number.json")
+ISSUE_UPDATE = ("Issues", "patch-api-v-5-repos-owner-issues-number.json")
+PR_MERGE = ("Pull Requests", "put-api-v-5-repos-owner-repo-pulls-number-merge.json")
 ISSUE_PAYLOAD = {"repo": "repo", "title": "Contract issue", "body": "Synthetic body"}
 
 
@@ -71,6 +75,8 @@ def _contract_route(router, fixture, *, payload=None, query=None, response=None,
             types = {"string": str, "integer": int, "boolean": bool}
             for name, value in actual.items():
                 assert type(value) is types[fields[name]["type"]], f"HTTP JSON type drift: {name}"
+                if "enum" in fields[name]:
+                    assert value in fields[name]["enum"], f"HTTP JSON enum drift: {name}"
         if error is not None:
             raise error("Synthetic transport failure", request=request)
         return httpx.Response(status, json={} if response is None else response)
@@ -87,6 +93,32 @@ def test_issue_create_uses_documented_owner_path_and_repo_body(client, strict_ht
     )
 
     assert result == {"number": "42"}
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("action", ["close", "reopen"])
+def test_issue_state_updates_serialize_required_current_title(client, strict_http, action):
+    _contract_route(
+        strict_http, ISSUE_GET, response={"title": "Keep", "state": "open" if action == "close" else "closed"}
+    )
+    route = _contract_route(
+        strict_http, ISSUE_UPDATE, payload={"repo": "repo", "title": "Keep", "state": action}, response={"number": 42}
+    )
+    adapter = IssueAdapter(IssueService(client))
+    if action == "close":
+        adapter.close_issue("owner", "repo", "42", comment=None, reason=None)
+    else:
+        adapter.reopen_issue("owner", "repo", "42")
+    assert route.call_count == 1
+
+
+def test_squash_serializes_separate_boolean(client, strict_http):
+    route = _contract_route(
+        strict_http, PR_MERGE, payload={"merge_method": "merge", "squash": True}, response={"merged": True}
+    )
+    PullRequestAdapter(PullRequestService(client)).merge_pr(
+        "owner", "repo", 42, merge_method="squash", body=None, subject=None, admin=False
+    )
     assert route.call_count == 1
 
 
@@ -163,6 +195,8 @@ def test_strict_callback_rejects_body_and_query_drift(client, strict_http, drift
     IssueService(client).create("owner", "repo", title="Contract issue", body="Synthetic body")
     payload = {**ISSUE_PAYLOAD, "event": "REQUEST_CHANGES"} if drift == "body" else ISSUE_PAYLOAD
     params = {"unexpected": "value"} if drift == "query" else {"access_token": "synthetic-other-token"}
+    if drift == "token":
+        client.token = "synthetic-other-token"
 
     with pytest.raises(AssertionError, match="HTTP JSON body drift" if drift == "body" else "HTTP query drift"):
         client.post("/repos/owner/issues", json=payload, params=None if drift == "body" else params)

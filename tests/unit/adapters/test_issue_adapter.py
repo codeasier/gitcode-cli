@@ -444,7 +444,7 @@ class TestIssueAdapter:
         assert "refusing to edit or delete comments safely" in str(exc.value)
 
     def test_edit_issue_merges_existing_labels(self, adapter, service):
-        service.get.return_value = {"labels": [{"name": "existing"}, {"name": "bug"}]}
+        service.get.return_value = {"title": "Current", "labels": [{"name": "existing"}, {"name": "bug"}]}
         service.update.return_value = {"number": "42"}
 
         adapter.edit_issue(
@@ -461,10 +461,13 @@ class TestIssueAdapter:
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", labels="existing,bug,docs")
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", labels="existing,bug,docs")
 
     def test_edit_issue_removes_labels(self, adapter, service):
-        service.get.return_value = {"labels": [{"name": "existing"}, {"name": "bug"}, {"name": "docs"}]}
+        service.get.return_value = {
+            "title": "Current",
+            "labels": [{"name": "existing"}, {"name": "bug"}, {"name": "docs"}],
+        }
         service.update.return_value = {"number": "42"}
 
         adapter.edit_issue(
@@ -481,10 +484,10 @@ class TestIssueAdapter:
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", labels="existing,docs")
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", labels="existing,docs")
 
     def test_edit_issue_adds_and_removes_labels(self, adapter, service):
-        service.get.return_value = {"labels": [{"name": "existing"}, {"name": "bug"}]}
+        service.get.return_value = {"title": "Current", "labels": [{"name": "existing"}, {"name": "bug"}]}
         service.update.return_value = {"number": "42"}
 
         adapter.edit_issue(
@@ -501,10 +504,10 @@ class TestIssueAdapter:
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", labels="existing,docs")
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", labels="existing,docs")
 
     def test_edit_issue_removes_assignee_from_existing_assignees(self, adapter, service):
-        service.get.return_value = {"assignee": "alice,bob"}
+        service.get.return_value = {"title": "Current", "assignee": "alice,bob"}
 
         adapter.edit_issue(
             "owner",
@@ -520,9 +523,10 @@ class TestIssueAdapter:
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", assignee="alice")
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", assignee="alice")
 
     def test_edit_issue_sets_milestone_number(self, adapter, service):
+        service.get.return_value = {"title": "Current"}
         adapter.edit_issue(
             "owner",
             "repo",
@@ -537,9 +541,10 @@ class TestIssueAdapter:
             remove_milestone=False,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", milestone=1)
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", milestone=1)
 
     def test_edit_issue_removes_milestone_with_zero(self, adapter, service):
+        service.get.return_value = {"title": "Current"}
         adapter.edit_issue(
             "owner",
             "repo",
@@ -554,7 +559,7 @@ class TestIssueAdapter:
             remove_milestone=True,
         )
 
-        service.update.assert_called_once_with("owner", "repo", "42", milestone=0)
+        service.update.assert_called_once_with("owner", "repo", "42", title="Current", milestone=0)
 
     def test_develop_returns_browser_fallback_message(self, adapter):
         result = adapter.develop("owner", "repo", "42", base="main", name="feature")

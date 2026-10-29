@@ -101,7 +101,8 @@ class TestResolveRepo:
         assert resolve_repo("owner/repo") == ("owner", "repo")
 
     def test_explicit_repo_three_parts(self):
-        assert resolve_repo("host/owner/repo") == ("owner", "repo")
+        with pytest.raises(RepoResolutionError, match="host"):
+            resolve_repo("host/owner/repo")
 
     @patch("gitcode_cli.repo.subprocess.run")
     def test_fallback_to_git_remote_https(self, mock_run: MagicMock):

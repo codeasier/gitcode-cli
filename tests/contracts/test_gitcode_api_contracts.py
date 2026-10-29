@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from gitcode_cli.adapters import IssueAdapter, PullRequestAdapter
 from gitcode_cli.services.issues import IssueService
 from gitcode_cli.services.pulls import PullRequestService
 
@@ -29,6 +30,18 @@ def _contract_path(contract: dict, **path_params: str | int) -> str:
     return contract["path"].format(**path_params).removeprefix("/api/v5")
 
 
+def _validate_body(contract: dict, body: dict) -> None:
+    types = {"string": str, "boolean": bool, "integer": int}
+    for field in contract["requestBodyFields"]:
+        name = field["name"]
+        if field.get("required"):
+            assert name in body, f"Required field missing: {name}"
+        if name in body and field["type"] in types:
+            assert type(body[name]) is types[field["type"]], f"Wrong type: {name}"
+            if "enum" in field:
+                assert body[name] in field["enum"], f"Wrong enum: {name}"
+
+
 @pytest.fixture
 def issue_service() -> tuple[IssueService, MagicMock]:
     client = MagicMock()
@@ -43,6 +56,33 @@ def pull_service() -> tuple[PullRequestService, MagicMock]:
 
 
 class TestIssueServiceContracts:
+    @pytest.mark.parametrize("action", ["close", "reopen", "edit"])
+    def test_partial_updates_preserve_required_title(self, issue_service, action):
+        service, client = issue_service
+        client.get.return_value = {"title": "Keep this title", "state": "open" if action == "close" else "closed"}
+        adapter = IssueAdapter(service)
+        if action == "close":
+            adapter.close_issue("owner", "repo", "1", comment=None, reason=None)
+        elif action == "reopen":
+            adapter.reopen_issue("owner", "repo", "1")
+        else:
+            adapter.edit_issue(
+                "owner",
+                "repo",
+                "1",
+                title=None,
+                body="new body",
+                add_assignee=None,
+                add_labels=None,
+                remove_assignee=None,
+                remove_labels=None,
+                milestone=None,
+                remove_milestone=False,
+            )
+        body = client.patch.call_args.kwargs["json"]
+        assert body["title"] == "Keep this title"
+        _validate_body(_load_contract("Issues", "patch-api-v-5-repos-owner-issues-number.json"), body)
+
     def test_list_matches_issue_list_contract(self, issue_service: tuple[IssueService, MagicMock]) -> None:
         service, client = issue_service
         contract = _load_contract("Issues", "get-api-v-5-repos-owner-repo-issues.json")
@@ -202,13 +242,23 @@ class TestPullRequestServiceContracts:
         service, client = pull_service
         contract = _load_contract("Pull Requests", "put-api-v-5-repos-owner-repo-pulls-number-merge.json")
 
-        service.merge("owner", "repo", 42, merge_method="squash")
+        service.merge("owner", "repo", 42, merge_method="merge", squash=True)
 
         client.put.assert_called_once_with(
             _contract_path(contract, owner="owner", repo="repo", number=42),
-            json={"merge_method": "squash"},
+            json={"merge_method": "merge", "squash": True},
         )
         assert contract["method"] == "PUT"
+        _validate_body(contract, client.put.call_args.kwargs["json"])
+
+    @pytest.mark.parametrize("method", ["merge", "squash", "rebase"])
+    def test_adapter_merge_body_matches_types_and_enum(self, pull_service, method):
+        service, client = pull_service
+        client.put.return_value = {"merged": True}
+        PullRequestAdapter(service).merge_pr("o", "r", 1, merge_method=method, body=None, subject=None, admin=False)
+        body = client.put.call_args.kwargs["json"]
+        _validate_body(_load_contract("Pull Requests", "put-api-v-5-repos-owner-repo-pulls-number-merge.json"), body)
+        assert body.get("squash", False) is (method == "squash")
 
     def test_comment_matches_pr_comment_contract(self, pull_service: tuple[PullRequestService, MagicMock]) -> None:
         service, client = pull_service

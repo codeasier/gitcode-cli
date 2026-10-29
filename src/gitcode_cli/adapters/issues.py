@@ -259,9 +259,9 @@ class IssueAdapter:
                 self.service.comment(owner, repo, number, comment)
                 return AdapterActionResult(item=current, message="already_closed_commented")
             return AdapterActionResult(item=current, message="already_closed")
+        payload: dict[str, Any] = {"state": "close", "title": self._current_title(current)}
         if comment:
             self.service.comment(owner, repo, number, comment)
-        payload: dict[str, Any] = {"state": "close"}
         if reason:
             payload["state_reason"] = reason
         item = self.service.update(owner, repo, number, **payload)
@@ -316,7 +316,7 @@ class IssueAdapter:
         current = self.service.get(owner, repo, number)
         if current and current.get("state") == "open":
             return AdapterActionResult(item=current, message="already_open")
-        item = self.service.update(owner, repo, number, state="reopen")
+        item = self.service.update(owner, repo, number, state="reopen", title=self._current_title(current))
         if comment:
             self.service.comment(owner, repo, number, comment)
         return AdapterActionResult(item=item, message="reopened")
@@ -340,17 +340,21 @@ class IssueAdapter:
         milestone: int | None,
         remove_milestone: bool,
     ) -> dict[str, Any] | None:
+        current = (
+            self.service.get(owner, repo, number)
+            if title is None or remove_assignee or add_labels or remove_labels
+            else None
+        )
+        title = title if title is not None else self._current_title(current)
         data: dict[str, Any] = {k: v for k, v in {"title": title, "body": body}.items() if v is not None}
 
         if add_assignee is not None:
             data["assignee"] = add_assignee
         if remove_assignee is not None:
-            current = self.service.get(owner, repo, number)
             remaining = [name for name in _extract_assignee_names(current) if name != remove_assignee]
             data["assignee"] = ",".join(remaining)
 
         if add_labels or remove_labels:
-            current = self.service.get(owner, repo, number)
             existing = _extract_label_names(current)
             removed = {label.strip() for label in remove_labels or () if label.strip()}
             merged: list[str] = []
@@ -367,6 +371,13 @@ class IssueAdapter:
         if remove_milestone:
             data["milestone"] = 0
         return self.service.update(owner, repo, number, **data)
+
+    @staticmethod
+    def _current_title(current: Any) -> str:
+        title = current.get("title") if isinstance(current, dict) else None
+        if not isinstance(title, str) or not title.strip():
+            raise APIError("Unable to obtain the current Issue title required for update; no update sent.")
+        return title
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:
         if self.user_service is None:

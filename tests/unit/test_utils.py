@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import click
 import pytest
 
+from gitcode_cli.errors import RepoResolutionError
 from gitcode_cli.utils import (
     get_current_git_branch,
     get_default_git_branch,
@@ -107,10 +108,12 @@ class TestParseIssueUrl:
         assert result == ("owner", "repo", "1")
 
     def test_no_match_pr_url(self):
-        assert parse_issue_url("https://gitcode.com/owner/repo/pulls/42") is None
+        with pytest.raises(RepoResolutionError):
+            parse_issue_url("https://gitcode.com/owner/repo/pulls/42")
 
     def test_no_match_random_url(self):
-        assert parse_issue_url("https://example.com/something") is None
+        with pytest.raises(RepoResolutionError):
+            parse_issue_url("https://example.com/something")
 
     def test_no_match_none(self):
         assert parse_issue_url("not-a-url") is None
@@ -138,10 +141,12 @@ class TestParsePrUrl:
         assert result == ("owner", "repo", "1")
 
     def test_no_match_issue_url(self):
-        assert parse_pr_url("https://gitcode.com/owner/repo/issues/42") is None
+        with pytest.raises(RepoResolutionError):
+            parse_pr_url("https://gitcode.com/owner/repo/issues/42")
 
     def test_no_match_random_url(self):
-        assert parse_pr_url("https://example.com/something") is None
+        with pytest.raises(RepoResolutionError):
+            parse_pr_url("https://example.com/something")
 
     def test_whitespace_stripped(self):
         result = parse_pr_url("  https://gitcode.com/owner/repo/pull/5  ")

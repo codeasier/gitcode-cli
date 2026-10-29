@@ -727,13 +727,13 @@ class TestPrCreate:
 
 class TestPrClose:
     def test_pr_close(self, runner, mock_client, mock_repo):
-        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+        mock_client.patch.return_value = {"number": 42, "state": "closed", "head": {"ref": "feature"}}
         result = runner.invoke(main, ["pr", "close", "42"])
         assert result.exit_code == 0
         assert "Closed pull request #42" in result.output
 
     def test_pr_close_with_comment(self, runner, mock_client, mock_repo):
-        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+        mock_client.patch.return_value = {"number": 42, "state": "closed", "head": {"ref": "feature"}}
         mock_client.post.return_value = {"id": 1}
         result = runner.invoke(main, ["pr", "close", "42", "-c", "closing comment"])
         assert result.exit_code == 0
@@ -742,17 +742,20 @@ class TestPrClose:
         assert len(post_calls) == 1
         assert post_calls[0].kwargs["json"]["body"] == "closing comment"
 
-    def test_pr_close_delete_branch(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
-            mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
+    def test_pr_close_delete_branch(self, runner, mock_client, mock_repo, mock_pr_data):
+        with patch("gitcode_cli.pr_git._git", return_value=MagicMock(returncode=0)) as mock_run:
+            mock_client.get.return_value = mock_pr_data
+            mock_client.patch.return_value = {"number": 42, "state": "closed"}
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
-            assert "Deleted remote branch feature" in result.output
+            assert "Deleted remote branch feature-branch" in result.output
             assert "Closed pull request #42" in result.output
-            mock_run.assert_called_once_with(
-                ["git", "push", "origin", "--delete", "feature"],
-                check=True,
+            mock_run.assert_called_with(
+                "push",
+                "--force-with-lease=refs/heads/feature-branch:" + "a" * 40,
+                "--",
+                "https://gitcode.com/owner/repo.git",
+                ":refs/heads/feature-branch",
             )
 
     def test_pr_close_delete_branch_help_mentions_remote_only(self, runner):
@@ -762,7 +765,7 @@ class TestPrClose:
         assert "Delete the local and remote branch after closing." not in result.output
 
     def test_pr_close_without_number_in_response(self, runner, mock_client, mock_repo):
-        mock_client.patch.return_value = {"iid": 42, "head": {"ref": "feature"}}
+        mock_client.patch.return_value = {"iid": 42, "state": "closed", "head": {"ref": "feature"}}
         result = runner.invoke(main, ["pr", "close", "42"])
         assert result.exit_code == 0
         assert "Closed pull request #42" in result.output
@@ -798,7 +801,7 @@ class TestPrMerge:
         if delete_branch:
             args.append("--delete-branch")
 
-        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+        with patch("gitcode_cli.pr_git.subprocess.run") as git:
             result = runner.invoke(main, args)
 
         assert result.exit_code == 1
@@ -815,21 +818,29 @@ class TestPrMerge:
 
     @pytest.mark.parametrize("delete_branch", [False, True])
     @pytest.mark.parametrize("merged", [True, 1])
-    def test_pr_merge_explicit_success_allows_cleanup(self, runner, mock_client, mock_repo, merged, delete_branch):
-        mock_client.get.return_value = {"head": {"ref": "feature"}}
+    def test_pr_merge_explicit_success_allows_cleanup(
+        self, runner, mock_client, mock_repo, mock_pr_data, merged, delete_branch
+    ):
+        mock_client.get.return_value = mock_pr_data
         mock_client.put.return_value = {"merged": merged, "message": "Merged"}
         args = ["--token", "synthetic-merge-token", "pr", "merge", "42"]
         if delete_branch:
             args.append("--delete-branch")
 
-        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+        with patch("gitcode_cli.pr_git._git", return_value=MagicMock(returncode=0)) as git:
             result = runner.invoke(main, args)
 
         assert result.exit_code == 0
         assert result.output.startswith("Merged\n")
         assert mock_client.put.call_count == 1
         if delete_branch:
-            git.assert_called_once_with(["git", "push", "origin", "--delete", "feature"], check=True)
+            git.assert_called_with(
+                "push",
+                "--force-with-lease=refs/heads/feature-branch:" + "a" * 40,
+                "--",
+                "https://gitcode.com/owner/repo.git",
+                ":refs/heads/feature-branch",
+            )
             assert "Deleted remote branch feature" in result.output
         else:
             git.assert_not_called()
@@ -861,7 +872,7 @@ class TestPrMerge:
         if delete_branch:
             args.append("--delete-branch")
 
-        with patch("gitcode_cli.commands.pr.subprocess.run") as git:
+        with patch("gitcode_cli.pr_git.subprocess.run") as git:
             result = runner.invoke(main, args)
 
         assert result.exit_code == 1
@@ -892,7 +903,8 @@ class TestPrMerge:
         result = runner.invoke(main, ["pr", "merge", "42", "-s"])
         assert result.exit_code == 0
         assert "Merged" in result.output
-        assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "squash"
+        assert mock_client.put.call_args.kwargs["json"]["merge_method"] == "merge"
+        assert mock_client.put.call_args.kwargs["json"]["squash"] is True
 
     def test_pr_merge_rebase(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "merge", "42", "-r"])
@@ -1354,98 +1366,60 @@ class TestPrDiff:
 
 
 class TestPrCheckout:
-    def test_pr_checkout(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            result = runner.invoke(main, ["pr", "checkout", "42"])
-            assert result.exit_code == 0
-            assert "Checked out branch feature-branch" in result.output
-            # fetch, rev-parse (branch doesn't exist), checkout -b
-            assert mock_run.call_count == 3
-            mock_run.assert_any_call(
-                ["git", "fetch", "origin", "feature-branch"],
-                check=True,
-            )
-            mock_run.assert_any_call(
-                ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
-                check=True,
-            )
+    @pytest.fixture
+    def git(self, mock_client, mock_pr_data):
+        mock_client.get.return_value = mock_pr_data
+        with patch("gitcode_cli.pr_git._git") as git:
+            git.return_value = MagicMock(returncode=0, stdout="a" * 40)
+            yield git
 
-    def test_pr_checkout_existing_branch_with_correct_tracking(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            # rev-parse succeeds (branch exists), for-each-ref shows correct tracking
-            mock_run.side_effect = [
-                MagicMock(),  # fetch
-                MagicMock(returncode=0),  # rev-parse — branch exists
-                MagicMock(stdout="origin/feature-branch"),  # for-each-ref — correct tracking
-                MagicMock(),  # checkout
-            ]
-            result = runner.invoke(main, ["pr", "checkout", "42"])
-            assert result.exit_code == 0
-            assert "Checked out existing branch feature-branch (tracking origin/feature-branch)" in result.output
+    def test_pr_checkout(self, runner, mock_client, mock_repo, git):
+        git.side_effect = [git.return_value] * 4 + [MagicMock(returncode=1), git.return_value]
+        result = runner.invoke(main, ["pr", "checkout", "42"])
+        assert result.exit_code == 0, result.output
+        git.assert_any_call(
+            "fetch", "--no-tags", "--", "https://gitcode.com/owner/repo.git", "refs/heads/feature-branch"
+        )
+        git.assert_called_with("checkout", "-b", "feature-branch", "a" * 40, "--")
 
-    def test_pr_checkout_existing_branch_with_wrong_tracking(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            mock_run.side_effect = [
-                MagicMock(),  # fetch
-                MagicMock(returncode=0),  # rev-parse — branch exists
-                MagicMock(stdout="origin/other-branch"),  # for-each-ref — wrong tracking
-            ]
-            result = runner.invoke(main, ["pr", "checkout", "42"])
-            assert result.exit_code != 0
-            assert "already exists" in result.output
-            assert "does not track" in result.output
+    def test_pr_checkout_existing_branch_at_expected_sha(self, runner, mock_client, mock_repo, git):
+        result = runner.invoke(main, ["pr", "checkout", "42"])
+        assert result.exit_code == 0, result.output
+        git.assert_called_with("checkout", "feature-branch", "--")
 
-    def test_pr_checkout_custom_branch_existing_with_correct_tracking(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            mock_run.side_effect = [
-                MagicMock(),  # fetch
-                MagicMock(returncode=0),  # rev-parse — custom branch exists
-                MagicMock(stdout="origin/feature-branch"),  # for-each-ref — correct tracking
-                MagicMock(),  # checkout
-            ]
-            result = runner.invoke(main, ["pr", "checkout", "42", "-b", "my-local-feature"])
-            assert result.exit_code == 0
-            assert "Checked out existing branch my-local-feature" in result.output
+    def test_pr_checkout_existing_branch_at_wrong_sha(self, runner, mock_client, mock_repo, git):
+        git.side_effect = [git.return_value] * 4 + [MagicMock(returncode=0, stdout="b" * 40)]
+        result = runner.invoke(main, ["pr", "checkout", "42"])
+        assert result.exit_code != 0
+        assert "already exists at another commit" in result.output
 
-    def test_pr_checkout_ignores_matching_tag_when_local_branch_does_not_exist(self, runner, mock_client, mock_repo):
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            mock_run.side_effect = [
-                MagicMock(),  # fetch
-                MagicMock(returncode=1),  # refs/heads/feature-branch does not exist
-                MagicMock(),  # checkout -b
-            ]
-            result = runner.invoke(main, ["pr", "checkout", "42"])
-            assert result.exit_code == 0
-            mock_run.assert_any_call(
-                ["git", "rev-parse", "--verify", "refs/heads/feature-branch"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            mock_run.assert_any_call(
-                ["git", "checkout", "-b", "feature-branch", "origin/feature-branch"],
-                check=True,
-            )
+    def test_pr_checkout_custom_branch_existing_at_expected_sha(self, runner, mock_client, mock_repo, git):
+        result = runner.invoke(main, ["pr", "checkout", "42", "-b", "my-local-feature"])
+        assert result.exit_code == 0, result.output
+        git.assert_called_with("checkout", "my-local-feature", "--")
 
-    def test_pr_checkout_existing_branch_checkout_failure_is_wrapped(self, runner, mock_client, mock_repo):
+    def test_pr_checkout_ignores_matching_tag_when_local_branch_does_not_exist(
+        self, runner, mock_client, mock_repo, git
+    ):
+        git.side_effect = [git.return_value] * 4 + [MagicMock(returncode=1), git.return_value]
+        result = runner.invoke(main, ["pr", "checkout", "42"])
+        assert result.exit_code == 0, result.output
+        git.assert_any_call("rev-parse", "--verify", "refs/heads/feature-branch", check=False)
+        git.assert_called_with("checkout", "-b", "feature-branch", "a" * 40, "--")
+
+    def test_pr_checkout_existing_branch_checkout_failure_is_wrapped(
+        self, runner, mock_client, mock_repo, mock_pr_data
+    ):
         import subprocess
 
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}
-            mock_run.side_effect = [
-                MagicMock(),  # fetch
-                MagicMock(returncode=0),  # rev-parse — branch exists
-                MagicMock(stdout="origin/feature-branch"),  # tracking matches
+        mock_client.get.return_value = mock_pr_data
+        with patch("gitcode_cli.pr_git.subprocess.run") as run:
+            run.side_effect = [MagicMock(returncode=0, stdout="a" * 40)] * 5 + [
                 subprocess.CalledProcessError(1, ["git", "checkout", "feature-branch"]),
             ]
             result = runner.invoke(main, ["pr", "checkout", "42"])
-            assert result.exit_code != 0
-            assert "Git checkout failed" in result.output
+        assert result.exit_code != 0
+        assert "Git operation failed" in result.output
 
 
 class TestPrReady:
@@ -1511,33 +1485,36 @@ class TestPrCreateEdgeCases:
 class TestPrCloseEdgeCases:
     def test_close_delete_branch_no_ref(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"number": 42, "head": {}}
-        mock_client.patch.return_value = {"number": 42, "head": {}}
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+        mock_client.patch.return_value = {"number": 42, "state": "closed", "head": {}}
+        with patch("gitcode_cli.pr_git.subprocess.run") as mock_run:
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
-            assert result.exit_code == 0
-            assert "Warning: could not determine branch to delete" in result.output
+            assert result.exit_code == 1
+            assert "PR closed, but branch deletion was not confirmed" in result.output
             mock_run.assert_not_called()
 
-    def test_close_delete_branch_git_fails(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
-        mock_client.patch.return_value = {"number": 42, "head": {"ref": "feature"}}
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
-            mock_run.side_effect = Exception("git failed")
+    def test_close_delete_branch_git_fails(self, runner, mock_client, mock_repo, mock_pr_data):
+        mock_client.get.return_value = mock_pr_data
+        mock_client.patch.return_value = {"number": 42, "state": "closed"}
+        with patch("gitcode_cli.pr_git.subprocess.run") as mock_run:
+            mock_run.side_effect = OSError("git failed")
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
-            assert result.exit_code == 0
-            assert "Warning: could not delete remote branch" in result.output
+            assert result.exit_code == 1
+            assert "PR closed, but branch deletion was not confirmed" in result.output
 
-    def test_close_delete_branch_fetches_pr_before_close(self, runner, mock_client, mock_repo):
+    def test_close_delete_branch_fetches_pr_before_close(self, runner, mock_client, mock_repo, mock_pr_data):
         """When close response lacks head.ref, we should have fetched it beforehand."""
-        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
-        mock_client.patch.return_value = {"number": 42, "head": {}}
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+        mock_client.get.return_value = mock_pr_data
+        mock_client.patch.return_value = {"number": 42, "state": "closed", "head": {}}
+        with patch("gitcode_cli.pr_git._git", return_value=MagicMock(returncode=0)) as mock_run:
             result = runner.invoke(main, ["pr", "close", "42", "-d"])
             assert result.exit_code == 0
             assert "Deleted remote branch feature" in result.output
-            mock_run.assert_called_once_with(
-                ["git", "push", "origin", "--delete", "feature"],
-                check=True,
+            mock_run.assert_called_with(
+                "push",
+                "--force-with-lease=refs/heads/feature-branch:" + "a" * 40,
+                "--",
+                "https://gitcode.com/owner/repo.git",
+                ":refs/heads/feature-branch",
             )
 
 
@@ -1553,17 +1530,17 @@ class TestPrCheckoutEdgeCases:
         mock_client.get.return_value = {"number": 42, "head": {}}
         result = runner.invoke(main, ["pr", "checkout", "42"])
         assert result.exit_code != 0
-        assert "Unable to determine PR branch" in result.output
+        assert "Unable to verify PR source repository" in result.output
 
-    def test_checkout_git_fails(self, runner, mock_client, mock_repo):
+    def test_checkout_git_fails(self, runner, mock_client, mock_repo, mock_pr_data):
         import subprocess
 
-        mock_client.get.return_value = {"number": 42, "head": {"ref": "feature"}}
-        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+        mock_client.get.return_value = mock_pr_data
+        with patch("gitcode_cli.pr_git.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "fetch"])
             result = runner.invoke(main, ["pr", "checkout", "42"])
             assert result.exit_code != 0
-            assert "Git fetch failed" in result.output
+            assert "Git operation failed" in result.output
 
 
 class TestPrCreateMissingHtmlUrl:

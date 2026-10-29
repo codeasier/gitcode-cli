@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 import webbrowser
@@ -8,6 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
+
+from .repo import parse_resource_url, validate_gitcode_repo
 
 if TYPE_CHECKING:
     from .services import PullRequestService
@@ -82,23 +83,22 @@ def safe_number(item: Any, fallback: int | str) -> int | str:
 
 # --- Issue / PR identifier resolvers ---
 
-ISSUE_URL_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/issues/(?P<number>\d+)")
-PR_URL_RE = re.compile(r"https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?:pulls?|merge_requests)/(?P<number>\d+)")
-
 
 def parse_issue_url(url: str) -> tuple[str, str, str] | None:
     """Parse an issue URL into (owner, repo, number). Returns None if not a match."""
-    match = ISSUE_URL_RE.match(url.strip())
-    if match:
-        return match.group("owner"), match.group("repo"), match.group("number")
+    target = parse_resource_url(url, "issue")
+    if target:
+        host, owner, repo, number = target
+        return *validate_gitcode_repo(host, owner, repo), number
     return None
 
 
 def parse_pr_url(url: str) -> tuple[str, str, str] | None:
     """Parse a PR URL into (owner, repo, number). Returns None if not a match."""
-    match = PR_URL_RE.match(url.strip())
-    if match:
-        return match.group("owner"), match.group("repo"), match.group("number")
+    target = parse_resource_url(url, "pr")
+    if target:
+        host, owner, repo, number = target
+        return *validate_gitcode_repo(host, owner, repo), number
     return None
 
 

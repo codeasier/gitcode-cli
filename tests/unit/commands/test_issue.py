@@ -523,27 +523,27 @@ class TestIssueCreate:
 
 class TestIssueClose:
     def test_default(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
         mock_client.patch.assert_called_once()
 
     def test_url(self, runner, mock_client):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         result = runner.invoke(main, ["issue", "close", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
         mock_client.patch.assert_called_once()
 
     def test_close_without_number_in_response(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"iid": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42"])
         assert result.exit_code == 0
         assert "Closed issue #42" in result.output
 
     def test_close_duplicate_of_posts_comment_then_closes_with_approximation_note(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
 
         result = runner.invoke(main, ["issue", "close", "42", "--duplicate-of", "12"])
@@ -562,11 +562,11 @@ class TestIssueClose:
                 "/repos/owner/repo/issues/42/comments",
                 json={"body": "This issue is considered a duplicate of 12."},
             ),
-            call.patch("/repos/owner/issues/42", json={"repo": "repo", "state": "close"}),
+            call.patch("/repos/owner/issues/42", json={"repo": "repo", "state": "close", "title": "Test"}),
         ]
 
     def test_close_duplicate_of_preserves_comment_and_reason(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
 
         result = runner.invoke(
@@ -614,7 +614,7 @@ class TestIssueCloseIdempotency:
         mock_client.patch.assert_not_called()
 
     def test_close_with_comment_and_reason(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42", "-c", "done", "-r", "completed"])
         assert result.exit_code == 0
@@ -623,7 +623,7 @@ class TestIssueCloseIdempotency:
         assert len(post_calls) == 1
 
     def test_close_with_reason_sends_state_close_and_state_reason(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "open"}
+        mock_client.get.return_value = {"number": "42", "state": "open", "title": "Test"}
         mock_client.patch.return_value = {"number": "42", "state": "closed"}
         result = runner.invoke(main, ["issue", "close", "42", "-r", "completed"])
         assert result.exit_code == 0
@@ -813,12 +813,12 @@ class TestIssueReopen:
         mock_client.patch.assert_called_once()
 
     def test_url(self, runner, mock_client):
-        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.get.return_value = {"number": "42", "state": "closed", "title": "Test"}
         result = runner.invoke(main, ["issue", "reopen", "https://gitcode.com/owner/repo/issues/42"])
         assert result.exit_code == 0
 
     def test_with_comment(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.get.return_value = {"number": "42", "state": "closed", "title": "Test"}
         result = runner.invoke(main, ["issue", "reopen", "42", "--comment", "Reopening for review"])
         assert result.exit_code == 0
         assert mock_client.patch.call_args_list[0].args[0] == "/repos/owner/issues/42"
@@ -830,7 +830,7 @@ class TestIssueReopen:
         )
 
     def test_with_comment_does_not_comment_when_reopen_fails(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"number": "42", "state": "closed"}
+        mock_client.get.return_value = {"number": "42", "state": "closed", "title": "Test"}
         mock_client.patch.side_effect = RuntimeError("boom")
         result = runner.invoke(main, ["issue", "reopen", "42", "--comment", "Reopening for review"])
         assert result.exit_code != 0
@@ -853,6 +853,10 @@ class TestIssueReopenIdempotency:
 
 
 class TestIssueEdit:
+    @pytest.fixture(autouse=True)
+    def current_issue(self, mock_client):
+        mock_client.get.return_value = {"number": "42", "title": "Current"}
+
     def test_default(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["issue", "edit", "42", "-t", "New", "-b", "New body"])
         assert result.exit_code == 0
@@ -881,7 +885,7 @@ class TestIssueEdit:
         assert json_data["assignee"] == ""
 
     def test_remove_label(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"labels": [{"name": "bug"}, {"name": "docs"}]}
+        mock_client.get.return_value = {"title": "Current", "labels": [{"name": "bug"}, {"name": "docs"}]}
         result = runner.invoke(main, ["issue", "edit", "42", "--remove-label", "bug"])
         assert result.exit_code == 0
         json_data = mock_client.patch.call_args[1]["json"]

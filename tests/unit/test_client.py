@@ -209,7 +209,8 @@ class TestNetworkErrorWrapping:
 def test_private_token_is_owned_by_cli_transport_only_for_repository_endpoints(method, path, repository_auth):
     client = GitCodeClient(token="test-token")
     with respx.mock:
-        route = respx.request(method, BASE_URL + path.lstrip("/")).mock(return_value=Response(200, json={}))
+        response = Response(204) if method == "DELETE" and path == "/repos/owner/repo" else Response(200, json={})
+        route = respx.request(method, BASE_URL + path.lstrip("/")).mock(return_value=response)
         try:
             client.request(method, path, params={"page": 1}, accept="application/vnd.example+json")
         finally:

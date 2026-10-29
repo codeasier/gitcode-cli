@@ -109,7 +109,7 @@ class TestNetworkErrorExitCode:
                     mock_client = MagicMock()
                     mock_client.get.side_effect = NetworkError("Connection failed: Connection refused")
                     mock_client_factory.return_value = mock_client
-                    result = runner.invoke(main, ["issue", "list"])
+                    result = runner.invoke(main, ["issue", "list", "-R", "owner/repo"])
 
         assert result.exit_code != 0
         assert "Connection failed" in result.output
@@ -125,7 +125,7 @@ class TestNetworkErrorExitCode:
                         401,
                     )
                     mock_client_factory.return_value = mock_client
-                    result = runner.invoke(main, ["issue", "list"])
+                    result = runner.invoke(main, ["issue", "list", "-R", "owner/repo"])
 
         assert result.exit_code != 0
         assert "Authentication failed" in result.output
@@ -219,7 +219,7 @@ class TestGlobalErrorHandler:
                 mock_client = MagicMock()
                 mock_client.get.side_effect = APIError("Not Found", status_code=404)
                 mock_client_factory.return_value = mock_client
-                result = runner.invoke(main, ["pr", "view", "999999"])
+                result = runner.invoke(main, ["pr", "view", "999999", "-R", "owner/repo"])
         assert result.exit_code == 1
         assert "error: Not Found" in result.output
         assert "Traceback" not in result.output
@@ -246,7 +246,7 @@ class TestGlobalErrorHandler:
                 mock_client = MagicMock()
                 mock_client.get.side_effect = AuthError("Invalid token")
                 mock_client_factory.return_value = mock_client
-                result = runner.invoke(main, ["pr", "list"])
+                result = runner.invoke(main, ["pr", "list", "-R", "owner/repo"])
         assert result.exit_code == 1
         assert "error: Invalid token" in result.output
         assert "Traceback" not in result.output

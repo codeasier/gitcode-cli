@@ -11,6 +11,7 @@ import html
 import re
 import secrets
 import time
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlencode
 
@@ -108,9 +109,9 @@ class GitCodeOAuthProvider(
             scopes=self.config.gitcode_scopes,
             timeout=settings.timeout,
         )
-        # The supported deployment has one worker. Serialize upstream rotation so
-        # concurrent MCP requests never redeem the same GitCode refresh token.
-        self._refresh_lock = anyio.Lock()
+        # One worker/event loop is supported. Count holders AND waiters so lock
+        # removal cannot create two simultaneous refreshes for the same grant.
+        self._refresh_locks: dict[str, tuple[anyio.Lock, int]] = {}
         self._closed = False
         self.scopes = [READ_SCOPE] + ([] if settings.read_only else [WRITE_SCOPE])
         self.client = OAuthClientInformationFull(
@@ -539,20 +540,39 @@ class GitCodeOAuthProvider(
     async def upstream_access_token(self, token: AccessToken | None) -> str:
         if not isinstance(token, BrokerAccessToken):
             raise self._reauthorize()
-        async with self._refresh_lock:
+        async with self._grant_refresh_lock(token.grant_id):
             current = await self.load_access_token(token.token)
-            grant = self._grant(token.grant_id) if current else None
+            grant = (
+                self._grant(token.grant_id)
+                if current and current.grant_id == token.grant_id
+                else None
+            )
             if grant is None:
                 raise self._reauthorize()
             upstream = grant["upstream"]
-            if upstream["expires_at"] > time.time() + 60:
+            pending = grant.get("pending_upstream")
+            if (
+                not pending
+                and not grant.get("refresh_in_progress")
+                and upstream["expires_at"] > time.time() + 60
+            ):
                 return upstream["access_token"]
-            if not upstream["refresh_token"]:
+            if not pending and (grant.get("refresh_in_progress") or not upstream["refresh_token"]):
+                # A process interruption/unknown exchange outcome must not redeem
+                # the old refresh token a second time.
                 await self.revoke_token(token)
                 raise self._reauthorize()
             try:
-                refreshed = await self.upstream.refresh(upstream["refresh_token"])
-                identity = await self.upstream.user(refreshed.access_token)
+                if not pending:
+                    self._save_refresh_state(token.grant_id, refresh_in_progress=True)
+                    refreshed = await self.upstream.refresh(upstream["refresh_token"])
+                    pending = _token_data(refreshed)
+                    # No await between receiving rotated credentials and encrypted
+                    # persistence. Identity lookup can then fail/retry/restart safely.
+                    self._save_refresh_state(
+                        token.grant_id, pending_upstream=pending, refresh_in_progress=False
+                    )
+                identity = await self.upstream.user(pending["access_token"])
             except OAuthUpstreamError as exc:
                 if exc.code in {"invalid_grant", "authentication_failed", "permission_denied"}:
                     await self.revoke_token(token)
@@ -568,9 +588,44 @@ class GitCodeOAuthProvider(
                 latest = self._grant(token.grant_id, tx)
                 if latest is None:
                     raise self._reauthorize()
-                latest["upstream"] = _token_data(refreshed)
+                latest["upstream"] = pending
+                latest.pop("pending_upstream", None)
+                latest.pop("refresh_in_progress", None)
                 tx.put("grant", token.grant_id, latest, latest["expires_at"])
-            return refreshed.access_token
+            return pending["access_token"]
+
+    def _save_refresh_state(self, grant_id: str, **state: Any) -> None:
+        with self.store.transaction() as tx:
+            latest = self._grant(grant_id, tx)
+            if latest is None:
+                raise self._reauthorize()
+            latest.update(state)
+            tx.put("grant", grant_id, latest, latest["expires_at"])
+
+    @asynccontextmanager
+    async def _grant_refresh_lock(self, grant_id: str):
+        lock, users = self._refresh_locks.get(grant_id, (anyio.Lock(), 0))
+        self._refresh_locks[grant_id] = (lock, users + 1)
+        acquired = False
+        try:
+            try:
+                with anyio.fail_after(self.settings.timeout):
+                    await lock.acquire()
+                acquired = True
+            except TimeoutError:
+                raise GitCodeError(
+                    "oauth_upstream_error",
+                    "GitCode authorization refresh is busy. Try again later.",
+                ) from None
+            yield
+        finally:
+            if acquired:
+                lock.release()
+            _, users = self._refresh_locks[grant_id]
+            if users == 1:
+                del self._refresh_locks[grant_id]
+            else:
+                self._refresh_locks[grant_id] = (lock, users - 1)
 
     async def aclose(self) -> None:
         if not self._closed:

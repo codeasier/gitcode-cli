@@ -51,7 +51,8 @@
       "name": "state",
       "type": "string",
       "required": false,
-      "description": "Issue 状态，reopen（开启的）、close（关闭的）"
+      "description": "Issue 状态，reopen（开启的）、close（关闭的）",
+      "enum": ["reopen", "close"]
     },
     {
       "name": "assignee",
@@ -86,8 +87,14 @@
     {
       "name": "issue_severity",
       "type": "string",
-      "required": true,
-      "description": "issue优先级（企业版支持）"
+      "required": false,
+      "description": "issue优先级（企业版支持），与类型不能同时设置"
+    },
+    {
+      "name": "issue_type",
+      "type": "string",
+      "required": false,
+      "description": "issue类型（企业版支持），与状态和优先级不能同时设置"
     },
     {
       "name": "custom_fields[].field_name",

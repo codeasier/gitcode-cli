@@ -185,6 +185,6 @@ class TestCliGhCompatibility:
         assert f"gh-compatible command/flag '{flag_name}' is recognized but not implemented yet." in result.output
 
     def test_issue_list_rejects_invalid_limit(self) -> None:
-        result = CliRunner().invoke(main, ["issue", "list", "-L", "0"])
+        result = CliRunner().invoke(main, ["issue", "list", "-L", "0", "-R", "owner/repo"])
         assert result.exit_code != 0
         assert "must be greater than 0" in result.output

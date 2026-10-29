@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__
 from .compat import CompatStatus, iter_entries
 from .errors import RepoResolutionError
-from .repo import parse_remote_url_with_host, parse_repo_with_host
+from .repo import parse_remote_url_with_host, parse_repo_with_host, parse_resource_url
 
 GITCODE_HOSTS_ENV = "GC_GITCODE_HOSTS"
 
@@ -46,11 +46,21 @@ def _target_for_host(host: str, environ: Mapping[str, str]) -> str:
 
 def _explicit_repo(argv: Sequence[str]) -> str | None:
     repo: str | None = None
+    tokens = _command_tokens(argv)
+    if tokens and tokens[0] in _RESOURCE_COMMANDS:
+        value_options = _resource_value_options(tokens[0], tokens[1] if len(tokens) > 1 else "")
+    else:
+        value_options = _REPO_VALUE_OPTIONS
     index = 0
     while index < len(argv):
         arg = argv[index]
+        if arg == "--":
+            break
         if arg in {"-R", "--repo"} and index + 1 < len(argv):
             repo = argv[index + 1]
+            index += 2
+            continue
+        if arg in value_options - {"-R", "--repo"}:
             index += 2
             continue
         if arg.startswith("--repo="):
@@ -137,11 +147,14 @@ def _positional_repo_host(argv: Sequence[str]) -> str | None:
 
 def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None) -> str:
     env = os.environ if environ is None else environ
+    resource_host = _resource_url_host(argv)
     override = env.get("GC_GH_TARGET")
     if override:
         target = override.strip().lower()
         if target not in {"gitcode", "github"}:
             raise ProxyError("GC_GH_TARGET must be 'gitcode' or 'github'.")
+        if resource_host and target != _target_for_host(resource_host, env):
+            raise ProxyError("Issue/PR URL conflicts with GC_GH_TARGET.")
         return target
 
     explicit = _explicit_repo(argv)
@@ -151,8 +164,12 @@ def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None)
         except RepoResolutionError as exc:
             raise ProxyError(str(exc)) from exc
         if host:
+            if resource_host and _normalize_host(host) != _normalize_host(resource_host):
+                raise ProxyError("Issue/PR URL host conflicts with --repo.")
             return _target_for_host(host, env)
 
+    if resource_host:
+        return _target_for_host(resource_host, env)
     positional_host = _positional_repo_host(argv)
     if positional_host:
         return _target_for_host(positional_host, env)
@@ -161,6 +178,99 @@ def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None)
     if host:
         return _target_for_host(host, env)
     return "github"
+
+
+_RESOURCE_COMMANDS = {
+    "issue": {"view", "close", "reopen", "edit", "comment", "delete", "develop"},
+    "pr": {"view", "close", "reopen", "edit", "comment", "merge", "review", "checkout", "diff", "ready", "audit"},
+}
+_RESOURCE_VALUE_OPTIONS = {
+    "-R",
+    "--repo",
+    "--json",
+    "-q",
+    "--jq",
+    "-t",
+    "--template",
+    "--title",
+    "--subject",
+    "-b",
+    "--body",
+    "-F",
+    "--body-file",
+    "-c",
+    "--comment",
+    "--branch",
+    "--base",
+    "--name",
+    "-n",
+    "--reason",
+    "--duplicate-of",
+    "--add-assignee",
+    "--remove-assignee",
+    "--add-label",
+    "--remove-label",
+    "--add-reviewer",
+    "--remove-reviewer",
+    "--milestone",
+    "-a",
+    "-l",
+    "--author-email",
+    "-A",
+    "--discussion-id",
+    "--path",
+    "--position",
+    "--line",
+    "--side",
+    "--commit-id",
+    "--commit",
+    "--state",
+    "--limit",
+    "-L",
+    "--th1",
+    "--th2",
+    "--minutes-keyword",
+}
+
+
+def _resource_value_options(group: str, command: str) -> set[str]:
+    options = set(_RESOURCE_VALUE_OPTIONS)
+    if group == "issue" and command == "close":
+        options.add("-r")
+    if command == "edit":
+        options.add("-m")
+    if command == "audit":
+        options.add("-s")
+    if group == "pr" and command == "review":
+        options -= {"-a", "-c", "--comment"}
+    return options
+
+
+def _resource_url_host(argv: Sequence[str]) -> str | None:
+    tokens = _command_tokens(argv)
+    if len(tokens) < 2 or tokens[1] not in _RESOURCE_COMMANDS.get(tokens[0], set()):
+        return None
+    group, command = tokens[:2]
+    index = list(argv).index(command, list(argv).index(group) + 1) + 1
+    value_options = _resource_value_options(group, command)
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--":
+            index += 1
+            break
+        if arg in value_options:
+            index += 2
+        elif arg.startswith("-"):
+            index += 1
+        else:
+            break
+    if index >= len(argv):
+        return None
+    try:
+        target = parse_resource_url(argv[index], group)
+    except RepoResolutionError as exc:
+        raise ProxyError(str(exc)) from exc
+    return target[0] if target else None
 
 
 def _command_tokens(argv: Sequence[str]) -> list[str]:

@@ -109,3 +109,26 @@ def test_unavailable_org_is_not_retried_in_personal_namespace(client, strict_htt
         RepoAdapter(RepoService(client)).fork_repo("owner", "repo", org="my-org")
 
     assert route.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("organization", "namespace"),
+    [
+        ("my-org", {"full_path": "my-org"}),
+        ("parent/team", {"full_path": "parent/team", "path": "team"}),
+    ],
+)
+def test_namespace_only_response_binds_success_and_clone(client, strict_http, monkeypatch, organization, namespace):
+    route = _fork_route(strict_http, organization, {"namespace": namespace})
+    monkeypatch.setattr("gitcode_cli.context.AppContext.client", lambda _: client)
+    clone = MagicMock()
+    monkeypatch.setattr("gitcode_cli.commands.repo._git_clone", clone)
+
+    result = CliRunner().invoke(
+        main, ["repo", "fork", "owner/repo", "--org", organization, "--clone"], env={"GC_TOKEN": TOKEN}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Created fork {organization}/repo" in result.output
+    clone.assert_called_once_with(f"https://gitcode.com/{organization}/repo.git")
+    assert route.call_count == 1

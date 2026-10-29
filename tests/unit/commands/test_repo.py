@@ -561,6 +561,31 @@ class TestRepoFork:
         assert "Created fork my-org/repo" in result.output
         git.assert_called_once_with(["git", "clone", "https://gitcode.com/my-org/repo.git"])
 
+    @pytest.mark.parametrize(
+        ("org", "item"),
+        [
+            ("my-org", {"namespace": {"full_path": "my-org"}}),
+            ("parent/team", {"namespace": {"full_path": "parent/team", "path": "team"}}),
+            (
+                "my-org",
+                {"full_name": "my-org/repo", "http_url_to_repo": "https://gitcode.com/personal/repo.git"},
+            ),
+        ],
+    )
+    def test_org_success_and_clone_share_the_confirmed_destination(self, runner, mock_client, org, item):
+        mock_client.post.return_value = item
+
+        with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as git:
+            result = runner.invoke(
+                main,
+                ["repo", "fork", "owner/repo", "--org", org, "--clone"],
+                env={"GC_TOKEN": "synthetic-fork-token"},
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Created fork {org}/repo" in result.output
+        git.assert_called_once_with(["git", "clone", f"https://gitcode.com/{org}/repo.git"])
+
     def test_fork_name_is_unsupported(self, runner, mock_client):
         result = runner.invoke(main, ["repo", "fork", "owner/repo", "--fork-name", "new-name"])
         assert result.exit_code != 0

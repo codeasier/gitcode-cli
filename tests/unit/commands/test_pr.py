@@ -1275,6 +1275,39 @@ class TestPrReview:
 
 
 class TestPrReopen:
+    def test_pr_reopen_posts_comment_after_state_update(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "reopen", "42", "--comment", "Ready for another review"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_client.mock_calls == [
+            call.patch("/repos/owner/repo/pulls/42", json={"state": "open"}),
+            call.post("/repos/owner/repo/pulls/42/comments", json={"body": "Ready for another review"}),
+        ]
+        assert "Reopened pull request #42" in result.output
+
+    def test_pr_reopen_failure_does_not_post_comment(self, runner, mock_client, mock_repo):
+        mock_client.patch.side_effect = APIError("Cannot reopen", status_code=403)
+        result = runner.invoke(main, ["pr", "reopen", "42", "--comment", "Retry"])
+
+        assert result.exit_code == 1
+        mock_client.post.assert_not_called()
+
+    def test_pr_reopen_comment_failure_reports_partial_success(self, runner, mock_client, mock_repo):
+        mock_client.post.side_effect = NetworkError("Connection lost")
+        result = runner.invoke(main, ["pr", "reopen", "42", "--comment", "Retry"])
+
+        assert result.exit_code == 1
+        mock_client.patch.assert_called_once()
+        assert "was reopened, but posting the comment failed" in result.output
+
+    @pytest.mark.parametrize("comment", ["", " \n"])
+    def test_pr_reopen_blank_comment_is_rejected_before_api(self, runner, mock_client, mock_repo, comment):
+        result = runner.invoke(main, ["pr", "reopen", "42", "--comment", comment])
+
+        assert result.exit_code == 2
+        mock_client.patch.assert_not_called()
+        mock_client.post.assert_not_called()
+
     def test_pr_reopen(self, runner, mock_client, mock_repo):
         mock_client.patch.return_value = {"number": 42}
         result = runner.invoke(main, ["pr", "reopen", "42"])
@@ -1346,6 +1379,68 @@ class TestPrStatus:
 
 
 class TestPrDiff:
+    @pytest.mark.parametrize("failure", [APIError("Patch unavailable", 404), NetworkError("Unavailable")])
+    def test_patch_errors_do_not_fall_back_to_diff(self, runner, mock_client, mock_repo, failure):
+        mock_client.request.side_effect = failure
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--patch"])
+
+        assert result.exit_code == 1
+        mock_client.request.assert_called_once_with(
+            "GET", "/repos/owner/repo/pulls/42/patch", accept="text/plain", response_format="text"
+        )
+        mock_client.get.assert_not_called()
+
+    def test_patch_empty_response_does_not_add_a_newline(self, runner, mock_client, mock_repo):
+        mock_client.request.return_value = None
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--patch"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    @pytest.mark.parametrize("count", [100, 101, 200])
+    def test_name_only_lists_complete_collection_including_binary_and_renamed_files(
+        self, runner, mock_client, mock_repo, count
+    ):
+        mock_client.get.return_value = [{"filename": f"src/file{i}.py"} for i in range(count - 3)] + [
+            {"filename": "assets/image.png", "binary": True},
+            {"new_path": "renamed file.txt", "old_path": "old.txt"},
+            {"old_path": "deleted.txt", "deleted_file": True},
+        ]
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == [f"src/file{i}.py" for i in range(count - 3)] + [
+            "assets/image.png",
+            "renamed file.txt",
+            "deleted.txt",
+        ]
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
+        mock_client.request.assert_not_called()
+
+    def test_name_only_empty_files_has_no_output(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only"])
+
+        assert result.exit_code == 0
+        assert result.output == ""
+
+    @pytest.mark.parametrize("files", [None, [{"filename": "valid.txt"}, {}], ["not a file"], [{"filename": 42}]])
+    def test_name_only_invalid_response_fails_without_partial_names(self, runner, mock_client, mock_repo, files):
+        mock_client.get.return_value = files
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only"])
+
+        assert result.exit_code == 1
+        assert "valid.txt" not in result.output
+        mock_client.request.assert_not_called()
+
+    def test_name_only_cannot_be_combined_with_patch(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "--patch"])
+
+        assert result.exit_code == 2
+        mock_client.get.assert_not_called()
+        mock_client.request.assert_not_called()
+
     def test_pr_diff(self, runner, mock_client, mock_repo):
         mock_client.request.return_value = "diff text"
         result = runner.invoke(main, ["pr", "diff", "42"])
@@ -1354,6 +1449,45 @@ class TestPrDiff:
 
 
 class TestPrCheckout:
+    def test_detach_checkout_failure_is_wrapped(self, runner, mock_client, mock_repo):
+        import subprocess
+
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_run.side_effect = [MagicMock(), subprocess.CalledProcessError(1, ["git", "checkout"])]
+            result = runner.invoke(main, ["pr", "checkout", "42", "--detach"])
+
+        assert result.exit_code == 1
+        assert "Git checkout failed" in result.output
+
+    def test_force_refuses_existing_unrelated_branch(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_run.side_effect = [MagicMock(), MagicMock(returncode=0), MagicMock(stdout="origin/other")]
+            result = runner.invoke(main, ["pr", "checkout", "42", "--force"])
+
+        assert result.exit_code == 1
+        assert "does not track" in result.output
+        assert not any("reset" in args.args[0] for args in mock_run.call_args_list)
+
+    def test_force_reset_failure_is_wrapped(self, runner, mock_client, mock_repo):
+        import subprocess
+
+        mock_client.get.return_value = {"head": {"ref": "feature"}}
+        with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(),
+                MagicMock(returncode=0),
+                MagicMock(stdout="origin/feature"),
+                MagicMock(),
+                subprocess.CalledProcessError(1, ["git", "reset"]),
+            ]
+            result = runner.invoke(main, ["pr", "checkout", "42", "--force"])
+
+        assert result.exit_code == 1
+        assert "Git checkout failed" in result.output
+        assert "Checked out existing" not in result.output
+
     def test_pr_checkout(self, runner, mock_client, mock_repo):
         with patch("gitcode_cli.commands.pr.subprocess.run") as mock_run:
             mock_client.get.return_value = {"number": 42, "head": {"ref": "feature-branch"}}

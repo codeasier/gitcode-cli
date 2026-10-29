@@ -29,7 +29,7 @@ Adding an unsupported behavior requires three coordinated additions: the `unsupp
 
 ## Conventions worth preserving
 
-- **User-facing list limits live here; some service methods also paginate.** `PullRequestService.list_comments`, `list_issues` and `list_files` use guarded internal pagination. Adapter list loops choose page sizes capped at 100 and stop at a short page or the requested limit. `_normalize_limit` in `pulls.py` defines the `--limit` semantics commands rely on: `None` → default 30, negative → fetch everything at 100/page, `0` → empty result, positive → capped page size with exact truncation.
+- **User-facing list limits live here; some service methods also paginate.** `PullRequestService.list_comments` and `list_issues` use guarded internal pagination; `list_files` reads one complete collection without pagination parameters. Adapter list loops choose page sizes capped at 100 and stop at a short page or the requested limit. `_normalize_limit` in `pulls.py` defines the `--limit` semantics commands rely on: `None` → default 30, negative → fetch everything at 100/page, `0` → empty result, positive → capped page size with exact truncation.
 - **`@me` resolution** (`issues.py`) needs `user_service`; adapters that receive `None` must raise a `ClickException` explaining the lookup is unavailable rather than silently skipping the filter.
 - Repository services remain credential-free: transport-specific query/header authentication belongs in the client, not the adapter or `RepoService`.
 - **Client-side filtering** is the escape hatch for API gaps: issue list labels use client-side AND filtering on returned items (the API's label filter is OR); issue edit re-reads current state via `service.get(...)` to compute replacement labels and assignees.

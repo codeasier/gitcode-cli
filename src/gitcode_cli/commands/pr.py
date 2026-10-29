@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 
 import click
 
@@ -15,11 +16,11 @@ from ..cli_compat import (
     get_fill_info,
     resolve_pr_identifier_or_current_branch,
 )
-from ..errors import GCError
+from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
-from ..services import PullRequestService
+from ..services import PullRequestService, UserService
 from ..utils import (
     get_current_git_branch,
     open_in_browser,
@@ -30,10 +31,6 @@ from ..utils import (
     safe_echo,
     safe_number,
 )
-
-
-def _pending_gh_compat(name: str) -> None:
-    raise click.ClickException(f"gh-compatible command/flag '{name}' is recognized but not implemented yet.")
 
 
 def _pr_merged_at(item: dict) -> str | None:
@@ -298,9 +295,9 @@ def pr_merge(
 @click.argument("identifier", required=False)
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
-@click.option("--create-if-none", is_flag=True)
-@click.option("--delete-last", is_flag=True)
-@click.option("--edit-last", is_flag=True)
+@click.option("--create-if-none", is_flag=True, help="Create a comment if none is found; requires --edit-last.")
+@click.option("--delete-last", is_flag=True, help="Delete your most recent ordinary pull request comment.")
+@click.option("--edit-last", is_flag=True, help="Edit your most recent ordinary pull request comment.")
 @click.option("-e", "--editor", is_flag=True)
 @click.option("-w", "--web", is_flag=True, help="Open the pull request in the web browser.")
 @click.option(
@@ -318,7 +315,7 @@ def pr_merge(
 )
 @click.option("--commit-id")
 @click.option("--commit", "commit_id")
-@click.option("--yes", is_flag=True)
+@click.option("--yes", is_flag=True, help="Skip confirmation when using --delete-last.")
 @click.pass_context
 def pr_comment(
     ctx: click.Context,
@@ -339,14 +336,25 @@ def pr_comment(
     commit_id: str | None,
     yes: bool,
 ) -> None:
-    if create_if_none:
-        _pending_gh_compat("pr comment --create-if-none")
-    if delete_last:
-        _pending_gh_compat("pr comment --delete-last")
-    if edit_last:
-        _pending_gh_compat("pr comment --edit-last")
-    if yes:
-        _pending_gh_compat("pr comment --yes")
+    history_mode = edit_last or delete_last
+    if sum([body is not None, body_file is not None, editor, web]) > 1:
+        raise click.UsageError("Specify only one of --body, --body-file, --editor, or --web.")
+    _validate_pr_comment_history_flags(
+        create_if_none=create_if_none,
+        delete_last=delete_last,
+        edit_last=edit_last,
+        yes=yes,
+        has_body_source=body is not None or body_file is not None or editor,
+        conflicting_options=(
+            discussion_id is not None
+            or path is not None
+            or position is not None
+            or line is not None
+            or ctx.get_parameter_source("side") != click.core.ParameterSource.DEFAULT
+            or commit_id is not None
+            or web
+        ),
+    )
     if discussion_id is not None:
         discussion_id = discussion_id.strip()
         if not discussion_id:
@@ -378,6 +386,11 @@ def pr_comment(
         pr_item = service.get(owner, repo, number)
         open_in_browser(pr_item["html_url"])
         return
+    if history_mode:
+        _handle_pr_comment_history(
+            service, owner, repo, number, body, body_file, editor, delete_last, create_if_none, yes
+        )
+        return
     body = get_body_from_options(body=body, body_file=body_file, editor=editor)
     body = prompt_if_missing(body, "Body")
     if discussion_id is not None:
@@ -391,6 +404,68 @@ def pr_comment(
     )
     item = service.comment(owner, repo, number, body=body, path=path, position=resolved_position)
     safe_echo(str(item["id"]))
+
+
+def _validate_pr_comment_history_flags(
+    *,
+    create_if_none: bool,
+    delete_last: bool,
+    edit_last: bool,
+    yes: bool,
+    has_body_source: bool,
+    conflicting_options: bool,
+) -> None:
+    if create_if_none and not edit_last:
+        raise click.UsageError("--create-if-none can only be used together with --edit-last.")
+    if yes and not delete_last:
+        raise click.UsageError("--yes can only be used together with --delete-last.")
+    if edit_last and delete_last:
+        raise click.UsageError("Specify only one of --edit-last or --delete-last.")
+    if delete_last and has_body_source:
+        raise click.UsageError("--delete-last cannot be used with --body, --body-file, or --editor.")
+    if (edit_last or delete_last) and conflicting_options:
+        raise click.UsageError("Comment history flags cannot be used with inline comment, discussion, or web options.")
+
+
+def _handle_pr_comment_history(
+    service: PullRequestService,
+    owner: str,
+    repo: str,
+    number: int,
+    body: str | None,
+    body_file: str | None,
+    editor: bool,
+    delete_last: bool,
+    create_if_none: bool,
+    yes: bool,
+) -> None:
+    adapter = PullRequestAdapter(service, UserService(service.client))
+    comment = adapter.last_owned_comment(owner, repo, number)
+    if comment is None and (delete_last or not create_if_none):
+        raise click.ClickException("No ordinary pull request comment from the current user was found.")
+    if delete_last:
+        assert comment is not None
+        if not yes and not click.confirm("Delete your last pull request comment?", default=False):
+            raise click.ClickException("Aborted.")
+        service.delete_comment(owner, repo, int(comment["id"]))
+        safe_echo(f"Deleted last comment on pull request #{number}")
+        return
+    if editor or (body is None and body_file is None and sys.stdin.isatty()):
+        body = click.edit((comment or {}).get("body") or "")
+        if body is None:
+            raise click.ClickException("Comment edit cancelled.")
+    else:
+        body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    if body is None:
+        raise click.UsageError("--body or --body-file is required when not running interactively.")
+    if not body.strip():
+        raise click.UsageError("Comment body must not be empty.")
+    if comment is None:
+        item = service.comment(owner, repo, number, body=body) or {}
+        safe_echo(str(item.get("id") or "Comment posted."))
+    else:
+        service.update_comment(owner, repo, int(comment["id"]), body=body)
+        safe_echo(f"Edited last comment on pull request #{number}")
 
 
 @pr_group.command("review")
@@ -455,8 +530,8 @@ def pr_review(
 @click.option("-c", "--comment")
 @click.pass_context
 def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None, comment: str | None) -> None:
-    if comment is not None:
-        _pending_gh_compat("pr reopen --comment")
+    if comment is not None and not comment.strip():
+        raise click.UsageError("--comment must not be empty.")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -464,6 +539,13 @@ def pr_reopen(ctx: click.Context, repo_name: str | None, identifier: str | None,
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
     item = service.update(owner, repo, number, state="open")
+    if comment is not None:
+        try:
+            service.comment(owner, repo, number, body=comment)
+        except GCError as exc:
+            raise click.ClickException(
+                f"Pull request #{number} was reopened, but posting the comment failed: {exc}"
+            ) from exc
     safe_echo(f"Reopened pull request #{safe_number(item, number)}")
 
 
@@ -832,29 +914,77 @@ def pr_close(
 @pr_group.command("diff")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
-@click.option("--name-only", is_flag=True)
-@click.option("--patch", is_flag=True)
+@click.option("--name-only", is_flag=True, help="Display only names of changed files.")
+@click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")
 @click.pass_context
 def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
-    if name_only:
-        _pending_gh_compat("pr diff --name-only")
-    if patch:
-        _pending_gh_compat("pr diff --patch")
+    if name_only and patch:
+        raise click.UsageError("--name-only cannot be used with --patch.")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
+    if patch:
+        output = click.open_file("-", mode="wb")
+        if output.isatty():
+            raise click.ClickException("--patch requires redirected stdout; use --patch > review.patch.")
+        # A mail patch is data: never strip ANSI bytes or translate newlines.
+        output.write(service.patch(owner, repo, int(number)).encode("utf-8"))
+        output.flush()
+        return
+    if name_only:
+        files = service.list_files(owner, repo, int(number))
+        if not isinstance(files, list):
+            raise APIError("Unable to read changed files for this pull request.")
+        paths: list[str] = []
+        for item in files:
+            path = (
+                item.get("filename") or item.get("new_path") or item.get("path") or item.get("old_path")
+                if isinstance(item, dict)
+                else None
+            )
+            if not isinstance(path, str) or not path:
+                raise APIError("Changed file response has no filename.")
+            paths.append(path)
+        if paths:
+            safe_echo("\n".join(paths))
+        return
     diff_text = service.diff(owner, repo, int(number))
     safe_echo(diff_text)
+
+
+def _fetch_checkout_head(head_ref: str, *, detach: bool, force: bool, expected_sha: str | None) -> None:
+    fetch_args = ["git", "fetch", "origin", head_ref]
+    if detach:
+        fetch_args = ["git", "fetch", "origin", f"refs/heads/{head_ref}", "--no-tags"]
+    elif force:
+        fetch_args = ["git", "fetch", "origin", f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}", "--no-tags"]
+    try:
+        subprocess.run(fetch_args, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"Git fetch failed: {exc}") from exc
+
+    if (detach or force) and expected_sha:
+        try:
+            fetched = subprocess.run(
+                ["git", "rev-parse", "--verify", "FETCH_HEAD"], capture_output=True, text=True, check=True
+            )
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Unable to verify fetched PR head: {exc}") from exc
+        if fetched.stdout.strip() != expected_sha:
+            raise click.ClickException(
+                "Fetched head does not match the PR head. Check that origin contains the PR source branch, "
+                "then retry with up-to-date PR metadata."
+            )
 
 
 @pr_group.command("checkout")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("-b", "--branch", help="Local branch name to checkout into.")
-@click.option("--detach", is_flag=True)
-@click.option("-f", "--force", is_flag=True)
+@click.option("--detach", is_flag=True, help="Check out the fetched PR head without creating a local branch.")
+@click.option("-f", "--force", is_flag=True, help="Reset a matching existing local branch to the fetched PR head.")
 @click.pass_context
 def pr_checkout(
     ctx: click.Context,
@@ -864,10 +994,6 @@ def pr_checkout(
     detach: bool,
     force: bool,
 ) -> None:
-    if detach:
-        _pending_gh_compat("pr checkout --detach")
-    if force:
-        _pending_gh_compat("pr checkout --force")
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
@@ -877,12 +1003,19 @@ def pr_checkout(
     head_ref = item.get("head", {}).get("ref")
     if not head_ref:
         raise click.ClickException("Unable to determine PR branch.")
+    if not isinstance(head_ref, str) or head_ref.startswith("-"):
+        raise click.ClickException("Invalid PR branch name.")
     local_branch = branch or head_ref
     remote_tracking = f"origin/{head_ref}"
-    try:
-        subprocess.run(["git", "fetch", "origin", head_ref], check=True)
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"Git fetch failed: {exc}") from exc
+    _fetch_checkout_head(head_ref, detach=detach, force=force, expected_sha=_pr_ref_oid(item.get("head")))
+
+    if detach:
+        try:
+            subprocess.run(["git", "checkout", "--detach", "FETCH_HEAD"], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Git checkout failed: {exc}") from exc
+        safe_echo(f"Checked out pull request #{number} with detached HEAD")
+        return
 
     existing = subprocess.run(
         ["git", "rev-parse", "--verify", f"refs/heads/{local_branch}"],
@@ -900,6 +1033,8 @@ def pr_checkout(
         if tracking.stdout.strip() == remote_tracking:
             try:
                 subprocess.run(["git", "checkout", local_branch], check=True)
+                if force:
+                    subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], check=True)
             except subprocess.CalledProcessError as exc:
                 raise click.ClickException(f"Git checkout failed: {exc}") from exc
             safe_echo(f"Checked out existing branch {local_branch} (tracking {remote_tracking})")

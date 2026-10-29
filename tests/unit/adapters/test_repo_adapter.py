@@ -254,7 +254,7 @@ class TestRepoAdapterWrite:
 
         result = adapter.fork_repo("owner", "repo", org="my-org")
 
-        assert result.item == item
+        assert result.item == {**item, "full_name": "my-org/repo"}
         service.fork.assert_called_once_with("owner", "repo", organization="my-org")
 
     def test_fork_nested_organization_uses_full_path_not_leaf_name(self, adapter, service):
@@ -274,7 +274,13 @@ class TestRepoAdapterWrite:
             [],
             {},
             {"full_name": "repo"},
+            {"full_name": "", "namespace": {"full_path": "my-org"}},
+            {"full_name": 42, "namespace": {"full_path": "my-org"}},
             {"full_name": "my-org/"},
+            {"full_name": "my-org/.."},
+            {"full_name": "my-org/repo?other"},
+            {"namespace": {"full_path": "my-org"}, "path": "../other"},
+            {"namespace": {"full_path": "my-org"}, "path": []},
             {"namespace": {"full_path": 42}},
             {"namespace": {"name": "my-org"}},
             {"full_name": "personal/repo"},

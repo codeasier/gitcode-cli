@@ -52,14 +52,14 @@ See `src/gitcode_cli/AGENTS.md` for per-module responsibilities and invariants.
 | Task | Command | Evidence |
 |---|---|---|
 | Dev install | `pip install -e ".[dev]"` | `docs/en/development.md`, `.github/CONTRIBUTING.md` |
-| Full CLI test suite (unit + contracts; excludes MCP) | `python -m pytest tests` | `pyproject.toml` `[tool.pytest.ini_options]` `testpaths = ["tests"]`; `tests/README.md` shows the maintainers' conda variant `conda run -n gitcode-cli python -m pytest tests` |
-| Unit tests only | `python -m pytest tests/unit/` | This is what `ci.yml` and pre-commit run; the separate source-compatibility workflow also runs unit + contract tests |
+| Full CLI test suite (unit + contracts + offline process e2e; excludes MCP) | `python -m pytest tests` | First install the checkout with the same interpreter; `tests/e2e/` resolves installed console scripts. `tests/README.md` also shows the maintainers' conda variant. |
+| Unit tests only | `python -m pytest tests/unit/` | Pre-commit selects unit tests; `ci.yml` selects unit + contracts + non-live e2e, and the separate source-compatibility workflow runs unit + contracts. |
 | Lint / format check | `python -m ruff check src/ tests/` and `python -m ruff format --check src/ tests/` | `ci.yml` lint job; config in `pyproject.toml` (line length 120, py39 target) |
 | Type check | `python -m basedpyright src/` | `ci.yml` typecheck job; `[tool.basedpyright]` includes only `src` |
 | CLI pre-commit checks (not MCP or contracts) | `pre-commit run --all-files` | `.pre-commit-config.yaml` (ruff, basedpyright, pytest unit with coverage gate) |
 
 - The root pytest configuration's `addopts` enable `--cov=gitcode_cli --cov-fail-under=90` plus an HTML report, so CLI pytest runs using that configuration write `.coverage` and `htmlcov/` (both gitignored) and fail below 90% coverage.
-- CLI CI (`ci.yml`) runs the unit suite on Python 3.9–3.13, plus a matrix aggregate, lint and typecheck jobs, on `main` pushes and PRs.
+- CLI CI (`ci.yml`) runs unit, contracts and offline e2e on Python 3.9–3.13, explicitly excluding `live` and `destructive`, plus a matrix aggregate, lint and typecheck jobs, on `main` pushes and PRs. Process smoke tests are not clean-wheel, live or full gh-compatibility acceptance; see `tests/README.md` for remaining #124 gates.
 
 ### MCP validation is separate
 
@@ -92,3 +92,4 @@ Use the package directory and its configuration, as `.github/workflows/gitcode-m
 | Adapter layer | [src/gitcode_cli/adapters/AGENTS.md](src/gitcode_cli/adapters/AGENTS.md) | gh-semantics translation, capability keys, `AdapterActionResult` protocol, pagination |
 | CLI tests | [tests/AGENTS.md](tests/AGENTS.md) | Test layers, focusing commands, fixtures, coverage gate, conftest contracts |
 | MCP package and operations | [packages/gitcode-mcp/README.md](packages/gitcode-mcp/README.md), [docs/gitcode/README.md](docs/gitcode/README.md) | Independent installation, authentication, migration and deployment boundaries |
+

@@ -62,57 +62,48 @@ class TestPullRequestService:
         mock_client.get.return_value = [{"filename": "tests/foo_test.py", "additions": "3", "deletions": "1"}]
         result = service.list_files("owner", "repo", 42)
 
-        mock_client.get.assert_called_once_with(
-            "/repos/owner/repo/pulls/42/files",
-            params={"page": 1, "per_page": 100},
-        )
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
         assert result[0]["filename"] == "tests/foo_test.py"
 
-    def test_list_files_fetches_all_pages(self, service, mock_client):
-        first_page = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
-        second_page = [{"filename": "tests/foo_test.py", "additions": 2, "deletions": 1}]
-        mock_client.get.side_effect = [first_page, second_page]
+    @pytest.mark.parametrize("count", [100, 101, 200])
+    def test_list_files_reads_complete_collection_once(self, service, mock_client, count):
+        files = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(count)]
+        mock_client.get.return_value = files
 
         result = service.list_files("owner", "repo", 42)
 
-        assert result == [*first_page, *second_page]
-        assert mock_client.get.call_args_list == [
-            call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
-            call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
-        ]
+        assert result == files
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
 
-    def test_list_files_raises_when_page_repeats(self, service, mock_client):
-        repeated = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
+    def test_list_comments_raises_when_page_repeats(self, service, mock_client):
+        repeated = [{"id": i} for i in range(100)]
         mock_client.get.side_effect = [repeated, repeated]
 
         with pytest.raises(APIError, match="Repeated pagination response"):
-            service.list_files("owner", "repo", 42)
+            service.list_comments("owner", "repo", 42)
 
         assert mock_client.get.call_args_list == [
-            call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
-            call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
+            call("/repos/owner/repo/pulls/42/comments", params={"page": 1, "per_page": 100}),
+            call("/repos/owner/repo/pulls/42/comments", params={"page": 2, "per_page": 100}),
         ]
 
-    def test_list_files_raises_when_first_page_is_not_a_list(self, service, mock_client):
+    def test_list_files_raises_when_collection_is_not_a_list(self, service, mock_client):
         mock_client.get.return_value = {"message": "oops"}
 
-        with pytest.raises(APIError, match="Unexpected pagination response"):
+        with pytest.raises(APIError, match="Unexpected changed files response"):
             service.list_files("owner", "repo", 42)
 
-    def test_list_files_raises_when_first_page_is_empty_object(self, service, mock_client):
+    def test_list_files_raises_when_collection_is_empty_object(self, service, mock_client):
         mock_client.get.return_value = {}
 
-        with pytest.raises(APIError, match="Unexpected pagination response"):
+        with pytest.raises(APIError, match="Unexpected changed files response"):
             service.list_files("owner", "repo", 42)
 
-    def test_list_files_raises_when_page_limit_reached(self, service, mock_client):
-        mock_client.get.side_effect = [
-            [{"filename": f"p{page}_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
-            for page in range(1, 101)
-        ]
+    def test_list_comments_raises_when_page_limit_reached(self, service, mock_client):
+        mock_client.get.side_effect = [[{"id": page * 100 + i} for i in range(100)] for page in range(1, 101)]
 
         with pytest.raises(APIError, match="Pagination limit exceeded"):
-            service.list_files("owner", "repo", 42)
+            service.list_comments("owner", "repo", 42)
 
         assert mock_client.get.call_count == 100
 
@@ -209,12 +200,12 @@ class TestPullRequestService:
             call("/repos/owner/repo/pulls/42/comments", params={"page": 2, "per_page": 100}),
         ]
 
-    def test_list_files_raises_when_later_page_is_not_a_list(self, service, mock_client):
-        first_page = [{"filename": f"src/file_{i}.py", "additions": 1, "deletions": 0} for i in range(100)]
-        mock_client.get.side_effect = [first_page, {"message": "oops"}]
+    @pytest.mark.parametrize("method", ["list_files", "list_comments"])
+    def test_unavailable_collection_remains_none(self, service, mock_client, method):
+        mock_client.get.return_value = None
 
-        with pytest.raises(APIError, match="page 2"):
-            service.list_files("owner", "repo", 42)
+        assert getattr(service, method)("owner", "repo", 42) is None
+        mock_client.get.assert_called_once()
 
     def test_diff_returns_empty_string_for_none(self, service, mock_client):
         mock_client.request.return_value = None

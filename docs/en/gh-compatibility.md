@@ -60,7 +60,7 @@ gc pr checkout 42 --detach
 gc pr checkout 42 --force
 ```
 
-`--template` uses the CLI's existing Go-template subset. `pr diff --name-only` reads all pages of the changed-files API, including binary, renamed, and deleted files. `pr reopen --comment` posts the comment after reopening; if commenting fails, the command exits unsuccessfully and reports that the PR was already reopened.
+`--template` uses the CLI's existing Go-template subset. `pr diff --name-only` reads the complete changed-files collection in one request, including binary, renamed, and deleted files. The [changed-files endpoint](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-files/) has no documented pagination parameters. `pr reopen --comment` posts the comment after reopening; if commenting fails, the command exits unsuccessfully and reports that the PR was already reopened.
 
 PR checkout expects the source branch on `origin`. `--detach` checks out the freshly fetched head without creating or resetting a local branch. `--force` resets an existing branch only when it tracks the matching `origin` branch, discarding its local commits and tracked working-tree changes; an unrelated existing branch is still rejected. When the API provides a head SHA, both flags check that it matches `FETCH_HEAD` before changing the local checkout. A fork/source mismatch or a head updated between the API read and fetch is reported as an error.
 

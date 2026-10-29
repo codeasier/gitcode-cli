@@ -419,7 +419,7 @@ ENTRIES: list[CompatEntry] = [
         "pr diff",
         "--name-only",
         CompatStatus.IMPLEMENTED,
-        "Uses the paginated changed-files API, including binary and renamed files",
+        "Reads the complete changed-files collection in one request, including binary and renamed files",
     ),
     _e(
         "pr diff",

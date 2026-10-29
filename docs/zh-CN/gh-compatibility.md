@@ -60,7 +60,7 @@ gc pr checkout 42 --detach
 gc pr checkout 42 --force
 ```
 
-`--template` 复用 CLI 已有的 Go template 子集。`pr diff --name-only` 读取文件变更 API 的全部分页，包含二进制、重命名和删除的文件。`pr reopen --comment` 先重开 PR 再发表评论；评论失败时命令以失败退出，并明确报告 PR 已重开。
+`--template` 复用 CLI 已有的 Go template 子集。`pr diff --name-only` 通过单次请求读取完整文件变更集合，包含二进制、重命名和删除的文件。[文件变更端点](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number-files/)未声明分页参数。`pr reopen --comment` 先重开 PR 再发表评论；评论失败时命令以失败退出，并明确报告 PR 已重开。
 
 PR checkout 要求源分支位于 `origin`。`--detach` 检出刚拉取的 head，不创建或重置本地分支。`--force` 只重置跟踪对应 `origin` 分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改；已有无关分支仍会被拒绝。当 API 提供 head SHA 时，这两个参数会在改变本地检出状态前核对它与 `FETCH_HEAD` 是否一致。fork／源仓库不匹配或 API 查询到拉取之间 head 已更新时，会明确报错。
 

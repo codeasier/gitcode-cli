@@ -1301,27 +1301,24 @@ class TestPrDiff:
         assert result.exit_code == 0
         assert result.output == ""
 
-    def test_name_only_lists_all_pages_including_binary_and_renamed_files(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            [{"filename": f"src/file{i}.py"} for i in range(98)]
-            + [
-                {"filename": "assets/image.png", "binary": True},
-                {"new_path": "renamed file.txt", "old_path": "old.txt"},
-            ],
-            [{"old_path": "deleted.txt", "deleted_file": True}],
+    @pytest.mark.parametrize("count", [100, 101, 200])
+    def test_name_only_lists_complete_collection_including_binary_and_renamed_files(
+        self, runner, mock_client, mock_repo, count
+    ):
+        mock_client.get.return_value = [{"filename": f"src/file{i}.py"} for i in range(count - 3)] + [
+            {"filename": "assets/image.png", "binary": True},
+            {"new_path": "renamed file.txt", "old_path": "old.txt"},
+            {"old_path": "deleted.txt", "deleted_file": True},
         ]
         result = runner.invoke(main, ["pr", "diff", "42", "--name-only"])
 
         assert result.exit_code == 0, result.output
-        assert result.output.splitlines() == [f"src/file{i}.py" for i in range(98)] + [
+        assert result.output.splitlines() == [f"src/file{i}.py" for i in range(count - 3)] + [
             "assets/image.png",
             "renamed file.txt",
             "deleted.txt",
         ]
-        assert mock_client.get.call_args_list == [
-            call("/repos/owner/repo/pulls/42/files", params={"page": 1, "per_page": 100}),
-            call("/repos/owner/repo/pulls/42/files", params={"page": 2, "per_page": 100}),
-        ]
+        mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
         mock_client.request.assert_not_called()
 
     def test_name_only_empty_files_has_no_output(self, runner, mock_client, mock_repo):

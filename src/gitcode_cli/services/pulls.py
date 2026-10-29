@@ -43,7 +43,12 @@ class PullRequestService:
         return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/issues")
 
     def list_files(self, owner: str, repo: str, number: int) -> Any | None:
-        return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/files")
+        # This endpoint returns one collection and has no documented pagination parameters.
+        path = f"/repos/{owner}/{repo}/pulls/{number}/files"
+        result = self.client.get(path)
+        if result is not None and not isinstance(result, list):
+            raise APIError(f"Unexpected changed files response for {path}")
+        return result
 
     def create(self, owner: str, repo: str, **data: Any) -> Any | None:
         return self.client.post(f"/repos/{owner}/{repo}/pulls", json={k: v for k, v in data.items() if v is not None})

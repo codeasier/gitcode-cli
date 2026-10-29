@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试。
 - 补齐剩余 5 项占位参数：`pr comment --edit-last/--create-if-none/--delete-last/--yes` 仅管理当前用户最新普通评论，验证完整历史与归属并默认确认删除；`pr diff --patch` 返回服务端按提交划分的邮件格式补丁，拒绝非补丁响应。
 
+### Fixed
+
+- PR 文件变更集合改为按官方契约单次读取，避免 `pr diff --name-only` 与审计在返回 100 个或更多文件时误判为重复分页而失败。
+
 ## [0.1.7] - 2026-10-29
 
 本次发布新增 `gc repo` 仓库命令组，补齐 `gh` 的仓库管理能力，并引入文件读写服务基元与独立维护的 GitCode MCP 运行时，让仓库操作与 MCP 集成场景更完整。

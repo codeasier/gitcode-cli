@@ -84,8 +84,13 @@ installs the actual CLI wheel and sdist on Python 3.11–3.13, verifies their ha
 and installed origin, and runs both `tests/` and `tests_source/` in isolation.
 Separately,
 `gitcode-mcp-services.yml` installs the CLI checkout with `--no-deps`, verifies all
-installed client/service hashes, and explicitly runs `tests_source/` alongside
-the full MCP suite. That forward-compatibility probe does not change the exact
+installed client/service hashes, and explicitly runs `tests_source/` and
+`tests_checkout/` alongside the full MCP suite. The latter directory tests
+unreleased repository branch/tree/commit primitives directly with MCP's
+transport, not production tool delegation. It is excluded from normal pinned
+tests and the published `0.1.7` artifact matrix. Production consumption requires
+a separately authorized CLI release, real artifact validation and a subsequent
+consumer change. That forward-compatibility probe does not change the exact
 production pin or authorize consuming unreleased services. Migration acceptance
 keeps the immutable legacy MCP `0.3.0` / `pygitcode==0.1.6` installation for seed
 and rollback; candidate checks require `pygitcode==0.1.7` even though its MCP

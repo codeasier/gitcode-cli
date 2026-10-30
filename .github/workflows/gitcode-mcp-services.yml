@@ -72,8 +72,8 @@ jobs:
               assert hashlib.sha256((installed / path).read_bytes()).digest() == hashlib.sha256((source / path).read_bytes()).digest(), path
           print(f'Verified {len(expected)} installed client/service files against the checkout')
           PY
-      - name: Run full MCP and checkout-only service contracts without real GitCode requests
-        run: python -I -m pytest -c pyproject.toml tests tests_source
+      - name: Run full MCP, published-service and checkout-only contracts without real GitCode requests
+        run: python -I -m pytest -c pyproject.toml tests tests_source tests_checkout
 
   cli-contracts:
     name: CLI unit and API contracts

@@ -183,12 +183,15 @@ def test_status_errors_keep_their_safe_codes_and_rate_limit_metadata(operation, 
             read(api, operation)
 
     assert len(requests) == 1
-    assert raised.value.code == {
-        401: "authentication_failed",
-        403: "permission_denied",
-        404: "not_found",
-        429: "rate_limited",
-    }[status]
+    assert (
+        raised.value.code
+        == {
+            401: "authentication_failed",
+            403: "permission_denied",
+            404: "not_found",
+            429: "rate_limited",
+        }[status]
+    )
     assert raised.value.status_code == status
     assert raised.value.retry_after == (17 if status == 429 else None)
     assert TOKEN not in json.dumps(raised.value.to_dict())

@@ -92,9 +92,13 @@ Separately,
 `gitcode-mcp-services.yml` installs the CLI checkout with `--no-deps`, verifies all
 installed client/service hashes, and explicitly runs `tests_source/` and
 `tests_checkout/` alongside the full MCP suite. The latter directory tests
-unreleased repository branch/tree/commit primitives directly with MCP's
-transport, not production tool delegation. It is excluded from normal pinned
-tests and the published `0.1.7` artifact matrix. Production consumption requires
+unreleased repository branch/tree/commit primitives, Issue/PR single-page reads
+and the raw structured-diff envelope directly with MCP's transport, not production
+tool delegation. The Issue/PR primitives make one request and leave pagination,
+shape validation and result envelopes to consumers. Existing eager comments,
+files collection and text diff methods are unchanged. The checkout-only tests
+are excluded from normal pinned tests and the published `0.1.7` artifact matrix.
+Production consumption requires
 a separately authorized CLI release, real artifact validation and a subsequent
 consumer change. That forward-compatibility probe does not change the exact
 production pin or authorize consuming unreleased services. Migration acceptance

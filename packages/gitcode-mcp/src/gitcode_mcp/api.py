@@ -11,6 +11,7 @@ from gitcode_cli.client import GitCodeClient
 from gitcode_cli.services.files import FileService
 from gitcode_cli.services.issues import IssueService
 from gitcode_cli.services.pulls import PullRequestService
+from gitcode_cli.services.repos import RepoService
 
 API_BASE_URL = "https://api.gitcode.com/api/v5/"
 
@@ -95,6 +96,7 @@ class GitCodeAPI(GitCodeClient):
         self.issues = IssueService(self)
         self.pulls = PullRequestService(self)
         self.files = FileService(self)
+        self.repos = RepoService(self)
 
     def close(self) -> None:
         self._client.close()

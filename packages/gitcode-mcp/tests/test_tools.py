@@ -5,6 +5,7 @@ from urllib.parse import quote
 import httpx
 import pytest
 from gitcode_cli.services.files import FileService
+from gitcode_cli.services.repos import RepoService
 
 from gitcode_mcp.api import GitCodeAPI, GitCodeError
 from gitcode_mcp.tools import GitCodeTools
@@ -25,6 +26,19 @@ def catalog(response=None, *, read_only=False, allowed=()):
 
     with GitCodeAPI(TOKEN, transport=httpx.MockTransport(handler)) as api:
         yield GitCodeTools(api, allowed_repositories=allowed, read_only=read_only), requests
+
+
+@pytest.fixture
+def repo_get_calls(monkeypatch):
+    calls = []
+    original = RepoService.get
+
+    def delegate(service, owner, repo):
+        calls.append((service, owner, repo))
+        return original(service, owner, repo)
+
+    monkeypatch.setattr(RepoService, "get", delegate)
+    return calls
 
 
 def test_catalog_has_focused_schemas_and_explicit_annotations():
@@ -216,19 +230,115 @@ def test_unpaged_endpoints_slice_one_bounded_response_explicitly(name, extra, su
     assert last["next_page"] is None
 
 
-def test_clone_info_does_not_return_server_paths_or_credential_urls():
+@pytest.mark.parametrize("tool", ["get_repository", "get_clone_info"])
+def test_repository_reads_delegate_to_installed_service_with_bearer_only_transport(
+    tool, repo_get_calls
+):
     response = {
         "default_branch": "main",
         "clone_url": f"https://user:{TOKEN}@wrong.example/repo.git",
+        "data": [TOKEN],
     }
-    with catalog(response) as (tools, requests):
-        result = tools.call("gitcode_get_clone_info", REPOSITORY)["data"]
+    with catalog(response, read_only=True, allowed=["team/project"]) as (tools, requests):
+        result = tools.call(f"gitcode_{tool}", REPOSITORY)
+    assert repo_get_calls == [(tools.api.repos, "team", "project")]
+    assert tools.api.repos.client is tools.api
     assert len(requests) == 1
-    assert result["https_url"] == "https://gitcode.com/team/project.git"
-    assert result["ssh_url"] == "git@gitcode.com:team/project.git"
-    assert result["cloned"] is False
-    assert "same execution environment" in result["execution_note"]
+    request = requests[0]
+    assert request.method == "GET"
+    assert request.url == "https://api.gitcode.com/api/v5/repos/team/project"
+    assert not request.url.params
+    assert request.content == b""
+    assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+    assert request.headers["Accept"] == "application/json"
+    assert "private-token" not in request.headers
+    assert TOKEN not in str(request.url)
+    assert result["repository"] == "team/project"
     assert TOKEN not in json.dumps(result)
+    if tool == "get_repository":
+        assert result["data"] == {
+            "default_branch": "main",
+            "clone_url": "https://user:[REDACTED]@wrong.example/repo.git",
+            "data": ["[REDACTED]"],
+        }
+    else:
+        metadata = result["data"]
+        assert metadata["https_url"] == "https://gitcode.com/team/project.git"
+        assert metadata["ssh_url"] == "git@gitcode.com:team/project.git"
+        assert metadata["default_branch"] == "main"
+        assert metadata["cloned"] is False
+        assert "same execution environment" in metadata["execution_note"]
+        assert "never embed a token" in metadata["authentication_note"]
+        assert "wrong.example" not in json.dumps(metadata)
+
+
+@pytest.mark.parametrize("tool", ["get_repository", "get_clone_info"])
+@pytest.mark.parametrize(
+    ("arguments", "code"),
+    [
+        ({"owner": "team/other", "repo": "project"}, "invalid_arguments"),
+        ({**REPOSITORY, "repo": "project.git"}, "invalid_arguments"),
+        ({**REPOSITORY, "repo": "%2e%2e"}, "invalid_arguments"),
+        ({**REPOSITORY, "access_token": TOKEN}, "invalid_arguments"),
+        ({**REPOSITORY, "owner": "Team"}, "repository_not_allowed"),
+    ],
+)
+def test_repository_read_preflight_rejects_before_service_or_transport(
+    tool, arguments, code, repo_get_calls
+):
+    with catalog(allowed=["team/project"]) as (tools, requests):
+        with pytest.raises(GitCodeError) as raised:
+            tools.call(f"gitcode_{tool}", arguments)
+    assert raised.value.code == code
+    assert TOKEN not in str(raised.value)
+    assert repo_get_calls == []
+    assert requests == []
+
+
+@pytest.mark.parametrize("tool", ["get_repository", "get_clone_info"])
+@pytest.mark.parametrize("metadata", [None, [], "not an object", False])
+def test_repository_reads_preserve_metadata_shape_policy(tool, metadata, repo_get_calls):
+    with catalog(lambda _: httpx.Response(200, content=json.dumps(metadata))) as (
+        tools,
+        requests,
+    ):
+        if tool == "get_clone_info":
+            with pytest.raises(GitCodeError) as raised:
+                tools.call(f"gitcode_{tool}", REPOSITORY)
+            assert raised.value.code == "invalid_response"
+        else:
+            assert tools.call(f"gitcode_{tool}", REPOSITORY) == {
+                "repository": "team/project",
+                "data": metadata,
+            }
+    assert repo_get_calls == [(tools.api.repos, "team", "project")]
+    assert len(requests) == 1
+
+
+def test_clone_info_keeps_missing_default_branch_as_none(repo_get_calls):
+    with catalog({}) as (tools, requests):
+        result = tools.call("gitcode_get_clone_info", REPOSITORY)
+    assert result["data"]["default_branch"] is None
+    assert repo_get_calls == [(tools.api.repos, "team", "project")]
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("tool", ["get_repository", "get_clone_info"])
+@pytest.mark.parametrize(
+    ("status", "code"), [(403, "permission_denied"), (200, "invalid_response")]
+)
+def test_repository_read_errors_remain_redacted_without_retry(tool, status, code, repo_get_calls):
+    with catalog(lambda _: httpx.Response(status, content=f"not JSON {TOKEN}")) as (
+        tools,
+        requests,
+    ):
+        with pytest.raises(GitCodeError) as raised:
+            tools.call(f"gitcode_{tool}", REPOSITORY)
+    assert repo_get_calls == [(tools.api.repos, "team", "project")]
+    assert len(requests) == 1
+    assert raised.value.code == code
+    assert "operation_may_have_completed" not in raised.value.to_dict()
+    assert TOKEN not in json.dumps(raised.value.to_dict())
 
 
 def test_branch_names_are_encoded_as_one_segment():

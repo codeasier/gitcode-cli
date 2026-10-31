@@ -79,6 +79,12 @@ service receives decoded paths and quotes them exactly once, then uses MCP's
 bounded bearer-only transport. No tool, schema, retry, automatic SHA refresh or
 multi-file atomicity is added.
 
+The existing `gitcode_get_repository` and `gitcode_get_clone_info` tools also
+delegate their single metadata read to the installed `RepoService.get`. MCP
+retains repository validation and allowlists, bearer-only transport, response
+redaction, and credential-free clone URLs. This does not add tools or consume
+unreleased CLI service methods.
+
 Normal tests exercise this published dependency. A separate artifact matrix
 installs the actual CLI wheel and sdist on Python 3.11–3.13, verifies their hashes
 and installed origin, and runs both `tests/` and `tests_source/` in isolation.

@@ -583,7 +583,7 @@ class GitCodeTools:
             if isinstance(data.get(field), list):
                 data[field] = ",".join(data[field])
         if action in {"get_repository", "get_clone_info"}:
-            repository = self.api.get(prefix)
+            repository = self.api.repos.get(owner, repo)
             if action == "get_repository":
                 return {"data": repository}
             if not isinstance(repository, dict):

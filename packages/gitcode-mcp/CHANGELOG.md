@@ -5,6 +5,8 @@ A source entry is not evidence that the version has been published to PyPI.
 
 ## [Unreleased]
 
+- Delegate existing repository and clone-metadata reads to the published
+  `RepoService.get`, preserving MCP authorization, transport and result behavior.
 - Pin the published `pygitcode==0.1.7` and delegate existing file tools to its
   `FileService`, preserving MCP validation, bearer transport and result semantics.
 - Keep legacy migration seed and rollback on MCP `0.3.0` / `pygitcode==0.1.6`;

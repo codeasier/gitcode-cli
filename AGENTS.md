@@ -11,7 +11,7 @@ This repository contains two independently installable Python distributions:
 | `pygitcode` | `src/gitcode_cli/`, root `pyproject.toml` | Python >= 3.9; `click` and `httpx`; provides `gc` / `gitcode`, modeled after GitHub's `gh` CLI. |
 | `codeasier-gitcode-mcp` | `packages/gitcode-mcp/` and its own `pyproject.toml` | Python >= 3.11; provides `gitcode-mcp` / `gitcode-clone`; separately versioned and currently pins the published `pygitcode==0.1.7`. |
 
-A root editable install or root test run does not install or validate the MCP package. Do not assume MCP imports the sibling CLI checkout: its API layer subclasses `GitCodeClient` and reuses `IssueService` / `PullRequestService` / `FileService` from its installed dependency. MCP retains its stricter file-path validation, content/result policies and bounded bearer-only transport; services receive decoded paths and quote them once. Keep transport signatures compatible with downstream overrides when changing the CLI client.
+A root editable install or root test run does not install or validate the MCP package. Do not assume MCP imports the sibling CLI checkout: its API layer subclasses `GitCodeClient` and reuses `IssueService` / `PullRequestService` / `FileService` / `RepoService` from its installed dependency. MCP retains its stricter file-path validation, content/result policies and bounded bearer-only transport; services receive decoded paths and quote them once. Keep transport signatures compatible with downstream overrides when changing the CLI client.
 
 ## Architecture and data flow
 

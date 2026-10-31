@@ -79,20 +79,29 @@ service receives decoded paths and quotes them exactly once, then uses MCP's
 bounded bearer-only transport. No tool, schema, retry, automatic SHA refresh or
 multi-file atomicity is added.
 
+The existing `gitcode_get_repository` and `gitcode_get_clone_info` tools also
+delegate their single metadata read to the installed `RepoService.get`. MCP
+retains repository validation and allowlists, bearer-only transport, response
+redaction, and credential-free clone URLs. This does not add tools or consume
+unreleased CLI service methods.
+
 Normal tests exercise this published dependency. A separate artifact matrix
 installs the actual CLI wheel and sdist on Python 3.11–3.13, verifies their hashes
 and installed origin, and runs both `tests/` and `tests_source/` in isolation.
 Separately,
 `gitcode-mcp-services.yml` installs the CLI checkout with `--no-deps`, verifies all
 installed client/service hashes, and explicitly runs `tests_source/` and
-`tests_checkout/` alongside the full MCP suite. Unreleased Issue/PR single-page
-reads and the raw structured-diff envelope are tested only in `tests_checkout/`;
-normal tests and the published-artifact matrix do not select that directory.
-The new primitives make one request and leave pagination, shape validation and
-result envelopes to consumers. Existing eager comments, files collection and
-text diff methods are unchanged; no production MCP tool consumes the new methods.
-That forward-compatibility probe does not change the exact production pin or
-authorize consuming unreleased services. Migration acceptance
+`tests_checkout/` alongside the full MCP suite. The latter directory tests
+unreleased repository branch/tree/commit primitives, Issue/PR single-page reads
+and the raw structured-diff envelope directly with MCP's transport, not production
+tool delegation. The Issue/PR primitives make one request and leave pagination,
+shape validation and result envelopes to consumers. Existing eager comments,
+files collection and text diff methods are unchanged. The checkout-only tests
+are excluded from normal pinned tests and the published `0.1.7` artifact matrix.
+Production consumption requires
+a separately authorized CLI release, real artifact validation and a subsequent
+consumer change. That forward-compatibility probe does not change the exact
+production pin or authorize consuming unreleased services. Migration acceptance
 keeps the immutable legacy MCP `0.3.0` / `pygitcode==0.1.6` installation for seed
 and rollback; candidate checks require `pygitcode==0.1.7` even though its MCP
 version is also `0.3.0`.

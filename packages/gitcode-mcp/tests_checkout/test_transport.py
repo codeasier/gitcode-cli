@@ -2,8 +2,8 @@
 
 import httpx
 import pytest
-
 from gitcode_cli.transport import ResponseTooLargeError, read_response_bytes
+
 from gitcode_mcp.api import GitCodeAPI
 
 

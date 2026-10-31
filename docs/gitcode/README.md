@@ -49,6 +49,11 @@ A dot's cloud computer, a connected computer, a delegated Codex cloud task, and 
 - For public OAuth mode: a registered GitCode OAuth application, distinct MCP client credentials, a public HTTPS origin and persistent encrypted state.
 - Separate Git credentials in any environment that performs authenticated native Git operations.
 
+## Architecture
+
+For the shared response-reader producer and the CLI/MCP policies that remain separate,
+see [Shared transport boundaries](transport-boundaries.md).
+
 ## Release boundary
 
 This repository supplies the runtime source, tests and deployment instructions; local Codex plugin packaging remains in [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode). The source move does not publish a PyPI release or deploy an existing service. A Git commit or marketplace installation does not deploy HTTPS, register a GitCode OAuth application, configure user credentials or prove a live dot connection. Automated OAuth tests use mocked upstream endpoints. Complete the actual public HTTP authorization and a read through your ChatGPT connection before enabling the intended write workflow; a stdio smoke check does not verify that route.

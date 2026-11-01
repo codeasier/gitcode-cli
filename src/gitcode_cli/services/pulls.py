@@ -138,6 +138,18 @@ class PullRequestService:
     def list_comments(self, owner: str, repo: str, number: int) -> Any | None:
         return self._paginate(f"/repos/{owner}/{repo}/pulls/{number}/comments")
 
+    def list_comments_page(self, owner: str, repo: str, number: int, **params: Any) -> Any | None:
+        """Read one comments page without the legacy method's eager pagination."""
+        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/comments", params=params)
+
+    def list_commits_page(self, owner: str, repo: str, number: int, **params: Any) -> Any | None:
+        """Read one commits page; callers own pagination and result validation."""
+        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/commits", params=params)
+
+    def structured_diff(self, owner: str, repo: str, number: int) -> Any | None:
+        """Read the raw files.json envelope, distinct from files and text diff."""
+        return self.client.get(f"/repos/{owner}/{repo}/pulls/{number}/files.json")
+
     def update_comment(self, owner: str, repo: str, comment_id: int, body: str) -> Any | None:
         return self.client.patch(f"/repos/{owner}/{repo}/pulls/comments/{comment_id}", json={"body": body})
 

@@ -54,7 +54,7 @@ jobs:
           python -m pip install -e '.[dev]'
           # Compatibility probe only: the published MCP dependency remains 0.1.7.
           python -m pip install --no-deps --force-reinstall "$GITHUB_WORKSPACE"
-      - name: Verify the client and every service came from this checkout
+      - name: Verify the client, response reader and every service came from this checkout
         run: |
           python -I - <<'PY'
           import hashlib
@@ -65,12 +65,12 @@ jobs:
           source = Path(os.environ['GITHUB_WORKSPACE']) / 'src/gitcode_cli'
           installed = Path(gitcode_cli.client.__file__).resolve().parent
           assert installed != source.resolve(), 'Expected an isolated distribution install'
-          expected = {Path('client.py'), *(p.relative_to(source) for p in (source / 'services').rglob('*.py'))}
-          actual = {Path('client.py'), *(p.relative_to(installed) for p in (installed / 'services').rglob('*.py'))}
+          expected = {Path('client.py'), Path('transport.py'), *(p.relative_to(source) for p in (source / 'services').rglob('*.py'))}
+          actual = {Path('client.py'), Path('transport.py'), *(p.relative_to(installed) for p in (installed / 'services').rglob('*.py'))}
           assert actual == expected, (actual, expected)
           for path in sorted(expected):
               assert hashlib.sha256((installed / path).read_bytes()).digest() == hashlib.sha256((source / path).read_bytes()).digest(), path
-          print(f'Verified {len(expected)} installed client/service files against the checkout')
+          print(f'Verified {len(expected)} installed client/transport/service files against the checkout')
           PY
       - name: Run full MCP, published-service and checkout-only contracts without real GitCode requests
         run: python -I -m pytest -c pyproject.toml tests tests_source tests_checkout

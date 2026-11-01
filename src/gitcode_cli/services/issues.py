@@ -29,6 +29,10 @@ class IssueService:
     def list_comments(self, owner: str, repo: str, number: str) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/issues/{number}/comments")
 
+    def list_comments_page(self, owner: str, repo: str, number: str, **params: Any) -> Any | None:
+        """Read one comments page; callers own pagination and result validation."""
+        return self.client.get(f"/repos/{owner}/{repo}/issues/{number}/comments", params=params)
+
     def list_all_comments(self, owner: str, repo: str, number: str) -> list[Any]:
         """Collect complete comments or raise; leave the legacy single-page method unchanged."""
         return collect_pages(self.client, f"/repos/{owner}/{repo}/issues/{number}/comments")

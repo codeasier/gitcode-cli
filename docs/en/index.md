@@ -10,3 +10,6 @@
 - [Test architecture](../../tests/README.md) — test layers and intent
 - [Roadmap](../../ROADMAP.md) — planned features and remaining gaps
 - [Compatibility notes](gh-compatibility.md) — aligned `gh` behaviors and GitCode differences
+- [Global search](global-search.md)
+- [Repository task labels](task-labels.md)
+- [Organizations and discussions](community-commands.md)

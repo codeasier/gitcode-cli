@@ -41,6 +41,51 @@ def _e(
 
 ENTRIES: list[CompatEntry] = [
     _e("api", None, CompatStatus.IMPLEMENTED, "GitCode JSON REST v5/v8, not GraphQL.", proxy_allowed=False),
+    # Discovery and community commands are direct-only until proxy routing is audited.
+    _e(
+        "search repos", None, CompatStatus.IMPLEMENTED, "GitCode global repository keyword search.", proxy_allowed=False
+    ),
+    _e("search issues", None, CompatStatus.IMPLEMENTED, "GitCode global issue keyword search.", proxy_allowed=False),
+    _e(
+        "search prs",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Global PR keyword search, not gh qualifiers.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "search users",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode global user search.",
+        proxy_allowed=False,
+        gc_extension=True,
+    ),
+    _e("search code", None, CompatStatus.NOT_IN_CLI, "No documented global code-search endpoint.", proxy_allowed=False),
+    _e(
+        "search commits",
+        None,
+        CompatStatus.NOT_IN_CLI,
+        "No documented global commit-search endpoint.",
+        proxy_allowed=False,
+    ),
+    _e("label list", None, CompatStatus.IMPLEMENTED, "GitCode repository task labels.", proxy_allowed=False),
+    _e("label create", None, CompatStatus.IMPLEMENTED, "Name/color only; no description.", proxy_allowed=False),
+    _e("label edit", None, CompatStatus.IMPLEMENTED, "Update exact task label name/color.", proxy_allowed=False),
+    _e("label delete", None, CompatStatus.IMPLEMENTED, "Remove a task label and verify absence.", proxy_allowed=False),
+    _e("label clone", None, CompatStatus.IMPLEMENTED, "Additive cross-repository copy.", proxy_allowed=False),
+    _e("org list", None, CompatStatus.IMPLEMENTED, "Authenticated user's GitCode organizations.", proxy_allowed=False),
+    _e("discussion list", None, CompatStatus.IMPLEMENTED, "Repository discussions.", proxy_allowed=False),
+    _e(
+        "discussion view",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Discussion and optional top-level comments.",
+        proxy_allowed=False,
+    ),
+    _e("discussion create", None, CompatStatus.IMPLEMENTED, "Create in an existing category.", proxy_allowed=False),
+    _e("discussion edit", None, CompatStatus.IMPLEMENTED, "GitCode v5 full update.", proxy_allowed=False),
+    _e("discussion comment", None, CompatStatus.IMPLEMENTED, "Add a top-level comment.", proxy_allowed=False),
     _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
     _e(
         "run view",

@@ -137,10 +137,6 @@
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
-          "org": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
           "project": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
@@ -193,10 +189,6 @@
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
-          "label": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
           "licenses": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
@@ -206,10 +198,6 @@
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
           "ruleset": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
-          "search": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
@@ -231,6 +219,11 @@
           }
         },
         "additional_commands": {
+          "discussion": {
+            "category": "extension",
+            "reason": "gc exposes the GitCode repository discussion API.",
+            "value": "Work with platform repository discussions"
+          },
           "compat": {
             "category": "extension",
             "reason": "gc exposes its own compatibility registry report.",
@@ -252,6 +245,21 @@
             "category": "semantics",
             "reason": "gc exposes fixed-origin GitCode REST v5/v8 rather than GitHub REST/GraphQL.",
             "value": "Make a platform REST API request"
+          },
+          "org": {
+            "category": "semantics",
+            "reason": "gc lists the current user's GitCode organizations.",
+            "value": "Work with platform organizations"
+          },
+          "label": {
+            "category": "semantics",
+            "reason": "gc manages repository task labels with a name and color.",
+            "value": "Manage repository task labels in platform"
+          },
+          "search": {
+            "category": "semantics",
+            "reason": "gc uses native GitCode global keyword search without emulating GitHub qualifiers.",
+            "value": "Search platform by keyword. Raw platform qualifiers and global commit and code search are not supported"
           },
           "auth": {
             "category": "semantics",

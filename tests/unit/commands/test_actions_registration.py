@@ -16,7 +16,9 @@ COMMANDS = [
     ("run", "list"),
     ("run", "view"),
     ("run", "rerun"),
+    ("run", "cancel"),
     ("workflow", "list"),
+    ("workflow", "view"),
     ("workflow", "run"),
     ("pr", "checks"),
 ]

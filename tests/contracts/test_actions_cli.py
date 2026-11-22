@@ -82,9 +82,9 @@ def api(monkeypatch):
     monkeypatch.setattr(actions, "ActionsClient", factory)
     app = AppContext(token=SYNTHETIC, repo="gitcode.com/o/r")
 
-    def invoke(command, *args, token=SYNTHETIC):
+    def invoke(command, *args, token=SYNTHETIC, input=None):
         test_app = app if token == SYNTHETIC else AppContext(token=token, repo=app.repo)
-        result = CliRunner().invoke(command, args, obj={"app": test_app})
+        result = CliRunner().invoke(command, args, obj={"app": test_app}, input=input)
         if result.exception and not isinstance(result.exception, (SystemExit, APIError, NetworkError)):
             raise result.exception
         return result
@@ -477,3 +477,207 @@ def test_transport_ignores_environment_and_clears_cookies(monkeypatch, api):
     v5.get.return_value = httpx.Response(200, json=PR, headers={"Set-Cookie": "session=test; Path=/"})
     expect("runs", page([]), query=checkq())
     assert invoke(actions.pr_checks, "42").exit_code == 3
+
+
+CANCEL = ("cancel", "111", "--attempt", "2", "--commit", SHA)
+RUNNING = {**DETAIL, "status": "RUNNING"}
+
+
+@pytest.mark.parametrize(("answer", "opt"), [("y\n", ()), (None, ("--yes",))])
+def test_cancel_stops_only_matching_attempt_once(api, answer, opt):
+    expect, invoke, _, calls = api
+    expect("runs/111", RUNNING)
+    expect("runs/111/stop", {"success": True}, method="POST")
+    expect("runs/111", {**RUNNING, "status": "CANCELED"})
+    result = invoke(actions.run, *CANCEL, *opt, input=answer)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["result"] == "canceled"
+    assert calls == [("GET", "runs/111"), ("POST", "runs/111/stop"), ("GET", "runs/111")]
+
+
+def test_cancel_declined_and_missing_auth_or_invalid_sha_are_no_requests(api):
+    _, invoke, _, calls = api
+    declined = invoke(actions.run, *CANCEL, input="n\n")
+    assert declined.exit_code == 1 and "Aborted" in declined.output
+    assert "--commit requires a full" in invoke(actions.run, *CANCEL[:-1], "abc", "--yes").output
+    assert "Authenticate with gc" in str(invoke(actions.run, *CANCEL, "--yes", token="").exception)
+    assert not calls
+
+
+@pytest.mark.parametrize(
+    ("detail", "error"),
+    [
+        ({**RUNNING, "workflow_run_id": "other"}, "run ID"),
+        ({**RUNNING, "head_sha": OTHER}, "commit/attempt"),
+        ({**RUNNING, "attempt": 3}, "commit/attempt"),
+        ({**RUNNING, "status": "PAUSED"}, "RUNNING"),
+        ({**RUNNING, "status": "COMPLETED"}, "RUNNING"),
+        ({**RUNNING, "status": "UNRECOGNIZED"}, "RUNNING"),
+    ],
+)
+def test_cancel_stale_or_not_running_does_not_write(api, detail, error):
+    expect, invoke, _, calls = api
+    expect("runs/111", detail)
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert isinstance(result.exception, APIError) and error in str(result.exception)
+    assert calls == [("GET", "runs/111")]
+
+
+def test_cancel_is_idempotent_when_same_attempt_already_canceled(api):
+    expect, invoke, _, calls = api
+    expect("runs/111", {**RUNNING, "status": "CANCELED"})
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert result.exit_code == 0 and json.loads(result.stdout)["result"] == "already_canceled"
+    assert calls == [("GET", "runs/111")]
+
+
+@pytest.mark.parametrize("status", ["RUNNING", "COMPLETED", "UNRECOGNIZED"])
+def test_cancel_acceptance_without_canceled_status_is_nonzero(api, status):
+    expect, invoke, _, calls = api
+    expect("runs/111", RUNNING)
+    expect("runs/111/stop", {"success": True}, method="POST")
+    expect("runs/111", {**RUNNING, "status": status})
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert result.exit_code == 3
+    assert json.loads(result.stdout)["result"] == "requested_not_confirmed"
+    assert calls.count(("POST", "runs/111/stop")) == 1
+
+
+@pytest.mark.parametrize(
+    "readback",
+    [
+        {**RUNNING, "status": "CANCELED", "attempt": 3},
+        {**RUNNING, "status": "CANCELED", "head_sha": OTHER},
+        httpx.Response(404, json={"message": "detail missing"}),
+        httpx.ReadTimeout("read-back timed out"),
+    ],
+)
+def test_cancel_does_not_attribute_an_unverified_readback(api, readback):
+    expect, invoke, _, calls = api
+    expect("runs/111", RUNNING)
+    expect("runs/111/stop", {"success": True}, method="POST")
+    expect("runs/111", readback)
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert "Stop requested, but read-back could not verify" in str(result.exception)
+    assert result.stdout == "" and calls.count(("POST", "runs/111/stop")) == 1
+
+
+@pytest.mark.parametrize(
+    ("reply", "status"),
+    [
+        ({"success": False}, 200),
+        ({"success": "true"}, 200),
+        ({"success": True}, 202),
+        ({"message": "bad"}, 403),
+        (httpx.ReadTimeout("maybe acted"), 200),
+    ],
+)
+def test_cancel_rejected_or_uncertain_stop_never_retries(api, reply, status):
+    expect, invoke, _, calls = api
+    expect("runs/111", RUNNING)
+    expect("runs/111/stop", reply, method="POST", http=status)
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert "Verify remote runs" in str(result.exception)
+    assert result.stdout == "" and calls == [("GET", "runs/111"), ("POST", "runs/111/stop")]
+
+
+WORKFLOW = {"workflow_id": "123", "file_path": ".gitcode/workflows/ci.yml", "name": "Build CI", "state": "active"}
+
+
+@pytest.mark.parametrize("selector", ["123", "ci.yml", ".gitcode/workflows/ci.yml", "Build CI"])
+def test_workflow_view_uses_exact_read_only_listing_projection(api, selector):
+    expect, invoke, _, calls = api
+    expect("workflows", {"total_count": 1, "workflows": [{**WORKFLOW, "yaml": "private"}]}, query=q(limit="100"))
+    result = invoke(actions.workflow, "view", selector)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == WORKFLOW
+    assert calls == [("GET", "workflows")]
+
+
+@pytest.mark.parametrize(
+    ("changed", "repeat", "error"),
+    [
+        (False, False, None),
+        (True, False, "listing changed"),
+        (False, True, "repeated workflow ID"),
+    ],
+)
+def test_workflow_view_paginates_for_unique_definition(api, changed, repeat, error):
+    expect, invoke, _, calls = api
+    rows = [
+        {"workflow_id": str(i), "file_path": f"ci/{i}.yml", "name": f"CI {i}", "state": "disabled"} for i in range(100)
+    ]
+    expect("workflows", {"total_count": 101, "workflows": rows}, query=q(limit="100"))
+    if changed:
+        expect("workflows", {"total_count": 102, "workflows": [WORKFLOW, rows[0]]}, query=q(limit="100", page="2"))
+    else:
+        expect(
+            "workflows",
+            {"total_count": 101, "workflows": [rows[0] if repeat else WORKFLOW]},
+            query=q(limit="100", page="2"),
+        )
+    result = invoke(actions.workflow, "view", "ci.yml", "--scan-limit", "200")
+    if error is None:
+        assert json.loads(result.stdout) == WORKFLOW
+    else:
+        assert error in str(result.exception)
+    assert calls == [("GET", "workflows"), ("GET", "workflows")]
+
+
+@pytest.mark.parametrize(
+    ("rows", "count", "selector", "error"),
+    [
+        ([WORKFLOW], 2, "123", "incomplete"),
+        ([WORKFLOW, {**WORKFLOW, "workflow_id": "2"}], 2, "ci.yml", "Ambiguous"),
+        ([WORKFLOW], 1, "ci", "No matching"),
+        ([{"workflow_id": "123"}], 1, "123", "Incomplete workflow metadata"),
+    ],
+)
+def test_workflow_view_fails_closed_on_incomplete_or_ambiguous_listing(api, rows, count, selector, error):
+    expect, invoke, _, calls = api
+    limit = 1 if count > len(rows) else len(rows)
+    expect("workflows", {"total_count": count, "workflows": rows}, query=q(limit=str(limit)))
+    result = invoke(actions.workflow, "view", selector, "--scan-limit", str(limit))
+    assert error in str(result.exception) and result.stdout == ""
+    assert calls == [("GET", "workflows")]
+
+
+def test_workflow_view_validates_selector_and_scan_limit_before_network(api):
+    _, invoke, _, calls = api
+    assert isinstance(invoke(actions.workflow, "view", "\x1b[1r").exception, APIError)
+    assert invoke(actions.workflow, "view", "ci.yml", "--scan-limit", "501").exit_code == 2
+    assert not calls
+
+
+def test_workflow_view_prefers_exact_id_to_colliding_workflow_name(api):
+    expect, invoke, _, _ = api
+    other = {**WORKFLOW, "workflow_id": "999", "name": "123"}
+    expect("workflows", {"total_count": 2, "workflows": [other, WORKFLOW]}, query=q(limit="100"))
+    result = invoke(actions.workflow, "view", "123")
+    assert json.loads(result.stdout) == WORKFLOW
+
+
+@pytest.mark.parametrize("phase", ["before", "stop", "after"])
+def test_cancel_rejects_duplicate_keys_in_identity_and_acknowledgment(api, phase):
+    expect, invoke, _, calls = api
+    before = (
+        httpx.Response(200, content=(json.dumps(RUNNING)[:-1] + ', "attempt": 99, "attempt": 2}').encode())
+        if phase == "before"
+        else RUNNING
+    )
+    expect("runs/111", before)
+    expected_calls = [("GET", "runs/111")]
+    if phase != "before":
+        stop = (
+            httpx.Response(200, content=b'{"success":false,"success":true}') if phase == "stop" else {"success": True}
+        )
+        expect("runs/111/stop", stop, method="POST")
+        expected_calls.append(("POST", "runs/111/stop"))
+    if phase == "after":
+        body = json.dumps(RUNNING)[:-1] + ', "status": "CANCELED"}'
+        expect("runs/111", httpx.Response(200, content=body.encode()))
+        expected_calls.append(("GET", "runs/111"))
+    result = invoke(actions.run, *CANCEL, "--yes")
+    assert isinstance(result.exception, APIError) and result.stdout == ""
+    assert ("Verify remote runs" in str(result.exception)) == (phase != "before")
+    assert calls == expected_calls

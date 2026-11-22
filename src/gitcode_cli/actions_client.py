@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
 from typing import Any
 from urllib.parse import quote, unquote
 
@@ -23,7 +24,11 @@ _ROUTES = {
     "workflows": ("workflows", "GET", 200, False),
     "dispatch": ("workflows/{workflow_id}/dispatches", "POST", 201, True),
     "rerun": ("runs/{run_id}/rerun", "POST", 200, True),
+    "stop": ("runs/{run_id}/stop", "POST", 200, True),
     "retry": ("runs/{run_id}/retry", "POST", 200, True),
+    "run-artifacts": ("runs/{run_id}/artifacts", "GET", 200, False),
+    "artifact": ("artifacts/{artifact_id}", "GET", 200, False),
+    "artifact-zip": ("artifacts/{artifact_id}/zip", "GET", 302, False),
 }
 MAX_RESPONSE = 2 * 1024 * 1024
 UNCERTAIN = " Verify remote runs and attempts before retrying; the request may already have taken effect."
@@ -47,6 +52,13 @@ def _contains_token(value: Any, token: str) -> bool:
     return False
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    data = dict(pairs)
+    if len(data) != len(pairs):
+        raise ValueError("Duplicate Actions response field.")
+    return data
+
+
 def _body(response: httpx.Response, uncertain: str) -> dict[str, Any]:
     if response.headers.get("content-encoding", "identity").lower() != "identity":
         raise APIError("Cannot safely bound a compressed Actions response." + uncertain)
@@ -56,7 +68,7 @@ def _body(response: httpx.Response, uncertain: str) -> dict[str, Any]:
             raise APIError("Actions response exceeded the byte limit; request a smaller page if possible." + uncertain)
         body.extend(chunk)
     try:
-        data = json.loads(body)
+        data = json.loads(body, object_pairs_hook=_unique_object)
     except (ValueError, RecursionError):
         raise APIError("Invalid Actions JSON response." + uncertain) from None
     if not isinstance(data, dict):
@@ -86,6 +98,33 @@ class ActionsClient:
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if operation == "artifact-zip":
+            raise APIError("Use the isolated Actions artifact transfer.")
+        with self._response(operation, owner, repo, ids=ids, params=params, body=body) as (response, uncertain):
+            return _body(response, uncertain)
+
+    def artifact_zip(self, owner: str, repo: str, artifact_id: str, destination, size: int, sha256: str) -> None:
+        from .actions_artifact_zip import stream_zip  # noqa: PLC0415
+
+        with self._response("artifact-zip", owner, repo, ids={"artifact_id": artifact_id}) as (response, _):
+            locations = response.headers.get_list("location")
+            if len(locations) != 1:
+                raise APIError("Actions did not return a unique artifact download location.")
+            # Build the base without the request's query credential.
+            base = str(response.request.url.copy_with(query=None))
+        stream_zip(base, locations[0], destination, size, sha256, token=self._token)
+
+    @contextmanager
+    def _response(
+        self,
+        operation: str,
+        owner: str,
+        repo: str,
+        *,
+        ids: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+    ):
         template, method, status, write = _ROUTES[operation]
         if write:
             self.require_token()
@@ -119,6 +158,6 @@ class ActionsClient:
                     raise APIError(
                         f"Actions {operation}: HTTP {response.status_code}." + uncertain, response.status_code
                     )
-                return _body(response, uncertain)
+                yield response, uncertain
         except httpx.HTTPError:
             raise NetworkError(f"Actions {operation}: network error." + uncertain) from None

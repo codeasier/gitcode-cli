@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing, contextmanager
+from pathlib import Path
 from typing import Any
 
 import click
@@ -14,7 +15,7 @@ from ..adapters.action_checks import pr_evidence
 from ..context import AppContext
 from ..helptext import GCSectionCommand, GCSectionGroup
 from ..repo import resolve_repo
-from ..services.actions import ActionsService
+from ..services.actions import MAX_WORKFLOW_SCAN, SHA_RE, ActionsService
 
 repo_option = click.option("-R", "--repo", "repo_name", help="[HOST/]OWNER/REPO (defaults to origin).")
 page_option = click.option("--page", type=click.IntRange(1), default=1, show_default=True)
@@ -45,9 +46,9 @@ def _show(ctx: click.Context, value: dict):
     click.echo(json.dumps(scrub(value), indent=2, ensure_ascii=True))
 
 
-@click.group(cls=GCSectionGroup, short_help="Inspect GitCode Actions runs")
+@click.group(cls=GCSectionGroup, short_help="Inspect or manage GitCode Actions runs")
 def run():
-    """Inspect GitCode Actions runs, jobs and step logs."""
+    """Inspect, rerun, or stop GitCode Actions runs. Inspect jobs and step logs."""
 
 
 @run.command("list")
@@ -115,9 +116,34 @@ def run_rerun(ctx, repo_name, run_id, attempt, commit, job_run_id):
         _show(ctx, svc.rerun(run_id, attempt, commit, job_run_id))
 
 
-@click.group(cls=GCSectionGroup, short_help="List or dispatch GitCode workflows")
+@run.command("cancel")
+@click.argument("run_id")
+@repo_option
+@click.option("--attempt", type=click.IntRange(0), required=True, help="Expected current attempt.")
+@click.option("--commit", required=True, help="Expected full commit SHA.")
+@click.option("--yes", is_flag=True, help="Explicitly authorize sending one stop request without prompting.")
+@click.pass_context
+def run_cancel(ctx, repo_name, run_id, attempt, commit, yes):
+    """Request one GitCode stop, then check whether the same run attempt is CANCELED."""
+    if not SHA_RE.fullmatch(commit):
+        raise click.UsageError("--commit requires a full hexadecimal commit SHA.")
+    with _service(ctx, repo_name) as svc:
+        svc.client.require_token()  # Missing credentials must not cause even a read.
+        if not yes:
+            target = f"{svc.owner}/{svc.repo}, run {run_id}, attempt {attempt}, commit {commit}"
+            safe_target = json.dumps(redact(target, ctx.obj["app"].token), ensure_ascii=True)
+            click.confirm(
+                f"Stop {safe_target}? GitCode cannot atomically pin the attempt on stop", abort=True, err=True
+            )
+        result = svc.cancel(run_id, attempt, commit)
+    _show(ctx, result)
+    if result["result"] == "requested_not_confirmed":
+        ctx.exit(3)
+
+
+@click.group(cls=GCSectionGroup, short_help="Inspect or dispatch GitCode workflows")
 def workflow():
-    """List or explicitly dispatch GitCode workflows."""
+    """List or view workflow definitions, or explicitly dispatch GitCode workflows."""
 
 
 @workflow.command("list")
@@ -129,6 +155,17 @@ def workflow_list(ctx, repo_name, page, limit):
     """List one page of workflow definitions, not runs."""
     with _service(ctx, repo_name) as svc:
         _show(ctx, svc.page("workflows", page, limit))
+
+
+@workflow.command("view")
+@click.argument("selector")
+@repo_option
+@click.option("--scan-limit", type=click.IntRange(1, MAX_WORKFLOW_SCAN), default=100, show_default=True)
+@click.pass_context
+def workflow_view(ctx, repo_name, selector, scan_limit):
+    """Find exact workflow metadata by ID, name, or filename. Does not return YAML."""
+    with _service(ctx, repo_name) as svc:
+        _show(ctx, svc.workflow(selector, scan_limit))
 
 
 @workflow.command("run")
@@ -164,3 +201,41 @@ def pr_checks(ctx, number, repo_name, scan_limit):
             result["outcome"], 3
         )
     )
+
+
+@run.command("artifacts")
+@click.argument("run_id")
+@repo_option
+@page_option
+@limit_option
+@click.option("-a", "--attempt", type=click.IntRange(1), help="Expected current attempt.")
+@click.option("--commit", help="Expected full head commit SHA.")
+@click.pass_context
+def run_artifacts(ctx, repo_name, run_id, page, limit, attempt, commit):
+    """List one bounded page of run artifacts, without any download URLs."""
+    from ..services.actions_artifacts import ActionsArtifactService  # noqa: PLC0415
+
+    with _service(ctx, repo_name) as svc:
+        _show(ctx, ActionsArtifactService(svc).list(run_id, page, limit, attempt, commit))
+
+
+@run.command("download")
+@click.argument("run_id")
+@repo_option
+@click.option("--artifact-id", required=True, help="Exact artifact ID from 'run artifacts'.")
+@click.option("-a", "--attempt", type=click.IntRange(1), required=True, help="Observed current attempt (only 1).")
+@click.option("--commit", required=True, help="Expected full head commit SHA.")
+@click.option(
+    "-O",
+    "--output",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="New ZIP file under an existing safe local directory; never overwritten or extracted.",
+)
+@click.pass_context
+def run_download(ctx, repo_name, run_id, artifact_id, attempt, commit, output):
+    """Save one verified artifact ZIP, without extracting it."""
+    from ..services.actions_artifacts import ActionsArtifactService  # noqa: PLC0415
+
+    with _service(ctx, repo_name) as svc:
+        _show(ctx, ActionsArtifactService(svc).download(run_id, artifact_id, attempt, commit, output))

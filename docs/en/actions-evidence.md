@@ -7,6 +7,7 @@ Actions model, enable/disable workflows, or export complete job environments.
 
 ```console
 gc workflow list -R owner/repo --page 1 --limit 20
+gc workflow view ci.yml -R owner/repo
 gc run list -R owner/repo --pr 42 --event MR
 gc pr checks 42 -R owner/repo --scan-limit 100
 gc run view RUN_ID -R owner/repo
@@ -20,6 +21,11 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   The log POST is a read, not a trigger. Responses are capped at 2 MiB, individual log
   pages at 128 KiB; reduce the page size on overflow. A single oversized entry cannot be
   returned. Log text is JSON-escaped, not printed as terminal commands.
+* `workflow view` finds exact IDs, names, filenames, or listed configuration paths.
+  Exact IDs take precedence over names and filenames. It rejects ambiguous matches
+  or an incomplete list, and returns only definition
+  metadata, not YAML. The scan defaults to 100 definitions; use `--scan-limit` up to
+  500 when needed. It does not claim a transactional snapshot.
 * `--attempt` guards the **current** attempt; the documented detail endpoint has no
   historical-attempt selector. Commit and attempt are checked before and after fetching
   jobs/logs. A race discards the result instead of attributing it to the old attempt.
@@ -47,6 +53,7 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
 gc workflow run ci.yml -R owner/repo --ref feature-branch -f suite=smoke
 gc run rerun RUN_ID -R owner/repo --commit FULL_SHA --attempt 2 --job-run-id JOB_RUN_ID
 gc run rerun RUN_ID -R owner/repo --commit FULL_SHA --attempt 2
+gc run cancel RUN_ID -R owner/repo --commit FULL_SHA --attempt 2
 ```
 
 * Dispatch needs an explicit branch/tag and a workflow ID or YAML filename. Inputs are literal
@@ -59,6 +66,13 @@ gc run rerun RUN_ID -R owner/repo --commit FULL_SHA --attempt 2
   The read-before-write commit/attempt guard is not an atomic precondition. GitCode's
   `success: true` acknowledges the request; it is not proof of a new attempt or of passing CI.
   Inspect runs and attempts afterward, especially after an error. Never resubmit automatically.
+* Cancel prompts before networking (or pass `--yes`), requires authentication, and
+  submits one native stop only for an exact run ID, current attempt, full commit SHA,
+  and `RUNNING` status. An already `CANCELED` attempt does not get another stop. GitCode
+  cannot atomically pin the attempt at stop time. Even `success: true` is not proof of
+  cancellation: the command performs one read-back, and only a matching `CANCELED`
+  result exits 0. A confirmed request without a canceled read-back exits 3; a
+  rejected request or unavailable/changed read-back exits 1. Inspect before any retry.
 * These are CLI capabilities, not new MCP tools. Offline contracts do not establish live
   access for every scope, account, or GitCode installation.
 
@@ -71,4 +85,7 @@ Sources: [v5 PR detail](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-
 [workflows](https://docs.gitcode.com/en/docs/apis/get-api-v-8-repos-owner-repo-actions-workflows/),
 [dispatch](https://docs.gitcode.com/en/docs/apis/post-api-v-8-repos-owner-repo-actions-workflows-workflow-id-dispatches/),
 [retry](https://docs.gitcode.com/en/docs/apis/post-api-v-8-repos-owner-repo-actions-runs-run-id-retry/),
-[rerun](https://docs.gitcode.com/en/docs/apis/post-api-v-8-repos-owner-repo-actions-runs-run-id-rerun/).
+[rerun](https://docs.gitcode.com/en/docs/apis/post-api-v-8-repos-owner-repo-actions-runs-run-id-rerun/),
+[stop](https://docs.gitcode.com/en/docs/apis/post-api-v-8-repos-owner-repo-actions-runs-run-id-stop/).
+
+See the [Actions artifact contract](actions-artifacts.md) for listing and bounded ZIP downloads.

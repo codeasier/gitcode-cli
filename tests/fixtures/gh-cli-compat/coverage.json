@@ -247,13 +247,13 @@
           },
           "run": {
             "category": "semantics",
-            "reason": "gc inspects bounded GitCode Actions v8 runs using GitCode identities.",
-            "value": "Inspect platform Actions runs"
+            "reason": "gc inspects or manages bounded GitCode Actions v8 runs using GitCode identities.",
+            "value": "Inspect or manage platform Actions runs"
           },
           "workflow": {
             "category": "semantics",
-            "reason": "gc lists definitions or dispatches through native GitCode v8 APIs.",
-            "value": "List or dispatch platform workflows"
+            "reason": "gc inspects definitions or dispatches through native GitCode v8 APIs.",
+            "value": "Inspect or dispatch platform workflows"
           },
           "auth": {
             "category": "semantics",

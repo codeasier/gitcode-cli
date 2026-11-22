@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add direct `gc api` for fixed-origin GitCode JSON REST v5/v8, without GraphQL or transparent proxy routing.
 - Add direct GitCode Actions inspection, scoped retry/rerun and dispatch, plus PR checks that separate v5 gates from exact-head v8 observations.
+- Add direct `gc workflow view` for bounded definition lookup and `gc run cancel` for confirmed GitCode stops.
 
 - 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试。
 - 补齐剩余 5 项占位参数：`pr comment --edit-last/--create-if-none/--delete-last/--yes` 仅管理当前用户最新普通评论，验证完整历史与归属并默认确认删除；`pr diff --patch` 返回服务端按提交划分的邮件格式补丁，拒绝非补丁响应。

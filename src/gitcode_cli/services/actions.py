@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from ..actions_client import UNCERTAIN, ActionsClient, segment
-from ..errors import APIError
+from ..errors import APIError, NetworkError
 
 RUN_FIELDS = (
     "workflow_run_id",
@@ -22,6 +23,7 @@ RUN_FIELDS = (
     "file_path",
 )
 MAX_PAGE = 100
+MAX_WORKFLOW_SCAN = 500
 SHA_RE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 MAX_LOG = 128 * 1024
 
@@ -80,6 +82,51 @@ class ActionsService:
             "page": page,
             "next_page": page + 1 if page * per_page < total else None,
         }
+
+    def _workflow_rows(self, budget: int) -> Iterator[dict]:
+        if not 1 <= budget <= MAX_WORKFLOW_SCAN:
+            raise APIError(f"Workflow lookup limit must be between 1 and {MAX_WORKFLOW_SCAN}.")
+        total = None
+        page = 1
+        size = min(MAX_PAGE, budget)
+        while True:
+            data = self.page("workflows", page, size)
+            count = data["total_count"]
+            if count > budget:
+                raise APIError("Workflow lookup incomplete; increase --scan-limit or inspect workflow list --page.")
+            if total is not None and count != total:
+                raise APIError("Workflow listing changed during lookup; repeat the read.")
+            total = count
+            yield from data["workflows"]
+            next_page = data["next_page"]
+            if next_page is None:
+                return
+            page = next_page
+
+    def workflow(self, selector: str, budget: int) -> dict:
+        if not selector.strip() or len(selector) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in selector):
+            raise APIError("Supply a nonempty workflow ID, name, or configuration filename.")
+        matches: list[dict] = []
+        id_match: dict | None = None
+        seen: set[str] = set()
+        for row in self._workflow_rows(budget):
+            wid, path, name = (row.get(key) for key in ("workflow_id", "file_path", "name"))
+            if not isinstance(wid, str) or not wid or wid in seen:
+                raise APIError("Missing or repeated workflow ID; cannot verify listing.")
+            if not isinstance(path, str) or not path or not isinstance(name, str):
+                raise APIError("Incomplete workflow metadata; cannot resolve selector.")
+            seen.add(wid)
+            if selector == wid:
+                id_match = row
+            elif selector in {path, name, path.rsplit("/", 1)[-1]}:
+                matches.append(row)
+        if id_match is not None:
+            return id_match
+        if not matches:
+            raise APIError("No matching workflow definition in this repository.")
+        if len(matches) != 1:
+            raise APIError("Ambiguous workflow selector; use the exact ID from workflow list.")
+        return matches[0]
 
     def detail(self, run_id: str) -> dict:
         data = self._call("run", ids={"run_id": run_id})
@@ -174,6 +221,30 @@ class ActionsService:
         ):
             raise APIError("Unconfirmed workflow dispatch." + UNCERTAIN)
         return {**pick(data, ("workflow_id", "workflow_run_id")), "requested_ref": ref, "result": "requested"}
+
+    def cancel(self, run_id: str, attempt: int, commit: str) -> dict:
+        self.client.require_token()
+        if not SHA_RE.fullmatch(commit) or not nonnegative(attempt):
+            raise APIError("A full hexadecimal commit SHA and nonnegative attempt are required.")
+        before = self.pin(run_id, attempt, commit)
+        if before.get("status") == "CANCELED":
+            return {"result": "already_canceled", "run": before}
+        if before.get("status") != "RUNNING":
+            raise APIError("Only a run that the server reports as RUNNING can be stopped.")
+        result = self._call("stop", ids={"run_id": run_id})
+        if result.get("success") is not True:
+            raise APIError("Unconfirmed stop response." + UNCERTAIN)
+        try:
+            after = self.pin(run_id, attempt, commit)
+        except (APIError, NetworkError) as exc:
+            raise APIError("Stop requested, but read-back could not verify the same run attempt." + UNCERTAIN) from exc
+        if after.get("status") == "CANCELED":
+            return {"result": "canceled", "run": after}
+        return {
+            "result": "requested_not_confirmed",
+            "run": after,
+            "verify": "Re-read the same run and attempt; do not automatically retry.",
+        }
 
     def rerun(self, run_id: str, attempt: int, commit: str, job_run_ids: tuple[str, ...]) -> dict:
         self.client.require_token()

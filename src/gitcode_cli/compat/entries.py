@@ -24,6 +24,7 @@ def _e(
     unsupported_key: str | None = None,
     gc_extension: bool = False,
     aliases: tuple[str, ...] = (),
+    proxy_allowed: bool = True,
 ) -> CompatEntry:
     return CompatEntry(
         command=command,
@@ -34,10 +35,12 @@ def _e(
         unsupported_key=unsupported_key,
         gc_extension=gc_extension,
         aliases=aliases,
+        proxy_allowed=proxy_allowed,
     )
 
 
 ENTRIES: list[CompatEntry] = [
+    _e("api", None, CompatStatus.IMPLEMENTED, "GitCode JSON REST v5/v8, not GraphQL.", proxy_allowed=False),
     # --- auth subcommands ---
     _e("auth login", None, CompatStatus.IMPLEMENTED, "Supports --with-token and interactive input"),
     _e("auth logout", None, CompatStatus.IMPLEMENTED),

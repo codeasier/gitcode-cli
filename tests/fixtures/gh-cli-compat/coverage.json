@@ -173,10 +173,6 @@
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
-          "api": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
           "attestation": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
@@ -252,6 +248,11 @@
           }
         },
         "changed_commands": {
+          "api": {
+            "category": "semantics",
+            "reason": "gc exposes fixed-origin GitCode REST v5/v8 rather than GitHub REST/GraphQL.",
+            "value": "Make a platform REST API request"
+          },
           "auth": {
             "category": "semantics",
             "reason": "gc authentication stores a GitCode token; it does not configure native Git credentials.",

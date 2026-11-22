@@ -298,8 +298,11 @@ def _download_files(rows, directory, output, clobber, skip_existing, *, secret: 
     try:
         if output == "-":
             stream = click.get_binary_stream("stdout")
-            is_terminal = getattr(stream, "isatty", None)
-            if not callable(is_terminal) or is_terminal():
+            try:
+                is_terminal = stream.isatty()
+            except (AttributeError, OSError, TypeError):
+                is_terminal = True
+            if is_terminal is not False:
                 raise GCError("Refusing to write binary release data to a terminal; redirect stdout.")
             with TemporaryFile() as temp:
                 binary.download(rows[0], temp, secret=secret)

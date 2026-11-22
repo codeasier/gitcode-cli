@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from inspect import signature
 
 import httpx
 import pytest
@@ -21,7 +22,7 @@ def call(monkeypatch, tmp_config_dir):
     monkeypatch.setitem(main.commands, "api", api.api_command)
     requests = []
 
-    def invoke(args, replies=(), *, token=TOKEN, stdin=None, repo=None):
+    def invoke(args, replies=(), *, token=TOKEN, stdin=None, repo=None, separate_stderr=False):
         def handler(request):
             index = len(requests)
             requests.append(request)
@@ -35,7 +36,10 @@ def call(monkeypatch, tmp_config_dir):
         requests.clear()
         monkeypatch.setattr(rest_api, "open_client", lambda: httpx.Client(transport=httpx.MockTransport(handler)))
         root = ["-R", repo] if repo else []
-        return CliRunner().invoke(main, [*root, "api", *args], input=stdin, env={"GC_TOKEN": token})
+        # Click 8.1 merges stderr into Result.stdout unless explicitly separated;
+        # Click 8.2+ always captures the individual streams.
+        opts = {"mix_stderr": False} if separate_stderr and "mix_stderr" in signature(CliRunner).parameters else {}
+        return CliRunner(**opts).invoke(main, [*root, "api", *args], input=stdin, env={"GC_TOKEN": token})
 
     return invoke, requests
 
@@ -351,18 +355,19 @@ def test_format_failure_in_later_page_displays_no_partial_stdout(call):
     result = invoke(
         ["items", "--paginate", "-i", "-q", 'if . == [2] then error("other-private-secret") else . end'],
         [httpx.Response(200, json=data) for data in ([1], [2], [])],
+        separate_stderr=True,
     )
-    assert result.exit_code and "Unable to format" in result.output
+    assert result.exit_code and "Unable to format" in result.stderr
     assert result.stdout == ""
-    assert "HTTP 200" not in result.output and "other-private-secret" not in result.output
+    assert "HTTP 200" not in result.stderr and "other-private-secret" not in result.stderr
 
 
 @pytest.mark.skipif(shutil.which("jq") is None, reason="external jq unavailable")
 def test_jq_oversize_output_is_closed_without_partial_output(call, monkeypatch):
     invoke, _ = call
     monkeypatch.setattr(api, "MAX_BYTES", 128)
-    result = invoke(["items", "-q", "range(1000000)"], [httpx.Response(200, json={"a": 1})])
-    assert result.exit_code and "output size" in result.output and result.stdout == ""
+    result = invoke(["items", "-q", "range(1000000)"], [httpx.Response(200, json={"a": 1})], separate_stderr=True)
+    assert result.exit_code and "output size" in result.stderr and result.stdout == ""
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])

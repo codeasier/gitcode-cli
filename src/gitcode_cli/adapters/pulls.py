@@ -279,16 +279,11 @@ class PullRequestAdapter:
         request_changes: bool,
         force: bool,
     ) -> AdapterActionResult:
+        if request_changes:
+            raise unsupported("PR_REVIEW_REQUEST_CHANGES")
         if comment:
             item = self.service.comment(owner, repo, number, body=body or "")
             return AdapterActionResult(item=item)
-        if request_changes:
-            item = self.service.comment(owner, repo, number, body=body or "")
-            return AdapterActionResult(
-                item=item,
-                message=capability_message("PR_REVIEW_REQUEST_CHANGES"),
-                degraded=True,
-            )
         item = self.service.review(owner, repo, number, force=force)
         return AdapterActionResult(item=item)
 

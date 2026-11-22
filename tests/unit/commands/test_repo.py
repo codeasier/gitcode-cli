@@ -746,7 +746,7 @@ class TestRepoDelete:
 
 class TestRepoSync:
     def test_sync_puts_sync_endpoint(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {"fork": True}
+        mock_client.get.side_effect = [{"fork": True, "parent": {"full_name": "org/src"}}, {"default_branch": "main"}]
         mock_client.put.return_value = {"repo_sync_result": True}
 
         result = runner.invoke(main, ["repo", "sync"])
@@ -755,13 +755,15 @@ class TestRepoSync:
         assert '✓ Synced the "owner/repo" repository from its upstream source' in result.output
         sync_call = mock_client.put.call_args_list[0]
         assert sync_call.args[0] == "/repos/owner/repo/sync_repo"
+        assert sync_call.kwargs["json"] == {"branch": "main"}
 
     def test_sync_positional_repository(self, runner, mock_client):
         mock_client.get.return_value = {"fork": True}
-        result = runner.invoke(main, ["repo", "sync", "other/repo"])
+        mock_client.put.return_value = {"repo_sync_result": True}
+        result = runner.invoke(main, ["repo", "sync", "--branch", "release/x", "other/repo"])
 
         assert result.exit_code == 0
-        assert mock_client.put.call_args_list[0].args[0] == "/repos/other/repo/sync_repo"
+        mock_client.put.assert_called_once_with("/repos/other/repo/sync_repo", json={"branch": "release/x"})
 
     def test_sync_non_fork_reports_clear_error_before_write(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = {"fork": False}

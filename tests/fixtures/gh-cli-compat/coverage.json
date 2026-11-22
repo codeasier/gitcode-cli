@@ -1,6 +1,6 @@
 {
   "groups": {
-    "auth": ["status"],
+    "auth": ["logout", "status", "switch", "token"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
     "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
     "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"]
@@ -8,11 +8,18 @@
   "exclude_flags": {
     "auth": {
       "status": [
-        {"name": "--active", "reason": "active account selection is outside the selected #86 placeholder set"},
-        {"name": "-a", "reason": "active account selection is outside the selected #86 placeholder set"},
         {"name": "--hostname", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
         {"name": "-h", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
-        {"name": "--show-token", "reason": "token reveal is outside the selected #86 placeholder set"}
+        {"name": "--show-token", "reason": "status never displays the token"}
+      ],
+      "logout": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
+      ],
+      "switch": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
+      ],
+      "token": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
       ]
     },
     "issue": {

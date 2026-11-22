@@ -149,7 +149,8 @@ def endpoint_url(endpoint: str, version: str | None) -> tuple[str, dict[str, str
     try:
         if _BAD_ESCAPE.search(query):
             raise ValueError
-        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True, errors="strict")
+        # Python 3.9/3.10 strict parsing can reject an entirely absent query.
+        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True, errors="strict") if query else []
     except (ValueError, UnicodeError):
         raise APIError("Malformed REST query string.") from None
     params: dict[str, str] = {}

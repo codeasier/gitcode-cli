@@ -374,3 +374,14 @@ def test_not_modified_read_emits_only_safe_headers(call, method):
     )
     assert result.exit_code == 0 and result.output == 'HTTP 304\netag: "old"\n\n'
     assert len(requests) == 1 and requests[0].headers["if-none-match"] == '"old"'
+
+
+def test_empty_query_does_not_invoke_strict_parser(monkeypatch):
+    def reject_empty(query, **kwargs):
+        assert query, "Python 3.10 strict parser rejects an empty query"
+        return [("page", "1")]
+
+    monkeypatch.setattr(rest_api, "parse_qsl", reject_empty)
+    assert rest_api.endpoint_url("user", None)[1] == {}
+    assert rest_api.endpoint_url("user?", None)[1] == {}
+    assert rest_api.endpoint_url("user?page=1", None)[1] == {"page": "1"}

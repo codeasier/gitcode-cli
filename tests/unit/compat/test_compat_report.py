@@ -21,6 +21,7 @@ def test_statistics_groups_by_top_level_command() -> None:
         "pr",
         "repo",
         "api",
+        "release",
         "search",
         "label",
         "org",
@@ -59,6 +60,9 @@ def test_render_markdown_report_includes_legend_and_sections() -> None:
     assert "## issue" in md
     assert "## pr" in md
     assert "## repo" in md
+    assert "## release" in md
+    assert "| `release upload` | implemented |" in md
+    assert "callback registration. (direct gc only)" in md
     for group in ("search", "label", "org", "discussion"):
         assert f"## {group}" in md
     assert "## run" in md and "## workflow" in md
@@ -107,6 +111,7 @@ def test_gc_compat_stats_runs_as_json() -> None:
         "pr",
         "repo",
         "api",
+        "release",
         "search",
         "label",
         "org",

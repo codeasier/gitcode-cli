@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add direct `gc api` for fixed-origin GitCode JSON REST v5/v8, without GraphQL or transparent proxy routing.
+- Add direct `gc release` list/view/create/edit and attachment download/upload/delete-asset, with verified metadata writes and guarded transfers.
 - 新增直连命令：仓库、Issue、PR 和用户全站关键词搜索，仓库任务标签管理与复制，组织列表，以及仓库讨论的列表、查看、创建、编辑与顶层评论。
 - Add direct GitCode Actions inspection, scoped retry/rerun and dispatch, plus PR checks that separate v5 gates from exact-head v8 observations.
 - Add direct `gc workflow view` for bounded definition lookup and `gc run cancel` for confirmed GitCode stops.

@@ -1169,7 +1169,7 @@ set_gc_help(
         ("GENERAL COMMANDS", ["audit", "create", "list", "status"]),
         (
             "TARGETED COMMANDS",
-            ["checkout", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
+            ["checkout", "checks", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
         ),
     ],
     gc_examples=[

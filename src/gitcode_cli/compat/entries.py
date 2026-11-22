@@ -41,6 +41,29 @@ def _e(
 
 ENTRIES: list[CompatEntry] = [
     _e("api", None, CompatStatus.IMPLEMENTED, "GitCode JSON REST v5/v8, not GraphQL.", proxy_allowed=False),
+    _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
+    _e(
+        "run view",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode v8 current attempt, jobs, and step logs.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "run rerun",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Verified attempt/head; only supported GitCode rerun semantics.",
+        proxy_allowed=False,
+    ),
+    _e("workflow list", None, CompatStatus.IMPLEMENTED, "GitCode v8 workflow definitions.", proxy_allowed=False),
+    _e(
+        "workflow run",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode manual dispatch; request accepted is not completion.",
+        proxy_allowed=False,
+    ),
     # --- auth subcommands ---
     _e("auth login", None, CompatStatus.IMPLEMENTED, "Supports --with-token and interactive input"),
     _e("auth logout", None, CompatStatus.IMPLEMENTED),
@@ -273,7 +296,7 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.IMPLEMENTED,
         "Approximate: lacks gh user-specific filtering (PR_STATUS_GH_SEMANTICS)",
     ),
-    _e("pr checks", None, CompatStatus.NOT_IN_CLI),
+    _e("pr checks", None, CompatStatus.IMPLEMENTED, "Separate v5 gates and exact-head v8 runs.", proxy_allowed=False),
     _e("pr lock", None, CompatStatus.NOT_IN_CLI),
     _e("pr revert", None, CompatStatus.NOT_IN_CLI),
     _e("pr unlock", None, CompatStatus.NOT_IN_CLI),

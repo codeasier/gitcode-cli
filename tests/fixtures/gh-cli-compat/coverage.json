@@ -3,9 +3,66 @@
     "auth": ["status"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
     "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
-    "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"]
+    "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"],
+    "release": ["create", "list", "delete-asset", "download", "edit", "upload", "view"]
   },
   "exclude_flags": {
+    "release": {
+      "create": [
+        {
+          "name": "--discussion-category",
+          "reason": "Not supported by the GitCode release API."
+        },
+        {
+          "name": "--draft",
+          "reason": "Creating a GitCode release publishes it immediately."
+        },
+        {
+          "name": "--fail-on-no-commits",
+          "reason": "Not implemented."
+        },
+        {
+          "name": "--generate-notes",
+          "reason": "No verified GitCode generator."
+        },
+        {
+          "name": "--notes-from-tag",
+          "reason": "Automatic note extraction is not implemented."
+        },
+        {
+          "name": "--notes-start-tag",
+          "reason": "Generated notes are not implemented."
+        }
+      ],
+      "list": [
+        {
+          "name": "--exclude-drafts",
+          "reason": "No documented draft release state."
+        }
+      ],
+      "edit": [
+        {
+          "name": "--discussion-category",
+          "reason": "Not supported by the GitCode release API."
+        },
+        {
+          "name": "--draft",
+          "reason": "No documented draft release state."
+        },
+        {
+          "name": "--tag",
+          "reason": "GitCode cannot retag an existing release through this operation."
+        },
+        {
+          "name": "--target",
+          "reason": "GitCode cannot change the tag target through this operation."
+        },
+        {
+          "name": "--verify-tag",
+          "reason": "Edit already requires the existing tagged release."
+        }
+      ]
+    },
     "auth": {
       "status": [
         {"name": "--active", "reason": "active account selection is outside the selected #86 placeholder set"},
@@ -142,10 +199,6 @@
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
           "project": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
-          "release": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },

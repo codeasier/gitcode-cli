@@ -54,6 +54,7 @@ gc repo clone owner/repo
 
 - [文档索引](docs/zh-CN/index.md)
 - [通用 REST API 命令](docs/en/gitcode-rest-cli.md)
+- [发行版工作流](docs/zh-CN/release-cli.md)
 - [开发指南](docs/zh-CN/development.md)
 - [兼容性说明](docs/zh-CN/gh-compatibility.md)
 

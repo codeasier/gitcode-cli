@@ -303,7 +303,9 @@ def validate_gitcode_command(argv: Sequence[str]) -> None:
     aliases = {"ls": "list", "new": "create"}
     command = " ".join([tokens[0], aliases.get(tokens[1], tokens[1])]) if len(tokens) >= 2 else tokens[0]
     supported = {
-        entry.command for entry in iter_entries() if entry.flag is None and entry.status is not CompatStatus.NOT_IN_CLI
+        entry.command
+        for entry in iter_entries()
+        if entry.flag is None and entry.proxy_allowed and entry.status is not CompatStatus.NOT_IN_CLI
     }
     if command not in supported:
         raise ProxyError(f"gh command '{command}' is not supported for GitCode; refusing to fall back to GitHub.")

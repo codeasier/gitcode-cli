@@ -37,6 +37,8 @@ class CompatEntry:
     unsupported_key: str | None = None
     gc_extension: bool = False
     aliases: tuple[str, ...] = field(default_factory=tuple)
+    # Direct CLI support does not imply safe transparent proxy dispatch.
+    proxy_allowed: bool = True
 
     def label(self) -> str:
         """Human-readable label used in the rendered report."""

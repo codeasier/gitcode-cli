@@ -8,6 +8,7 @@ import click
 from click.shell_completion import get_completion_class
 
 from . import __version__
+from .commands.api import api_command
 from .commands.auth import auth_group
 from .commands.compat import compat_group
 from .commands.issue import issue_group
@@ -70,7 +71,7 @@ set_gc_help(
     gc_usage="gc <command> <subcommand> [flags]",
     gc_command_sections=[
         ("CORE COMMANDS", ["auth", "issue", "pr", "repo"]),
-        ("ADDITIONAL COMMANDS", ["compat", "setup", "completion", "version"]),
+        ("ADDITIONAL COMMANDS", ["api", "compat", "setup", "completion", "version"]),
     ],
     gc_examples=[
         "gc issue create",
@@ -112,6 +113,7 @@ main.add_command(auth_group)  # type: ignore[attr-defined]
 main.add_command(issue_group)  # type: ignore[attr-defined]
 main.add_command(pr_group)  # type: ignore[attr-defined]
 main.add_command(repo_group)  # type: ignore[attr-defined]
+main.add_command(api_command)  # type: ignore[attr-defined]
 main.add_command(compat_group)  # type: ignore[attr-defined]
 main.add_command(setup_group)  # type: ignore[attr-defined]
 

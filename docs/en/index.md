@@ -6,7 +6,11 @@
 
 - [Using this project with an agent](USING_WITH_AGENT.md) — agent-assisted setup, usage, upgrades, and troubleshooting
 - [Development guide](development.md) — setup, tests, and static checks
+- [Local GitCode accounts](auth-accounts.md) — opt-in named PATs, status and switching
 - [Test architecture](../../tests/README.md) — test layers and intent
 - [Roadmap](../../ROADMAP.md) — planned features and remaining gaps
 - [Compatibility notes](gh-compatibility.md) — aligned `gh` behaviors and GitCode differences
 - [Release workflows](release-cli.md) — list, view, publish and transfer attachments
+- [Global search](global-search.md)
+- [Repository task labels](task-labels.md)
+- [Organizations and discussions](community-commands.md)

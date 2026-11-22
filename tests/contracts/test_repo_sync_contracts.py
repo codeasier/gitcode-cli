@@ -1,5 +1,7 @@
 """Offline CLI synchronization preflight; never calls a real repository."""
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -30,21 +32,25 @@ def http_cli(monkeypatch):
             client.close()
 
 
-def route(router, method, suffix, payload, status=200):
+def route(router, method, suffix, payload, status=200, *, body=None):
     def respond(request):
         assert request.method == method and request.url.path == PATH + suffix
         assert request.url.host == "sync.gitcode.invalid"
         assert dict(request.url.params) == {"access_token": TOKEN}
         assert request.headers["private-token"] == TOKEN
         assert request.headers["accept"] == "application/json"
-        assert "authorization" not in request.headers and not request.content
+        assert "authorization" not in request.headers
+        if body is None:
+            assert not request.content
+        else:
+            assert json.loads(request.content) == body
         return httpx.Response(status, json=payload)
 
     return router.request(method, ORIGIN + PATH + suffix).mock(side_effect=respond)
 
 
-def invoke(runner):
-    return runner.invoke(main, ["--token", TOKEN, "repo", "sync", "owner/repo"])
+def invoke(runner, *args):
+    return runner.invoke(main, ["--token", TOKEN, "repo", "sync", "owner/repo", *args])
 
 
 @pytest.mark.parametrize("fork", [False, 0])
@@ -70,8 +76,8 @@ def test_unknown_forkness_never_becomes_a_write(http_cli, payload):
 def test_known_fork_preserves_one_sync_request(http_cli, fork):
     router, runner = http_cli
     route(router, "GET", "", {"fork": fork})
-    write = route(router, "PUT", "/sync_repo", {"repo_sync_result": True})
-    result = invoke(runner)
+    write = route(router, "PUT", "/sync_repo", {"repo_sync_result": True}, body={"branch": "release/x"})
+    result = invoke(runner, "-b", "release/x")
     assert result.exit_code == 0, result.output
     assert "Synced" in result.output and write.call_count == 1
     assert [entry.request.method for entry in router.calls] == ["GET", "PUT"]

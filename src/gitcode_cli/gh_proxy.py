@@ -94,6 +94,8 @@ _REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
 
 # Values of these options must never become a repository routing hint.
 _REPO_VALUE_OPTIONS = {
+    "-b",
+    "--branch",
     "-R",
     "--repo",
     "--json",
@@ -145,7 +147,21 @@ def _positional_repo_host(argv: Sequence[str]) -> str | None:
     return None
 
 
+def _reject_proxy_token_option(argv: Sequence[str]) -> None:
+    # Only inspect global options. A command's positional or option value
+    # spelling "--token" (e.g. a comment body) is not a credential override.
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--" or not arg.startswith("-"):
+            return
+        if arg == "--token" or arg.startswith("--token="):
+            raise ProxyError("The gh proxy does not accept --token. Use gc directly with configured authentication.")
+        index += 2 if arg in {"-R", "--repo"} else 1
+
+
 def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None) -> str:
+    _reject_proxy_token_option(argv)
     env = os.environ if environ is None else environ
     resource_host = _resource_url_host(argv)
     override = env.get("GC_GH_TARGET")
@@ -216,6 +232,7 @@ _RESOURCE_VALUE_OPTIONS = {
     "-a",
     "-l",
     "--author-email",
+    "--match-head-commit",
     "-A",
     "--discussion-id",
     "--path",
@@ -235,6 +252,8 @@ _RESOURCE_VALUE_OPTIONS = {
 
 def _resource_value_options(group: str, command: str) -> set[str]:
     options = set(_RESOURCE_VALUE_OPTIONS)
+    if group == "issue" and command == "develop":
+        options.discard("-l")
     if group == "issue" and command == "close":
         options.add("-r")
     if command == "edit":
@@ -291,7 +310,15 @@ def _command_tokens(argv: Sequence[str]) -> list[str]:
 
 
 def validate_gitcode_command(argv: Sequence[str]) -> None:
-    if not argv or argv[0] in {"--help", "-h", "--version", "help", "version"}:
+    if not argv or argv[0] in {"--help", "-h", "--version", "version"}:
+        return
+    if argv[0] == "help":
+        topics = argv[1:]
+        # Dispatch appends --help. Never let a value-taking flag or "--"
+        # consume it and turn help into an executable command.
+        if len(topics) > 2 or any(not topic or topic.startswith("-") for topic in topics):
+            raise ProxyError("Use gh help with a supported GitCode command topic only, without arguments or flags.")
+        validate_gitcode_command(topics)
         return
 
     tokens = _command_tokens(argv)
@@ -301,14 +328,21 @@ def validate_gitcode_command(argv: Sequence[str]) -> None:
         return
 
     aliases = {"ls": "list", "new": "create"}
-    command = " ".join([tokens[0], aliases.get(tokens[1], tokens[1])]) if len(tokens) >= 2 else tokens[0]
+    # The REST path is an argument to api, not a subcommand; don't inspect it.
+    command = tokens[0]
+    if len(tokens) >= 2 and command != "api":
+        command = " ".join([command, aliases.get(tokens[1], tokens[1])])
     supported = {
         entry.command
         for entry in iter_entries()
         if entry.flag is None and entry.proxy_allowed and entry.status is not CompatStatus.NOT_IN_CLI
     }
     if command not in supported:
-        raise ProxyError(f"gh command '{command}' is not supported for GitCode; refusing to fall back to GitHub.")
+        if command == "api":
+            raise ProxyError(
+                "gh api is not enabled for GitCode; use gc api directly. The proxy is refusing to fall back."
+            )
+        raise ProxyError("This gh command is not supported for GitCode; refusing to fall back to GitHub.")
 
 
 def _same_file(left: str | Path, right: str | Path) -> bool:

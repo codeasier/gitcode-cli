@@ -710,9 +710,15 @@ def test_signed_redirect_rejects_reflected_secret_before_transfer(harness, monke
     assert requests == [STORAGE]
 
 
-def test_download_stdout_refuses_unknown_terminal_stream(harness, monkeypatch):
+@pytest.mark.parametrize("broken", [None, False, lambda _: object(), lambda _: MagicMock(isatty=False)])
+def test_download_stdout_refuses_unknown_terminal_stream(harness, monkeypatch, broken):
     run, c = harness
     c.get.side_effect = [ROW, ROW]
-    monkeypatch.setattr(cmd.click, "get_binary_stream", lambda _: object())
+    get = MagicMock(side_effect=AssertionError("transfer must not start"))
+    monkeypatch.setattr(binary, "_open", get)
+    monkeypatch.setattr(cmd.click, "get_binary_stream", broken)
     result = run("download", "v1", "-O", "-")
-    assert result.exit_code != 0 and "terminal" in str(result.exception)
+    assert result.exit_code != 0
+    assert "terminal" in str(result.exception) or "Cannot verify a binary stdout stream" in str(result.exception)
+    assert not result.stdout_bytes
+    get.assert_not_called()

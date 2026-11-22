@@ -8,13 +8,18 @@ import click
 from click.shell_completion import get_completion_class
 
 from . import __version__
+from .commands.actions import pr_checks, run, workflow
 from .commands.api import api_command
 from .commands.auth import auth_group
 from .commands.compat import compat_group
+from .commands.discussion import discussion_group
 from .commands.issue import issue_group
+from .commands.label import label_group
+from .commands.org import org_group
 from .commands.pr import pr_group
 from .commands.release import release_group
 from .commands.repo import repo_group
+from .commands.search import search_group
 from .commands.setup import setup_group
 from .config import get_token
 from .context import AppContext
@@ -72,6 +77,8 @@ set_gc_help(
     gc_usage="gc <command> <subcommand> [flags]",
     gc_command_sections=[
         ("CORE COMMANDS", ["auth", "issue", "pr", "repo", "release"]),
+        ("DISCOVERY AND COMMUNITY COMMANDS", ["search", "label", "org", "discussion"]),
+        ("AUTOMATION COMMANDS", ["run", "workflow"]),
         ("ADDITIONAL COMMANDS", ["api", "compat", "setup", "completion", "version"]),
     ],
     gc_examples=[
@@ -113,10 +120,17 @@ def completion_command(shell: str) -> None:
 
 main.add_command(auth_group)  # type: ignore[attr-defined]
 main.add_command(issue_group)  # type: ignore[attr-defined]
+pr_group.add_command(pr_checks)  # type: ignore[attr-defined]
 main.add_command(pr_group)  # type: ignore[attr-defined]
 main.add_command(repo_group)  # type: ignore[attr-defined]
 main.add_command(release_group)
+main.add_command(run)  # type: ignore[attr-defined]
+main.add_command(workflow)  # type: ignore[attr-defined]
 main.add_command(api_command)  # type: ignore[attr-defined]
+main.add_command(search_group)  # type: ignore[attr-defined]
+main.add_command(label_group)  # type: ignore[attr-defined]
+main.add_command(org_group)  # type: ignore[attr-defined]
+main.add_command(discussion_group)  # type: ignore[attr-defined]
 main.add_command(compat_group)  # type: ignore[attr-defined]
 main.add_command(setup_group)  # type: ignore[attr-defined]
 

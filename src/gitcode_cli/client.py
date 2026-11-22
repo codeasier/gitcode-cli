@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 from urllib.parse import urljoin
 
@@ -50,18 +51,29 @@ class GitCodeClient:
         response_format: Literal["json", "text"] = "json",
     ) -> Any | None:
         merged_params: dict[str, Any] = {k: v for k, v in (params or {}).items() if v is not None}
-        merged_params["access_token"] = self.token
         headers = {"Accept": accept}
+        # Typed global search supports anonymous requests and, when configured,
+        # uses the documented bearer header without putting a token in the URL.
+        if method.upper() == "GET" and path == "/search":
+            merged_params.pop("access_token", None)
+            if self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
+        else:
+            merged_params["access_token"] = self.token
         if _requires_private_token(method, path):
             headers["private-token"] = self.token
         uncertain = " Verify the remote state before retrying this write." if method.upper() != "GET" else ""
+        # Repository task-label creation alone requires a form body. Preserve
+        # the public request override contract (including MCP's bearer transport).
+        form_label = method.upper() == "POST" and re.fullmatch(r"/repos/[^/]+/[^/]+/labels", path) is not None
         try:
             with redacted_transport(self.token):
                 response = self._client.request(
                     method,
                     urljoin(self.base_url, path.lstrip("/")),
                     params=merged_params,
-                    json=json,
+                    data=json if form_label else None,
+                    json=None if form_label else json,
                     headers=headers,
                 )
         except httpx.HTTPError as exc:

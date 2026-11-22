@@ -1,6 +1,6 @@
 {
   "groups": {
-    "auth": ["status"],
+    "auth": ["logout", "status", "switch", "token"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
     "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
     "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"],
@@ -65,11 +65,18 @@
     },
     "auth": {
       "status": [
-        {"name": "--active", "reason": "active account selection is outside the selected #86 placeholder set"},
-        {"name": "-a", "reason": "active account selection is outside the selected #86 placeholder set"},
         {"name": "--hostname", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
         {"name": "-h", "reason": "multi-host auth status is outside the selected #86 placeholder set"},
-        {"name": "--show-token", "reason": "token reveal is outside the selected #86 placeholder set"}
+        {"name": "--show-token", "reason": "status never displays the token"}
+      ],
+      "logout": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
+      ],
+      "switch": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
+      ],
+      "token": [
+        {"name": "--hostname", "reason": "GitCode authentication uses only gitcode.com"}
       ]
     },
     "issue": {
@@ -194,23 +201,11 @@
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
-          "org": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
           "project": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
           "cache": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
-          "run": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
-          "workflow": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
@@ -246,10 +241,6 @@
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
-          "label": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
           "licenses": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
@@ -259,10 +250,6 @@
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
           "ruleset": {
-            "category": "deferred",
-            "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
-          },
-          "search": {
             "category": "deferred",
             "reason": "This gh command is not exposed by the gc root command; implementing its behavior remains out of this help-test batch."
           },
@@ -284,6 +271,11 @@
           }
         },
         "additional_commands": {
+          "discussion": {
+            "category": "extension",
+            "reason": "gc exposes the GitCode repository discussion API.",
+            "value": "Work with platform repository discussions"
+          },
           "compat": {
             "category": "extension",
             "reason": "gc exposes its own compatibility registry report.",
@@ -305,6 +297,31 @@
             "category": "semantics",
             "reason": "gc exposes fixed-origin GitCode REST v5/v8 rather than GitHub REST/GraphQL.",
             "value": "Make a platform REST API request"
+          },
+          "org": {
+            "category": "semantics",
+            "reason": "gc lists the current user's GitCode organizations.",
+            "value": "Work with platform organizations"
+          },
+          "label": {
+            "category": "semantics",
+            "reason": "gc manages repository task labels with a name and color.",
+            "value": "Manage repository task labels in platform"
+          },
+          "search": {
+            "category": "semantics",
+            "reason": "gc uses native GitCode global keyword search without emulating GitHub qualifiers.",
+            "value": "Search platform by keyword. Raw platform qualifiers and global commit and code search are not supported"
+          },
+          "run": {
+            "category": "semantics",
+            "reason": "gc inspects or manages bounded GitCode Actions v8 runs using GitCode identities.",
+            "value": "Inspect or manage platform Actions runs"
+          },
+          "workflow": {
+            "category": "semantics",
+            "reason": "gc inspects definitions or dispatches through native GitCode v8 APIs.",
+            "value": "Inspect or dispatch platform workflows"
           },
           "auth": {
             "category": "semantics",
@@ -441,10 +458,6 @@
           }
         },
         "missing_commands": {
-          "checks": {
-            "category": "deferred",
-            "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
-          },
           "lock": {
             "category": "deferred",
             "reason": "This gh subcommand is not currently exposed by gc; this fixture records the gap without claiming platform support or implementing it."
@@ -470,6 +483,11 @@
           }
         },
         "changed_commands": {
+          "checks": {
+            "category": "semantics",
+            "reason": "gc separates GitCode v5 merge gates from bounded, exact-head v8 workflow observations.",
+            "value": "Report platform CI evidence for a pull request"
+          },
           "checkout": {
             "category": "wording",
             "reason": "gc describes the same local checkout surface using its own concise wording.",

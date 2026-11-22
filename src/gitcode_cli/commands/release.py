@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryFile
+from typing import BinaryIO, cast
 from urllib.parse import quote, urlsplit
 
 import click
@@ -297,13 +299,20 @@ def _download_files(rows, directory, output, clobber, skip_existing, *, secret: 
         raise click.UsageError("--output requires exactly one matching asset.")
     try:
         if output == "-":
-            stream = click.get_binary_stream("stdout")
+            # Click 8.5 exposes this helper via dynamic attribute lookup.
+            get_binary_stream = getattr(click, "get_binary_stream", None)
+            if not callable(get_binary_stream):
+                raise GCError("Cannot verify a binary stdout stream; use --output FILE instead.")
+            unsafe_stdout = "Refusing to write binary release data to a terminal; redirect stdout."
             try:
-                is_terminal = stream.isatty()
-            except (AttributeError, OSError, TypeError):
-                is_terminal = True
-            if is_terminal is not False:
-                raise GCError("Refusing to write binary release data to a terminal; redirect stdout.")
+                stream = cast(Callable[[str], BinaryIO], get_binary_stream)("stdout")
+                isatty = getattr(stream, "isatty", None)
+                can_write = callable(getattr(stream, "write", None))
+                is_redirected = callable(isatty) and isatty() is False and can_write
+            except (AttributeError, OSError, RuntimeError, TypeError):
+                raise GCError(unsafe_stdout) from None
+            if not is_redirected:
+                raise GCError(unsafe_stdout)
             with TemporaryFile() as temp:
                 binary.download(rows[0], temp, secret=secret)
                 temp.seek(0)

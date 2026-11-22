@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from inspect import signature
 from unittest.mock import MagicMock
 
 import httpx
@@ -82,9 +83,9 @@ def api(monkeypatch):
     monkeypatch.setattr(actions, "ActionsClient", factory)
     app = AppContext(token=SYNTHETIC, repo="gitcode.com/o/r")
 
-    def invoke(command, *args, token=SYNTHETIC, input=None):
+    def invoke(command, *args, token=SYNTHETIC, input=None, runner=None):
         test_app = app if token == SYNTHETIC else AppContext(token=token, repo=app.repo)
-        result = CliRunner().invoke(command, args, obj={"app": test_app}, input=input)
+        result = (runner or CliRunner()).invoke(command, args, obj={"app": test_app}, input=input)
         if result.exception and not isinstance(result.exception, (SystemExit, APIError, NetworkError)):
             raise result.exception
         return result
@@ -489,9 +490,16 @@ def test_cancel_stops_only_matching_attempt_once(api, answer, opt):
     expect("runs/111", RUNNING)
     expect("runs/111/stop", {"success": True}, method="POST")
     expect("runs/111", {**RUNNING, "status": "CANCELED"})
-    result = invoke(actions.run, *CANCEL, *opt, input=answer)
+    # Click 8.1 mixes stderr into stdout by default; Click 8.2+ always captures them separately.
+    runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
+    result = invoke(actions.run, *CANCEL, *opt, input=answer, runner=runner)
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["result"] == "canceled"
+    stdout = result.stdout
+    if answer is not None:
+        assert "Stop " in result.stderr
+        # Older Click's simulated readline echoes the single typed answer to stdout.
+        stdout = stdout.removeprefix(f" {answer}").removeprefix(answer)
+    assert json.loads(stdout)["result"] == "canceled"
     assert calls == [("GET", "runs/111"), ("POST", "runs/111/stop"), ("GET", "runs/111")]
 
 

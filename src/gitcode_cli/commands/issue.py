@@ -648,8 +648,9 @@ def issue_status(
 @issue_group.command("develop")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier")
-@click.option("-b", "--base", help="Unsupported: GitCode does not provide an issue develop branch API.")
-@click.option("-n", "--name", help="Unsupported: GitCode does not provide an issue develop branch API.")
+@click.option("-l", "--list", "list_only", is_flag=True, help="List branches linked to this issue.")
+@click.option("-b", "--base", help="Unsupported: no verified atomic create-and-link operation.")
+@click.option("-n", "--name", help="Unsupported: no verified atomic create-and-link operation.")
 @click.pass_context
 def issue_develop(
     ctx: click.Context,
@@ -657,10 +658,22 @@ def issue_develop(
     identifier: str,
     base: str | None,
     name: str | None,
+    list_only: bool,
 ) -> None:
+    if list_only and (base is not None or name is not None):
+        raise click.UsageError("--list cannot be combined with --base or --name.")
     app = ctx.obj["app"]
     owner, repo, number, _ = _resolve_issue_target(app, repo_name, identifier)
     service = IssueService(app.client())
+    if list_only:
+        branches = service.list_linked_branches(owner, repo, number)
+        if not isinstance(branches, list) or not all(
+            isinstance(branch, str) and branch and all(ch.isprintable() for ch in branch) for branch in branches
+        ):
+            raise click.ClickException("Unrecognized GitCode linked-branch response; no branch list was printed.")
+        for branch in branches:
+            safe_echo(branch)
+        return
     service.get(owner, repo, number)
     if base is not None:
         raise unsupported("ISSUE_DEVELOP_BASE")

@@ -26,6 +26,9 @@ class IssueService:
     def get(self, owner: str, repo: str, number: str) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/issues/{number}")
 
+    def list_linked_branches(self, owner: str, repo: str, number: str) -> Any | None:
+        return self.client.get(f"/repos/{owner}/{repo}/issues/{number}/related_branches")
+
     def list_comments(self, owner: str, repo: str, number: str) -> Any | None:
         return self.client.get(f"/repos/{owner}/{repo}/issues/{number}/comments")
 

@@ -23,6 +23,10 @@ CAPABILITY_MESSAGES = {
     "PR_COMMENT_OWNERSHIP_UNVERIFIABLE": (
         "Unable to verify the current user's pull request comments on GitCode; refusing to edit or delete comments."
     ),
+    "PR_MERGE_MATCH_HEAD_COMMIT": (
+        "The GitCode merge API has no verified atomic expected-head check. No merge was attempted."
+    ),
+    "PR_MERGE_DISABLE_AUTO": "No verified per-PR auto-merge disable API on GitCode. No change was made.",
     "PR_MERGE_AUTO": "GitCode merge API does not support --auto.",
     "PR_EDIT_BASE": (
         "GitCode's pull request update API does not support changing the base branch; "
@@ -34,7 +38,8 @@ CAPABILITY_MESSAGES = {
         "No request was sent; omit --remove-milestone to edit other fields."
     ),
     "PR_REVIEW_REQUEST_CHANGES": (
-        "GitCode review API does not support request-changes reviews; the pull request comment was posted instead."
+        "GitCode has no verified request-changes review API. No comment or review was posted. "
+        "Use --comment to post ordinary feedback."
     ),
     "PR_STATUS_GH_SEMANTICS": ("GitCode API approximation -- user-specific filtering is not available"),
     "REPO_CREATE_INTERNAL": "GitCode repositories are either public or private; --internal is not supported.",

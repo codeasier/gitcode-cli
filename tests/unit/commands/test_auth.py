@@ -44,26 +44,27 @@ class TestAuthLogin:
 
 
 class TestAuthStatus:
-    def test_status_reports_gh_proxy_target(self, runner, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: "u6Gg-secret")
+    def test_status_reports_gh_proxy_target(self, runner, tmp_config_dir, monkeypatch):
+        monkeypatch.setenv("GC_TOKEN", "synthetic-value")
         result = runner.invoke(main, ["auth", "status"], env={"GC_GH_PROXY_ACTIVE": "1"})
         assert result.exit_code == 0
         assert "gitcode.com" in result.output
         assert "✓ Logged in to GitCode" in result.output
         assert "Active account: true" in result.output
         assert "API host: https://api.gitcode.com" in result.output
-        assert "Token: u6Gg****" in result.output
+        assert "Token source: GC_TOKEN" in result.output
+        assert "synthetic" not in result.output
         assert "gh proxy: active; commands target GitCode, not GitHub" in result.output
 
-    def test_status_reports_missing_auth_and_proxy_target(self, runner, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: (_ for _ in ()).throw(RuntimeError()))
+    def test_status_reports_missing_auth_and_proxy_target(self, runner, tmp_config_dir, monkeypatch):
+        monkeypatch.delenv("GC_TOKEN", raising=False)
         result = runner.invoke(main, ["auth", "status"], env={"GC_GH_PROXY_ACTIVE": "1"})
         assert result.exit_code == 1
         assert "X Not logged in to GitCode" in result.output
         assert "gh proxy: active; commands target GitCode, not GitHub" in result.output
 
-    def test_status_preserves_gc_exit_code_when_auth_is_missing(self, runner, monkeypatch):
-        monkeypatch.setattr("gitcode_cli.commands.auth.get_token", lambda: (_ for _ in ()).throw(RuntimeError()))
+    def test_status_preserves_gc_exit_code_when_auth_is_missing(self, runner, tmp_config_dir, monkeypatch):
+        monkeypatch.delenv("GC_TOKEN", raising=False)
         result = runner.invoke(main, ["auth", "status"])
         assert result.exit_code == 0
 

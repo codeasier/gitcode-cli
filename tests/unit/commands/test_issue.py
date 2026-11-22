@@ -989,7 +989,29 @@ class TestIssueDevelop:
     def test_develop_help_marks_branch_options_unsupported(self, runner):
         result = runner.invoke(main, ["issue", "develop", "--help"])
         assert result.exit_code == 0
-        assert "Unsupported: GitCode does not provide an issue develop branch API." in result.output
+        assert "no verified atomic create-and-link operation" in result.output
+
+    @pytest.mark.parametrize("branches", [["main", "fix/one"], []])
+    def test_develop_lists_only_linked_branches(self, runner, mock_client, mock_repo, branches):
+        mock_client.get.return_value = branches
+        with patch("gitcode_cli.commands.issue.open_in_browser") as browser:
+            result = runner.invoke(main, ["issue", "develop", "-l", "42"])
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == branches
+        mock_client.get.assert_called_once_with("/repos/owner/repo/issues/42/related_branches")
+        browser.assert_not_called()
+
+    @pytest.mark.parametrize("branches", [None, {}, [""], ["first", "\x1b[1A"], [{"ref": "main"}]])
+    def test_develop_list_rejects_malformed_responses(self, runner, mock_client, mock_repo, branches):
+        mock_client.get.return_value = branches
+        result = runner.invoke(main, ["issue", "develop", "42", "--list"])
+        assert result.exit_code == 1 and "Unrecognized GitCode linked-branch" in result.output
+        assert "first" not in result.output
+
+    def test_develop_list_rejects_creation_options(self, runner, mock_client, mock_repo):
+        result = runner.invoke(main, ["issue", "develop", "42", "--list", "--name", "unused"])
+        assert result.exit_code == 2 and "--list cannot be combined" in result.output
+        assert mock_client.mock_calls == []
 
     @pytest.mark.parametrize(
         "args",

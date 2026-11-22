@@ -36,6 +36,69 @@ def test_target_override_has_highest_priority(monkeypatch):
     assert select_target(["-R", "github.com/o/r"], {"GC_GH_TARGET": "gitcode"}) == "gitcode"
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["repo", "sync", "-b", "github.com/not/repo", "gitcode.com/o/r"],
+        ["issue", "develop", "-l", "https://gitcode.com/o/r/issues/1"],
+        ["pr", "merge", "--match-head-commit", "ignored", "https://gitcode.com/o/r/pull/3"],
+    ],
+)
+def test_scoped_commands_do_not_route_by_flag_values(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "github.com")
+    assert select_target(argv, {}) == "gitcode"
+
+
+@pytest.mark.parametrize("credential", [["--token", "synthetic-marker"], ["--token=synthetic-marker"]])
+@pytest.mark.parametrize("env", [{}, {"GC_GH_TARGET": "gitcode"}, {"GC_GH_TARGET": "github"}])
+def test_proxy_rejects_global_token_option_without_routing_or_reflection(monkeypatch, credential, env):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("origin should not be inspected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: pytest.fail("proxy should not dispatch"))
+    with pytest.raises(ProxyError, match="does not accept --token") as exc:
+        dispatch(["-R", "gitcode.com/o/r", *credential, "auth", "token"], env)
+    assert "synthetic-marker" not in str(exc.value)
+
+
+@pytest.mark.parametrize("env", [{}, {"GC_GH_TARGET": "gitcode"}])
+def test_proxy_api_refusal_never_reflects_endpoint(monkeypatch, env):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "gitcode.com")
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: pytest.fail("proxy should not dispatch"))
+    with pytest.raises(ProxyError, match="use gc api directly") as exc:
+        dispatch(["api", "user?access_token=synthetic-marker"], env)
+    assert "synthetic-marker" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["help", "api"],
+        ["help", "api", "user?access_token=synthetic-marker"],
+        ["help", "api", "repos/o/r/issues", "-X", "POST", "--input"],
+        ["help", "auth", "--token=synthetic-marker"],
+        ["help", "--", "issue"],
+    ],
+)
+def test_gitcode_help_cannot_dispatch_direct_only_api_or_consume_help_flag(monkeypatch, args):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *argv: pytest.fail("proxy should not dispatch"))
+    with pytest.raises(ProxyError) as exc:
+        dispatch(args, {"GC_GH_TARGET": "gitcode"})
+    assert "synthetic-marker" not in str(exc.value)
+
+
+def test_unknown_gitcode_command_refusal_does_not_echo_arguments():
+    with pytest.raises(ProxyError, match="refusing to fall back") as exc:
+        validate_gitcode_command(["synthetic-marker", "literal-argument"])
+    assert "synthetic-marker" not in str(exc.value) and "literal-argument" not in str(exc.value)
+
+
+def test_proxy_global_token_guard_does_not_block_native_token_command_or_comment_text(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "gitcode.com")
+    assert select_target(["auth", "token"], {}) == "gitcode"
+    assert select_target(["pr", "review", "1", "--comment", "--body", "--token"], {}) == "gitcode"
+    validate_gitcode_command(["auth", "token"])
+    validate_gitcode_command(["pr", "review", "1", "--comment", "--body", "--token"])
+
+
 def test_invalid_target_override_fails():
     with pytest.raises(ProxyError, match="GC_GH_TARGET"):
         select_target([], {"GC_GH_TARGET": "other"})

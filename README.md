@@ -59,6 +59,7 @@ This repository also maintains the independently installable [`codeasier-gitcode
 - [Global search](docs/en/global-search.md)
 - [Repository task labels](docs/en/task-labels.md)
 - [Organizations and discussions](docs/en/community-commands.md)
+- [GitCode Actions and PR checks](docs/en/actions-evidence.md)
 
 ## Repository Selection
 

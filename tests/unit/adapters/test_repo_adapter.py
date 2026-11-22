@@ -341,9 +341,9 @@ class TestRepoAdapterWrite:
         service.get.return_value = {"fork": True}
         service.sync.return_value = {"repo_sync_result": True}
 
-        result = adapter.sync_repo("owner", "repo")
+        result = adapter.sync_repo("owner", "repo", branch="main")
 
-        service.sync.assert_called_once_with("owner", "repo")
+        service.sync.assert_called_once_with("owner", "repo", branch="main")
         service.get.assert_called_once_with("owner", "repo")
         assert result.message == "synced"
         assert result.item == {"repo_sync_result": True}
@@ -383,12 +383,51 @@ def test_sync_unknown_forkness_is_not_guessed(adapter, service, item):
 
 
 @pytest.mark.parametrize("fork", [True, 1])
-def test_sync_confirmed_fork_preserves_single_existing_sync_call(adapter, service, fork):
-    service.get.return_value = {"fork": fork}
+def test_sync_confirmed_fork_selects_upstream_default_not_fork_default(adapter, service, fork):
+    service.get.side_effect = [
+        {"fork": fork, "parentfull_name": "up/src", "default_branch": "not-this"},
+        {"default_branch": "main"},
+    ]
     service.sync.return_value = {"repo_sync_result": True}
     result = adapter.sync_repo("owner", "repo")
     assert result.message == "synced"
-    assert service.mock_calls == [call.get("owner", "repo"), call.sync("owner", "repo")]
+    assert service.mock_calls == [
+        call.get("owner", "repo"),
+        call.get("up", "src"),
+        call.sync("owner", "repo", branch="main"),
+    ]
+
+
+@pytest.mark.parametrize("response", [None, {}, {"repo_sync_result": False}, {"repo_sync_result": 1}])
+def test_sync_requires_explicit_provider_success(adapter, service, response):
+    service.get.return_value = {"fork": True}
+    service.sync.return_value = response
+    with pytest.raises(click.ClickException, match="did not confirm"):
+        adapter.sync_repo("owner", "repo", branch="main")
+    service.sync.assert_called_once_with("owner", "repo", branch="main")
+
+
+@pytest.mark.parametrize(
+    "fork",
+    [
+        {"fork": True},
+        {"fork": True, "parentfull_name": "other"},
+        {"fork": True, "parent": {"full_name": "x/y"}, "parentfull_name": "z/y"},
+    ],
+)
+def test_sync_missing_or_conflicting_parent_does_not_sync_all(adapter, service, fork):
+    service.get.return_value = fork
+    with pytest.raises(click.ClickException, match="Cannot verify the upstream"):
+        adapter.sync_repo("owner", "repo")
+    service.sync.assert_not_called()
+
+
+@pytest.mark.parametrize("branch", [None, "", " ", "main\nnext", "release/*", "../main", "empty//branch"])
+def test_sync_missing_or_invalid_upstream_default_never_requests_all_branches(adapter, service, branch):
+    service.get.side_effect = [{"fork": True, "parentfull_name": "up/src"}, {"default_branch": branch}]
+    with pytest.raises(click.ClickException, match="Cannot verify a single branch"):
+        adapter.sync_repo("owner", "repo")
+    service.sync.assert_not_called()
 
 
 def test_sync_read_failure_never_reaches_write(adapter, service):
@@ -402,8 +441,8 @@ def test_sync_write_failure_is_not_retried(adapter, service):
     service.get.return_value = {"fork": True}
     service.sync.side_effect = APIError("synthetic failure", status_code=500)
     with pytest.raises(APIError):
-        adapter.sync_repo("owner", "repo")
-    service.sync.assert_called_once_with("owner", "repo")
+        adapter.sync_repo("owner", "repo", branch="main")
+    service.sync.assert_called_once_with("owner", "repo", branch="main")
 
 
 @pytest.mark.parametrize(

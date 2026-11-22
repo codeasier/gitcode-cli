@@ -226,6 +226,8 @@ def pr_group() -> None:
 @click.option("-t", "--subject")
 @click.option("-A", "--author-email")
 @click.option("--auto", is_flag=True)
+@click.option("--disable-auto", is_flag=True, help="Unsupported: no verified per-PR auto-merge API.")
+@click.option("--match-head-commit", help="Unsupported: the GitCode merge API has no atomic expected-head condition.")
 @click.option("--admin", is_flag=True)
 @click.pass_context
 def pr_merge(
@@ -241,8 +243,14 @@ def pr_merge(
     subject: str | None,
     author_email: str | None,
     auto: bool,
+    disable_auto: bool,
+    match_head_commit: str | None,
     admin: bool,
 ) -> None:
+    if match_head_commit is not None:
+        raise unsupported("PR_MERGE_MATCH_HEAD_COMMIT")
+    if disable_auto:
+        raise unsupported("PR_MERGE_DISABLE_AUTO")
     app = ctx.obj["app"]
     owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     if author_email is not None:
@@ -462,7 +470,12 @@ def _handle_pr_comment_history(
 @click.option("-b", "--body")
 @click.option("-F", "--body-file")
 @click.option("-c", "--comment", is_flag=True, help="Leave a review comment.")
-@click.option("-r", "--request-changes", is_flag=True, help="Request changes. Downgrades to a PR comment on GitCode.")
+@click.option(
+    "-r",
+    "--request-changes",
+    is_flag=True,
+    help="Unsupported: no verified request-changes review API. Never posts a fallback comment.",
+)
 @click.option("--force", is_flag=True, help="Force review handling when supported by GitCode.")
 @click.pass_context
 def pr_review(
@@ -476,21 +489,23 @@ def pr_review(
     request_changes: bool,
     force: bool,
 ) -> None:
+    selected_modes = [approve, comment, request_changes]
+    if sum(1 for selected in selected_modes if selected) != 1:
+        raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
+    if request_changes:
+        raise unsupported("PR_REVIEW_REQUEST_CHANGES")
+    body = get_body_from_options(body=body, body_file=body_file, editor=False)
+    if comment and not body:
+        raise click.ClickException("Body is required when using --comment.")
+    if approve and body:
+        raise click.ClickException("GitCode review API does not support gh-style approval review body.")
+
     app = ctx.obj["app"]
     owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
     resolved_identifier = resolve_pr_identifier_or_current_branch(identifier)
     owner, repo, number = resolve_pr_arg(resolved_identifier, owner, repo, service)
     number = int(number)
-    body = get_body_from_options(body=body, body_file=body_file, editor=False)
-    selected_modes = [approve, comment, request_changes]
-    if sum(1 for selected in selected_modes if selected) != 1:
-        raise click.ClickException("Specify exactly one of --approve, --comment, or --request-changes.")
-    if (comment or request_changes) and not body:
-        raise click.ClickException("Body is required when using --comment or --request-changes.")
-    if approve and body:
-        raise click.ClickException("GitCode review API does not support gh-style approval review body.")
-
     adapter = PullRequestAdapter(service)
     result = adapter.review_pr(
         owner,
@@ -502,9 +517,6 @@ def pr_review(
         request_changes=request_changes,
         force=force,
     )
-    if result.degraded:
-        safe_echo(f"Posted pull request comment {result.item['id']}")
-        raise click.ClickException(result.message or "degraded review operation")
     if comment:
         safe_echo(f"Posted pull request comment {result.item['id']}")
         return
@@ -1169,7 +1181,7 @@ set_gc_help(
         ("GENERAL COMMANDS", ["audit", "create", "list", "status"]),
         (
             "TARGETED COMMANDS",
-            ["checkout", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
+            ["checkout", "checks", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
         ),
     ],
     gc_examples=[

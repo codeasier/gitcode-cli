@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlsplit
 import click
 
 from ..errors import APIError
+from ..repo import validate_gitcode_repo
 from ..services import RepoService
 from .base import AdapterActionResult
 
@@ -48,6 +49,20 @@ def _matches_forkness(item: dict[str, Any], *, fork: bool, source: bool) -> bool
 
 def _drop_none(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
+
+
+def _is_single_branch(branch: Any) -> bool:
+    # A missing, blank or wildcard ref must never become an unscoped sync request.
+    return (
+        isinstance(branch, str)
+        and bool(branch)
+        and not branch.startswith("-")
+        and not branch.endswith(".")
+        and ".." not in branch
+        and "@{" not in branch
+        and not any(ch.isspace() or not ch.isprintable() or ch in "~^:?*[\\" for ch in branch)
+        and all(part and not part.startswith(".") and not part.endswith(".lock") for part in branch.split("/"))
+    )
 
 
 def _confirmed_fork_full_name(item: Any, organization: str, repo: str) -> str:
@@ -251,7 +266,7 @@ class RepoAdapter:
         self.service.delete(owner, repo)
         return AdapterActionResult(message="deleted")
 
-    def sync_repo(self, owner: str, repo: str) -> AdapterActionResult:
+    def sync_repo(self, owner: str, repo: str, *, branch: str | None = None) -> AdapterActionResult:
         current = self.service.get(owner, repo)
         fork = current.get("fork") if isinstance(current, dict) else None
         # Official schema uses integer flags, while its concrete example uses bool.
@@ -262,5 +277,22 @@ class RepoAdapter:
             )
         if not fork:
             raise click.ClickException(f"Repository {owner}/{repo} is not a fork; no synchronization request was sent.")
-        item = self.service.sync(owner, repo)
+        if branch is None:
+            # gh defaults to the upstream's default, not the destination's. GitCode
+            # interprets an omitted branch as *all* branches, never send that.
+            parent = current.get("parent")
+            nested = parent.get("full_name") if isinstance(parent, dict) else None
+            flat = current.get("parentfull_name")
+            name = nested or flat
+            if not isinstance(name, str) or name.count("/") != 1 or (nested and flat and flat != nested):
+                raise click.ClickException("Cannot verify the upstream repository; specify --branch. No sync was sent.")
+            parent_owner, parent_repo = name.split("/")
+            validate_gitcode_repo(None, parent_owner, parent_repo)
+            upstream = self.service.get(parent_owner, parent_repo)
+            branch = upstream.get("default_branch") if isinstance(upstream, dict) else None
+        if not _is_single_branch(branch):
+            raise click.ClickException("Cannot verify a single branch to sync; specify --branch. No sync was sent.")
+        item = self.service.sync(owner, repo, branch=branch)
+        if not isinstance(item, dict) or item.get("repo_sync_result") is not True:
+            raise click.ClickException("GitCode did not confirm synchronization. Check the fork before retrying.")
         return AdapterActionResult(item=item, message="synced")

@@ -10,7 +10,7 @@ from http.client import HTTPException
 from pathlib import PureWindowsPath
 from typing import Any, BinaryIO, Protocol
 from urllib.error import HTTPError
-from urllib.parse import parse_qsl, unquote_plus, urljoin, urlsplit
+from urllib.parse import parse_qsl, unquote, unquote_plus, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .errors import GCError
@@ -94,31 +94,50 @@ def asset_map(release: dict) -> dict[str, dict]:
     return result
 
 
+_REF_PATH = r"[^/]+(?:/[^/]+)*"
+_ARCHIVE_PATH = re.compile(rf"/[^/]+/[^/]+/-/archive/{_REF_PATH}/[^/]+")
+_ATTACHMENT_PATH = re.compile(
+    rf"/[^/]+/[^/]+/(?:releases/download/{_REF_PATH}/[^/]+|-/releases/{_REF_PATH}/downloads/[^/]+)"
+)
+_MEDIA_TYPE = re.compile(r"[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+")
+
+
+def _asset_route(url: str) -> str | None:
+    parts = urlsplit(url)
+    if parts.hostname not in _WEB_HOSTS:
+        return None
+    for segment in parts.path.split("/"):
+        decoded = unquote(segment)
+        if "\\" in decoded or any(part in {".", ".."} for part in decoded.split("/")):
+            return None
+    if _ARCHIVE_PATH.fullmatch(parts.path):
+        return "archive"
+    if _ATTACHMENT_PATH.fullmatch(parts.path):
+        return "attachment"
+    return None
+
+
 def is_archive(asset: dict) -> bool:
-    # GitCode includes generated source archives alongside uploaded files, and
-    # some documented responses omit 'type'. An uploaded .zip is not an archive.
+    # Explicit provider types can also accompany direct, signed storage URLs.
     kind = asset.get("type")
-    if kind == "SOURCE":
-        return True
-    if kind == "ATTACH_FILE":
-        return False
+    if kind in ("SOURCE", "ATTACH_FILE"):
+        return kind == "SOURCE"
     legacy = {"zip", "tar", "tar.gz", "tar.bz2"}
-    if kind is not None and (not isinstance(kind, str) or kind not in legacy):
+    if kind is not None and not isinstance(kind, str):
         raise GCError("Unrecognized release asset type.")
     url = asset_url(asset.get("browser_download_url"))
-    parts = urlsplit(url)
-    if (
-        parts.hostname in _WEB_HOSTS
-        and re.fullmatch(r"/[^/]+/[^/]+/-/archive/.+/[^/]+", parts.path)
-        and (kind is None or parts.path.endswith("." + kind))
-    ):
+    route = _asset_route(url)
+    if route == "archive" and (kind is None or (kind in legacy and urlsplit(url).path.endswith("." + kind))):
         return True
+    identity = asset.get("id")
+    has_id = type(identity) is int and identity > 0
+    # Some documented payloads use a MIME type for an attachment. A MIME type
+    # alone (or just a .zip filename) is not enough to distinguish it from source.
     if kind is not None:
-        raise GCError("Unrecognized generated release archive.")
-    if type(asset.get("id")) is int or (
-        parts.hostname in _WEB_HOSTS
-        and ("/releases/download/" in parts.path or ("/-/releases/" in parts.path and "/downloads/" in parts.path))
-    ):
+        if route == "attachment" and has_id and _MEDIA_TYPE.fullmatch(kind):
+            return False
+        raise GCError("Unrecognized release asset type or route.")
+    if route == "attachment" or (has_id and route != "archive"):
         return False
     raise GCError("Cannot distinguish a release attachment from a generated archive.")
 
@@ -146,8 +165,9 @@ def _open(request: Request):
     return build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=60)
 
 
-def _download_response(url: str):
+def _download_response(url: str, *, secret: str):
     for _ in range(6):
+        reject_reflected_credential(url, secret)
         try:
             return _open(Request(asset_url(url), headers={"Accept-Encoding": "identity"}))
         except HTTPError as exc:
@@ -175,12 +195,12 @@ class _Writer(Protocol):
     def write(self, data: bytes, /) -> int: ...
 
 
-def download(asset: dict, target: _Writer) -> None:
+def download(asset: dict, target: _Writer, *, secret: str = "") -> None:
     size, digest = _expected_integrity(asset)
     checksum = hashlib.sha256()
     count = 0
     try:
-        with _download_response(asset_url(asset.get("browser_download_url"))) as response:
+        with _download_response(asset_url(asset.get("browser_download_url")), secret=secret) as response:
             if response.status != 200:
                 raise GCError("Release server did not return a complete file.")
             mime = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()

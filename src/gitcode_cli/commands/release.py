@@ -292,16 +292,17 @@ def release_delete_asset(ctx, tag, asset_name, repo_name, yes):
         _remove(svc, tag, asset_name, ident)
 
 
-def _download_files(rows, directory, output, clobber, skip_existing):
+def _download_files(rows, directory, output, clobber, skip_existing, *, secret: str):
     if output is not None and len(rows) != 1:
         raise click.UsageError("--output requires exactly one matching asset.")
     try:
         if output == "-":
             stream = click.get_binary_stream("stdout")
-            if stream.isatty():
+            is_terminal = getattr(stream, "isatty", None)
+            if not callable(is_terminal) or is_terminal():
                 raise GCError("Refusing to write binary release data to a terminal; redirect stdout.")
             with TemporaryFile() as temp:
-                binary.download(rows[0], temp)
+                binary.download(rows[0], temp, secret=secret)
                 temp.seek(0)
                 shutil.copyfileobj(temp, stream)
             return
@@ -316,7 +317,7 @@ def _download_files(rows, directory, output, clobber, skip_existing):
                 if not (present and skip_existing):
                     pairs.append((row, name))
             for row, name in pairs:
-                local.save(row, path, parent, name, clobber=clobber)
+                local.save(row, path, parent, name, clobber=clobber, secret=secret)
                 safe_echo(f"Downloaded {path / name}", err=True)
     except OSError:
         raise GCError("Unable to install release asset; existing completed files were preserved.") from None
@@ -343,17 +344,25 @@ def release_download(ctx, tag, repo_name, pattern, archive, directory, output, c
         record = svc.get(tag)
         selected = binary.select_assets(record, pattern, archive)
         temporary = binary.asset_map(svc.download_metadata(record["tag_name"]))
+        checked = []
+        secret = svc.client.token
         for row in selected:
             item = temporary.get(row["name"])
-            if not item or any(
-                row.get(k) is not None and item.get(k) not in (None, row[k]) for k in ("id", "size", "digest")
+            if (
+                not item
+                or binary.is_archive(item) != binary.is_archive(row)
+                or (
+                    row.get("id") is not None
+                    and (type(item.get("id")) is not type(row["id"]) or item.get("id") != row["id"])
+                )
+                or any(row.get(k) is not None and item.get(k) not in (None, row[k]) for k in ("size", "digest"))
             ):
                 raise GCError("Release assets changed; retry with fresh metadata.")
-            row.update({k: item[k] for k in ("size", "digest") if item.get(k) is not None})
+            integrity = {k: item[k] for k in ("size", "digest") if item.get(k) is not None}
             transfer_url = item.get("temp_download_url") or item.get("browser_download_url")
-            binary.reject_reflected_credential(transfer_url, svc.client.token)
-            row["browser_download_url"] = binary.asset_url(transfer_url)
-    _download_files(selected, directory, output, clobber, skip_existing)
+            binary.reject_reflected_credential(transfer_url, secret)
+            checked.append({**row, **integrity, "browser_download_url": binary.asset_url(transfer_url)})
+    _download_files(checked, directory, output, clobber, skip_existing, secret=secret)
 
 
 release_group.add_command(release_list, name="ls")

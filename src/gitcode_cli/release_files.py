@@ -144,12 +144,12 @@ def _private_stage(parent: int) -> Iterator[int]:
         os.rmdir(name, dir_fd=parent)
 
 
-def save(asset: dict, path: Path, parent: int, name: str, *, clobber: bool) -> None:
+def save(asset: dict, path: Path, parent: int, name: str, *, clobber: bool, secret: str) -> None:
     with _private_stage(parent) as stage:
         temp = os.open("payload", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=stage)
         try:
             with os.fdopen(temp, "wb", closefd=False) as out:
-                download(asset, out)
+                download(asset, out, secret=secret)
             verified = os.fstat(temp)
             # If the visible path was removed or relinked, fail rather than
             # report a download at a different location. Writes are still based

@@ -618,3 +618,101 @@ def test_legacy_archive_example_is_not_classified_as_an_uploaded_file(harness):
         binary.is_archive(
             {**legacy, "browser_download_url": "https://api.atomgit.com/o/r/-/releases/v1/downloads/r-v1.zip"}
         )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/octocat/Hello-World/releases/download/v1.0.0/app.zip",
+        "/octocat/Hello-World/-/releases/v1.0.0/downloads/app.zip",
+    ],
+)
+def test_documented_mime_typed_attachment_requires_exact_route_and_positive_id(path):
+    mime_attachment = {
+        "name": "app.zip",
+        "id": 42,
+        "type": "application/zip",
+        "browser_download_url": "https://api.atomgit.com" + path,
+    }
+    assert not binary.is_archive(mime_attachment)
+    record = {**ROW, "assets": [ARCH, mime_attachment]}
+    assert binary.select_assets(record, ("*.zip",), None) == [mime_attachment]
+    assert binary.select_assets(record, (), "zip") == [ARCH]
+    for override in (
+        {"id": 0},
+        {"id": None},
+        {"id": True},
+        {"id": "42"},
+        {"browser_download_url": "https://api.atomgit.com/unrelated" + path},
+        {"browser_download_url": "https://api.atomgit.com/o/r/releases/download/%2e%2e/app.zip"},
+        {"browser_download_url": ARCH["browser_download_url"]},
+        {"browser_download_url": "https://example.invalid" + path},
+        {"type": "zip"},
+        {"type": "application/zip; charset=UTF-8"},
+    ):
+        with pytest.raises(GCError):
+            binary.is_archive({**mime_attachment, **override})
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"id": None},
+        {"id": True},
+        {"id": 80},
+        {"type": "SOURCE"},
+    ],
+)
+def test_download_refuses_changed_temporary_identity_or_kind(harness, monkeypatch, override):
+    run, c = harness
+    c.get.side_effect = [ROW, {**ROW, "assets": [{**FILE, **override, "temp_download_url": STORAGE}]}]
+    transfer = MagicMock(side_effect=AssertionError("download should not have started"))
+    monkeypatch.setattr(binary, "_open", transfer)
+    result = run("download", "v1", "-O", "-")
+    assert result.exit_code != 0 and "Release assets changed" in str(result.exception)
+    assert result.stdout_bytes == b""
+    transfer.assert_not_called()
+
+
+def test_download_mime_typed_attachment_accepts_stable_kind_and_id(harness, monkeypatch):
+    run, c = harness
+    asset = {**FILE, "type": "application/zip"}
+    c.get.side_effect = [
+        {**ROW, "assets": [ARCH, asset]},
+        {**ROW, "assets": [{**asset, "type": "ATTACH_FILE", "temp_download_url": STORAGE}]},
+    ]
+
+    def get(req):
+        assert req.full_url == STORAGE
+        return Response()
+
+    monkeypatch.setattr(binary, "_open", get)
+    result = run("download", "v1", "-O", "-")
+    assert result.exit_code == 0 and result.stdout_bytes == DATA
+
+
+def test_signed_redirect_rejects_reflected_secret_before_transfer(harness, monkeypatch):
+    run, c = harness
+    c.token = "secret+pat"
+    c.get.side_effect = [ROW, {**ROW, "assets": [{**FILE, "temp_download_url": STORAGE}]}]
+    requests = []
+
+    def redirect(req):
+        requests.append(req.full_url)
+        headers = Message()
+        headers["Location"] = STORAGE + "&unrelated=secret%2Bpat"
+        raise HTTPError(req.full_url, 302, "redirect", headers, io.BytesIO())
+
+    monkeypatch.setattr(binary, "_open", redirect)
+    result = run("download", "v1", "-O", "-")
+    assert result.exit_code != 0 and "reflected API credentials" in str(result.exception)
+    assert "secret+pat" not in str(result.exception)
+    assert requests == [STORAGE]
+
+
+def test_download_stdout_refuses_unknown_terminal_stream(harness, monkeypatch):
+    run, c = harness
+    c.get.side_effect = [ROW, ROW]
+    monkeypatch.setattr(cmd.click, "get_binary_stream", lambda _: object())
+    result = run("download", "v1", "-O", "-")
+    assert result.exit_code != 0 and "terminal" in str(result.exception)

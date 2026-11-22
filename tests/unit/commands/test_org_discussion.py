@@ -222,7 +222,7 @@ def test_view_rejects_wrong_number(run, client):
 
 
 def test_single_post_create_with_stdin(run, client):
-    client.post.return_value = {"number": 2}
+    client.post.return_value = row(2, title="Title", md_content="one\ntwo\n", category={"name": "Q&A"})
     result = run("discussion", "create", "-R", "O/R", "-t", "Title", "-c", "Q&A", "-F", "-", stdin="one\ntwo\n")
     assert result.exit_code == 0 and "#2" in result.output
     assert client.mock_calls == [
@@ -231,7 +231,7 @@ def test_single_post_create_with_stdin(run, client):
 
 
 def test_single_put_edit(run, client):
-    client.put.return_value = {"number": 7}
+    client.put.return_value = row(7, title="Title", md_content="text", category={"name": "Q&A"})
     result = run("discussion", "edit", "7", "-R", "O/R", "-t", "Title", "-c", "Q&A", "-b", "text")
     assert result.exit_code == 0 and "#7" in result.output
     assert client.mock_calls == [
@@ -240,10 +240,14 @@ def test_single_put_edit(run, client):
 
 
 def test_single_post_comment(run, client):
-    client.post.return_value = {"id": "c1"}
+    client.get.return_value = row(7, id="discussion-immutable-id")
+    client.post.return_value = {"id": "c1", "discuss_id": "discussion-immutable-id", "md_content": "text", "type": 1}
     result = run("discussion", "comment", "7", "-R", "O/R", "-b", "text")
     assert result.exit_code == 0 and "c1" in result.output
-    assert client.mock_calls == [call.post("/repos/O/R/discuss/7/comment", json={"md_content": "text"})]
+    assert client.mock_calls == [
+        call.get("/repos/O/R/discuss/7"),
+        call.post("/repos/O/R/discuss/7/comment", json={"md_content": "text"}),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -256,7 +260,83 @@ def test_single_post_comment(run, client):
 )
 def test_uncertain_write_never_retried(run, client, args, result):
     client.post.return_value = client.put.return_value = result
+    client.get.return_value = row(2)
     response = run("-R", "O/R", "discussion", *args)
     assert isinstance(response.exception, GCError) and "before retrying" in str(response.exception)
-    assert len(client.mock_calls) == 1
+    mutation = client.put if args[0] == "edit" else client.post
+    mutation.assert_called_once()
+    assert client.get.call_count == int(args[0] == "comment")
+    assert not response.output
+
+
+@pytest.mark.parametrize("command", ["create", "edit"])
+@pytest.mark.parametrize(
+    "different",
+    [
+        {"id": ""},
+        {"id": "x\x1b"},
+        {"number": True},
+        {"title": "old"},
+        {"md_content": "old"},
+        {"category": {"name": "Old"}},
+        {"category": "Q&A"},
+    ],
+)
+def test_discussion_write_response_must_match_request(run, client, command, different):
+    client.post.return_value = client.put.return_value = {
+        **row(7, title="Title", md_content="body", category={"name": "Q&A"}),
+        **different,
+    }
+    number = ("7",) if command == "edit" else ()
+    response = run("-R", "O/R", "discussion", command, *number, "-t", "Title", "-b", "body", "-c", "Q&A")
+    assert isinstance(response.exception, APIError) and "before retrying" in str(response.exception)
+    assert not response.output
+    (client.put if command == "edit" else client.post).assert_called_once()
+    client.get.assert_not_called()
+
+
+@pytest.mark.parametrize("readback", [None, row(8), row(7, id="  "), row(7, id=123), {"number": "7", "id": "opaque"}])
+def test_comment_requires_proven_parent_before_post(run, client, readback):
+    client.get.return_value = readback
+    response = run("-R", "O/R", "discussion", "comment", "7", "-b", "body")
+    assert isinstance(response.exception, APIError) and "no comment was submitted" in str(response.exception)
+    assert not response.output
+    client.get.assert_called_once_with("/repos/O/R/discuss/7")
+    client.post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "different",
+    [
+        {"discuss_id": "7"},
+        {"discuss_id": "other"},
+        {"id": ""},
+        {"id": " c1 "},
+        {"md_content": "old"},
+        {"type": 2},
+        {"type": True},
+        {"type": "1"},
+    ],
+)
+def test_comment_response_must_confirm_parent_type_and_body(run, client, different):
+    client.get.return_value = row(7, id="parent-opaque")
+    client.post.return_value = {"id": "c1", "discuss_id": "parent-opaque", "md_content": "body", "type": 1, **different}
+    response = run("-R", "O/R", "discussion", "comment", "7", "-b", "body")
+    assert isinstance(response.exception, APIError) and "before retrying" in str(response.exception)
+    assert not response.output
+    assert client.mock_calls == [
+        call.get("/repos/O/R/discuss/7"),
+        call.post("/repos/O/R/discuss/7/comment", json={"md_content": "body"}),
+    ]
+
+
+@pytest.mark.parametrize("json_output", [(), ("--json", "number,comments")])
+@pytest.mark.parametrize(
+    "malformed",
+    [{"id": "wrong", "author": "not-object"}, {"id": "bad-body", "md_content": []}, {"id": 123}, {"id": "bad\x1b"}],
+)
+def test_view_never_prints_partial_output_when_comments_malformed(run, client, json_output, malformed):
+    client.get.side_effect = [row(7, md_content="topic"), [{"id": "valid", "md_content": "first"}, malformed]]
+    response = run("-R", "O/R", "discussion", "view", "7", "--comments", *json_output)
+    assert isinstance(response.exception, APIError) and "Invalid discussion comment" in str(response.exception)
     assert not response.output

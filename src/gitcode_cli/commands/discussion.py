@@ -110,15 +110,68 @@ def _matching(rows: Iterator[dict], state: str, category: str | None, author: st
         yield row
 
 
-def _check_write(result: Any, field: str, expected: int | None = None) -> str:
-    key = result.get(field) if isinstance(result, dict) else None
-    if field == "number":
-        valid = type(key) is int and key > 0 and (expected is None or key == expected)
-    else:
-        valid = isinstance(key, str) and bool(key.strip()) and key.isprintable()
-    if not valid:
-        raise APIError("GitCode did not confirm the write. Verify the remote state before retrying.")
-    return str(key)
+def _valid_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value) and value == value.strip() and value.isprintable()
+
+
+def _unconfirmed_write() -> APIError:
+    return APIError("GitCode did not confirm the write. Verify the remote state before retrying.")
+
+
+def _confirm_discussion(result: Any, *, title: str, body: str, category: str, expected: int | None = None) -> int:
+    if not isinstance(result, dict) or not _valid_id(result.get("id")):
+        raise _unconfirmed_write()
+    number = result.get("number")
+    if type(number) is not int or number < 1 or (expected is not None and number != expected):
+        raise _unconfirmed_write()
+    returned_category = result.get("category")
+    if (
+        result.get("title") != title
+        or result.get("md_content") != body
+        or not isinstance(returned_category, dict)
+        or returned_category.get("name") != category
+    ):
+        raise _unconfirmed_write()
+    return number
+
+
+def _discussion_id(service: DiscussionService, number: int) -> str:
+    # The discussion number is repository-local; comment responses use the
+    # opaque discuss_id instead. Map it once before changing remote state.
+    result = service.get(number)
+    if isinstance(result, dict) and type(result.get("number")) is int and result["number"] == number:
+        identity = result.get("id")
+        if isinstance(identity, str) and _valid_id(identity):
+            return identity
+    raise APIError("Unable to verify the target discussion; no comment was submitted.")
+
+
+def _confirm_comment(result: Any, *, discussion_id: str, body: str) -> str:
+    if not isinstance(result, dict):
+        raise _unconfirmed_write()
+    identity = result.get("id")
+    if (
+        not isinstance(identity, str)
+        or not _valid_id(identity)
+        or result.get("discuss_id") != discussion_id
+        or result.get("md_content") != body
+        or type(result.get("type")) is not int
+        or result["type"] != 1  # GitCode distinguishes a top-level comment from a reply (2).
+    ):
+        raise _unconfirmed_write()
+    return identity
+
+
+def _checked_comments(rows: Iterator[dict]) -> Iterator[dict]:
+    for row in rows:
+        author, body = row.get("author"), row.get("md_content")
+        if (
+            not _valid_id(row.get("id"))
+            or (author is not None and not isinstance(author, dict))
+            or (body is not None and not isinstance(body, str))
+        ):
+            raise APIError("Invalid discussion comment in GitCode response.")
+        yield row
 
 
 @click.group("discussion", cls=GCSectionGroup, help="Work with GitCode repository discussions.")
@@ -177,7 +230,7 @@ def view_discussion(ctx, number, repo_name, comments, limit, order, json_fields)
     row = _project(raw)
     if comments:
         fetch = partial(service.comments_page, number, order="time_asc" if order == "oldest" else "time_desc")
-        row["comments"] = list(islice(page_rows(fetch, min(limit, 100)), limit))
+        row["comments"] = list(islice(_checked_comments(page_rows(fetch, min(limit, 100))), limit))
 
     def display(item: dict) -> None:
         safe_echo(format_issue_detail(item))
@@ -201,7 +254,8 @@ def create_discussion(ctx, repo_name, title, category, body, body_file):
     text = _body(body, body_file)
     title, category = _nonblank(title, "--title"), _nonblank(category, "--category")
     result = _service(ctx, repo_name).create(title, text, category)
-    safe_echo(f"Created discussion #{_check_write(result, 'number')}")
+    confirmed = _confirm_discussion(result, title=title, body=text, category=category)
+    safe_echo(f"Created discussion #{confirmed}")
 
 
 @discussion_group.command(
@@ -218,7 +272,8 @@ def edit_discussion(ctx, number, repo_name, title, category, body, body_file):
     text = _body(body, body_file)
     title, category = _nonblank(title, "--title"), _nonblank(category, "--category")
     result = _service(ctx, repo_name).edit(number, title, text, category)
-    safe_echo(f"Updated discussion #{_check_write(result, 'number', number)}")
+    confirmed = _confirm_discussion(result, title=title, body=text, category=category, expected=number)
+    safe_echo(f"Updated discussion #{confirmed}")
 
 
 @discussion_group.command("comment", help="Add a top-level Markdown comment to a discussion.")
@@ -229,5 +284,8 @@ def edit_discussion(ctx, number, repo_name, title, category, body, body_file):
 @click.pass_context
 def comment_discussion(ctx, number, repo_name, body, body_file):
     text = _body(body, body_file)
-    result = _service(ctx, repo_name).comment(number, text)
-    safe_echo(f"Created comment {_check_write(result, 'id')} on discussion #{number}")
+    service = _service(ctx, repo_name)
+    parent_id = _discussion_id(service, number)
+    result = service.comment(number, text)
+    confirmed = _confirm_comment(result, discussion_id=parent_id, body=text)
+    safe_echo(f"Created comment {confirmed} on discussion #{number}")

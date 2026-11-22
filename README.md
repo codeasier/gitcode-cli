@@ -56,6 +56,7 @@ This repository also maintains the independently installable [`codeasier-gitcode
 - [Development guide](docs/en/development.md)
 - [Compatibility notes](docs/en/gh-compatibility.md)
 - [Direct REST API command](docs/en/gitcode-rest-cli.md)
+- [GitCode Actions and PR checks](docs/en/actions-evidence.md)
 
 ## Repository Selection
 

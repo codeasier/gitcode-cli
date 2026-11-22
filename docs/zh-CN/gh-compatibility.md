@@ -49,9 +49,9 @@ Issue/PR URL 与显式 host 或 `GC_GH_TARGET` 冲突时会被拒绝。直接使
 | `pr comment --edit-last`、`--create-if-none`、`--delete-last`、`--yes` | 支持，限当前用户的普通 PR 评论 |
 | `pr diff --patch` | 支持，返回按提交划分的邮件格式补丁 |
 
-### 结构化认证状态
+### 本地账号与结构化认证状态
 
-`gc auth status --json hosts` 通过 GitCode API 验证当前用户，返回以 `gitcode.com` 为键的 `hosts` 映射。输出始终不包含 token；无法获取的 scopes 与 Git 协议字段省略。缺少 token 时返回 `{"hosts": {}}`；API 或网络认证验证失败时返回 `state: "error"` 的条目，退出码仍为 0。配置损坏、JSON 字段错误、jq 表达式错误或格式化参数错误仍会失败。gh proxy 启用时也保持纯机器可读输出。
+`gc auth status --json hosts` 通过 GitCode API 验证列出的账号，返回以 `gitcode.com` 为键的 `hosts` 映射。`--active` 仅验证生效账号；PAT 登录与切换见[本地 GitCode 多账号](auth-accounts.md)。输出始终不包含 token；无法获取的 scopes 与 Git 协议字段省略。缺少 token 时返回 `{"hosts": {}}`；API 或网络认证验证失败时返回 `state: "error"` 的条目，退出码仍为 0。配置损坏、JSON 字段错误、jq 表达式错误或格式化参数错误仍会失败。gh proxy 启用时也保持纯机器可读输出。
 
 ```bash
 gc auth status --json hosts
@@ -91,10 +91,13 @@ gc pr diff 42 --patch > review.patch
 | PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
 | 写入结果 | merge 必须明确返回 `merged=true`（或整数 `1`）后才能报告成功或删除分支。重定向、已受理但未完成、非法 JSON 及非预期空响应均报错。结果不确定时应先核实远端状态再重试。已完成 merge/close 但分支删除被拒绝时，返回非零退出码并明确报告部分完成。 |
 | PR 行内评论 | GitCode 使用 `path + position` 模型，`position` 为文件绝对行号。`--line` 校验行号位于 PR diff 中后原样传递；`--position` 跳过 diff 校验。`--side` 仅选择校验侧，不会发送给 GitCode，因此 LEFT 侧锚定仅为尽力支持，不保证准确。不支持选择 commit。 |
-| PR review request changes | `gc pr review --request-changes` 会近似为 PR 评论，因为 GitCode review API 与 GitHub 不同。 |
+| PR review request changes | `--approve` 使用[原生审查接口](https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-review/)。与旧版 gc 不同，`--request-changes` 未核实阻塞性审查契约，返回非零且**不再代发评论**；确实只要普通反馈时显式使用 `--comment`。 |
+| PR 合并保护 | [合并接口](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge/)没有声明预期 head 或单 PR 的自动合并开关。响应 SHA 不等于写入前提；`--match-head-commit`、`--auto` 和 `--disable-auto` 均拒绝执行，不通过先读后合或轮询代替。 |
+| PR 更新、回退和锁定 | [PR API 目录](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)未核实更新源分支、回退至新 PR、锁定/解锁讨论的写入契约。读到锁定字段或网页有按钮，不等于公开 API 支持写入。 |
+| Issue 开发分支、讨论管理与转移 | `gc issue develop N --list` [读取关联分支名](https://atomgit-api-doc.atomgit.com/3.issues/73.get_the_list_of_branches_associated_with_the_issue.html)；[设置接口](https://docs.gitcode.com/en/docs/apis/put-api-v-5-repos-owner-repo-issues-number-related-branches/)接收分支数组，并非原子创建并追加。[Issue API 目录与更新接口](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number/)未核实锁定/解锁、置顶/取消置顶或转移。不会覆盖分支数组、关闭后复制 Issue 或用标签模拟。 |
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
 | Draft/ready 操作 | `gc pr ready --undo` 通过 GitCode 的 PR 更新能力切换 draft 状态，但语义可能不同于 GitHub draft PR。 |
-| 仓库同步 | `gc repo sync` 仅支持通过 GitCode fork 同步 API 从上游同步 fork；不支持分支选择与 `--force`。 |
+| 仓库同步 | `gc repo sync [-b 分支]` 从 fork 的父仓库同步一个远端分支，不做全分支同步。详见[仓库同步](repo-sync.md)；不支持任意 `--source`、`--force` 或同步本地检出。 |
 | 仓库归档 | 未实现 `gc repo archive`/`unarchive`；GitCode 仅文档化了一个缺少请求参数说明的 org 级归档端点。 |
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |

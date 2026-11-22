@@ -94,6 +94,8 @@ _REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
 
 # Values of these options must never become a repository routing hint.
 _REPO_VALUE_OPTIONS = {
+    "-b",
+    "--branch",
     "-R",
     "--repo",
     "--json",
@@ -216,6 +218,7 @@ _RESOURCE_VALUE_OPTIONS = {
     "-a",
     "-l",
     "--author-email",
+    "--match-head-commit",
     "-A",
     "--discussion-id",
     "--path",
@@ -235,6 +238,8 @@ _RESOURCE_VALUE_OPTIONS = {
 
 def _resource_value_options(group: str, command: str) -> set[str]:
     options = set(_RESOURCE_VALUE_OPTIONS)
+    if group == "issue" and command == "develop":
+        options.discard("-l")
     if group == "issue" and command == "close":
         options.add("-r")
     if command == "edit":

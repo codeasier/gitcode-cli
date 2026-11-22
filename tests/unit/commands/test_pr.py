@@ -1240,15 +1240,21 @@ class TestPrReview:
         assert len(comment_calls) == 1
         assert comment_calls[0].kwargs["json"]["body"] == "Needs more tests"
 
-    def test_pr_review_request_changes_downgrades_to_pr_comment_and_explains_it(self, runner, mock_client, mock_repo):
-        mock_client.post.return_value = {"id": 456}
-        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
-        assert result.exit_code != 0
-        assert "Posted pull request comment 456" in result.output
-        assert "does not support request-changes reviews" in result.output
-        post_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
-        assert len(post_calls) == 1
-        assert post_calls[0].kwargs["json"]["body"] == "Please address feedback"
+    @pytest.mark.parametrize("body_args", [[], ["-b", "needs changes"], ["-F", "missing-file"]])
+    def test_pr_review_request_changes_never_posts_comment_or_approval(self, runner, mock_client, mock_repo, body_args):
+        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", *body_args])
+        assert result.exit_code == 1
+        assert "No comment or review was posted" in result.output and "--comment" in result.output
+        assert mock_client.mock_calls == []
+
+    @pytest.mark.parametrize(
+        ("flags", "reason"),
+        [(["--match-head-commit", "abc"], "atomic expected-head"), (["--disable-auto"], "per-PR auto-merge")],
+    )
+    def test_pr_merge_unsupported_preconditions_make_no_requests(self, runner, mock_client, mock_repo, flags, reason):
+        result = runner.invoke(main, ["pr", "merge", "42", *flags, "--delete-branch"])
+        assert result.exit_code == 1 and reason in result.output
+        assert mock_client.mock_calls == []
 
     def test_pr_review_requires_explicit_mode(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "review", "42"])
@@ -1263,19 +1269,13 @@ class TestPrReview:
     def test_pr_review_comment_requires_body(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "review", "42", "--comment"])
         assert result.exit_code != 0
-        assert "Body is required when using --comment or --request-changes." in result.output
+        assert "Body is required when using --comment." in result.output
 
     def test_pr_review_comment_returns_zero_on_success(self, runner, mock_client, mock_repo):
         mock_client.post.return_value = {"id": 123}
         result = runner.invoke(main, ["pr", "review", "42", "--comment", "--body", "Needs more tests"])
         assert result.exit_code == 0
         assert "Posted pull request comment 123" in result.output
-
-    def test_pr_review_request_changes_returns_nonzero_when_downgraded(self, runner, mock_client, mock_repo):
-        mock_client.post.return_value = {"id": 456}
-        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "--body", "Please address feedback"])
-        assert result.exit_code != 0
-        assert "Posted pull request comment 456" in result.output
 
     def test_pr_review_comment_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
         body_file = tmp_path / "review.txt"
@@ -1285,15 +1285,6 @@ class TestPrReview:
         assert result.exit_code == 0
         comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
         assert comment_calls[0].kwargs["json"]["body"] == "Needs more tests from file"
-
-    def test_pr_review_request_changes_supports_body_file(self, runner, mock_client, mock_repo, tmp_path):
-        body_file = tmp_path / "review.txt"
-        body_file.write_text("Please address feedback from file")
-        mock_client.post.return_value = {"id": 456}
-        result = runner.invoke(main, ["pr", "review", "42", "--request-changes", "-F", str(body_file)])
-        assert result.exit_code != 0
-        comment_calls = [c for c in mock_client.post.call_args_list if "comments" in c.args[0]]
-        assert comment_calls[0].kwargs["json"]["body"] == "Please address feedback from file"
 
     def test_pr_review_approve_rejects_body(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "review", "42", "--approve", "--body", "LGTM"])

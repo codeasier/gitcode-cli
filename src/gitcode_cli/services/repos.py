@@ -104,5 +104,10 @@ class RepoService:
         payload = {k: v for k, v in data.items() if v is not None}
         return self.client.post(f"/repos/{owner}/{repo}/forks", json=payload or None)
 
-    def sync(self, owner: str, repo: str) -> Any | None:
-        return self.client.put(f"/repos/{owner}/{repo}/sync_repo")
+    def sync(self, owner: str, repo: str, *, branch: str | None = None) -> Any | None:
+        path = f"{_repository_path(owner, repo)}/sync_repo"
+        if branch is None:  # Legacy service contract: the provider updates all branches.
+            return self.client.put(path)
+        if not _literal_text(branch).strip():
+            raise ValueError("A scoped sync requires a nonblank branch.")
+        return self.client.put(path, json={"branch": branch})

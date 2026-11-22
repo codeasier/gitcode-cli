@@ -573,13 +573,14 @@ def repo_delete(ctx: click.Context, repo_name: str | None, repository: str | Non
 @repo_group.command("sync")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("repository", required=False)
+@click.option("-b", "--branch", help="Sync only this branch (default: the upstream's default branch).")
 @click.pass_context
-def repo_sync(ctx: click.Context, repo_name: str | None, repository: str | None) -> None:
+def repo_sync(ctx: click.Context, repo_name: str | None, repository: str | None, branch: str | None) -> None:
     app = ctx.obj["app"]
     owner, repo = _resolve_repo_target(app, repo_name, repository)
     service = RepoService(app.client())
     adapter = RepoAdapter(service)
-    adapter.sync_repo(owner, repo)
+    adapter.sync_repo(owner, repo, branch=branch)
     safe_echo(f'✓ Synced the "{owner}/{repo}" repository from its upstream source')
 
 
@@ -666,7 +667,7 @@ set_gc_help(
 repo_sync.short_help = "Sync a forked repository"
 repo_sync.help = (
     "Sync a forked repository from its upstream source using the GitCode fork sync API."
-    " Branch selection and local sync are not supported."
+    " Only one branch is synced. No local checkout is modified."
 )
 set_gc_help(
     repo_sync,

@@ -36,6 +36,19 @@ def test_target_override_has_highest_priority(monkeypatch):
     assert select_target(["-R", "github.com/o/r"], {"GC_GH_TARGET": "gitcode"}) == "gitcode"
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["repo", "sync", "-b", "github.com/not/repo", "gitcode.com/o/r"],
+        ["issue", "develop", "-l", "https://gitcode.com/o/r/issues/1"],
+        ["pr", "merge", "--match-head-commit", "ignored", "https://gitcode.com/o/r/pull/3"],
+    ],
+)
+def test_scoped_commands_do_not_route_by_flag_values(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "github.com")
+    assert select_target(argv, {}) == "gitcode"
+
+
 def test_invalid_target_override_fails():
     with pytest.raises(ProxyError, match="GC_GH_TARGET"):
         select_target([], {"GC_GH_TARGET": "other"})

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
+import click
 import pytest
 
 from gitcode_cli.adapters.pulls import PullRequestAdapter
@@ -248,24 +249,13 @@ class TestPullRequestAdapter:
         assert result.degraded is False
         assert result.item == {"id": 7}
 
-    def test_review_pr_request_changes_degrades_to_comment(self, adapter, service):
-        service.comment.return_value = {"id": 9}
-
-        result = adapter.review_pr(
-            "owner",
-            "repo",
-            42,
-            approve=False,
-            body="please fix",
-            comment=False,
-            request_changes=True,
-            force=False,
-        )
-
-        service.comment.assert_called_once_with("owner", "repo", 42, body="please fix")
+    def test_review_pr_request_changes_does_not_mutate(self, adapter, service):
+        with pytest.raises(click.ClickException, match="No comment or review was posted"):
+            adapter.review_pr(
+                "owner", "repo", 42, approve=False, body="please fix", comment=False, request_changes=True, force=False
+            )
+        service.comment.assert_not_called()
         service.review.assert_not_called()
-        assert result.degraded is True
-        assert "request-changes" in result.message
 
     def test_status_returns_approximation_message(self, adapter, service):
         service.list.return_value = [{"number": 1, "state": "open", "title": "Test"}]

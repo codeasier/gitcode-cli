@@ -9,7 +9,8 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    # Python 3.9 is unavailable on ubuntu-latest (26.04); preserve its coverage.
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]

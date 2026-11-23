@@ -13,6 +13,7 @@ from gitcode_cli.commands import _community_pages
 from gitcode_cli.commands.discussion import discussion_group
 from gitcode_cli.commands.org import org_group
 from gitcode_cli.errors import APIError, GCError
+from gitcode_cli.gh_proxy import ProxyError, validate_gitcode_command
 
 
 @pytest.fixture
@@ -219,6 +220,162 @@ def test_view_rejects_wrong_number(run, client):
     client.get.return_value = row(3)
     assert isinstance(run("-R", "O/R", "discussion", "view", "2").exception, APIError)
     client.get.assert_called_once()
+
+
+def reply(identity="child", **overrides):
+    return {
+        "id": identity,
+        "created_at": "2026-01-01T01:00:00Z",
+        "author": {"login": "writer", "avatar_url": "not exposed"},
+        "md_content": "reply body",
+        "content": "rendered body is not exposed",
+        "is_hide": 0,
+        "is_deleted": 0,
+        **overrides,
+    }
+
+
+def test_replies_reads_one_exact_page_in_server_order(run, client):
+    client.get.return_value = [reply("z", parent_id="parent", type=2), reply("a")]
+    result = run(
+        "-R",
+        "gitcode.com/Owner/Repo",
+        "discussion",
+        "replies",
+        "8",
+        "parent",
+        "--page",
+        "3",
+        "--per-page",
+        "2",
+        "--json",
+        "id,author,body,createdAt",
+    )
+    assert result.exit_code == 0, result.exception
+    assert json.loads(result.output) == [
+        {"id": identity, "author": "writer", "body": "reply body", "createdAt": "2026-01-01T01:00:00Z"}
+        for identity in ("z", "a")
+    ]
+    assert client.mock_calls == [
+        call.get("/repos/Owner/Repo/discuss/8/comment/parent/reply", params={"page": 3, "per_page": 2})
+    ]
+
+
+def test_replies_empty_is_one_page_not_a_parent_check(run, client):
+    client.get.return_value = []
+    result = run("discussion", "replies", "8", "parent", "-R", "O/R", "--json", "id")
+    assert result.exit_code == 0 and json.loads(result.output) == []
+    client.get.assert_called_once_with("/repos/O/R/discuss/8/comment/parent/reply", params={"page": 1, "per_page": 20})
+
+
+@pytest.mark.parametrize("flag", ["is_hide", "is_deleted"])
+def test_reply_visibility_hides_author_and_body_in_json(run, client, flag):
+    client.get.return_value = [reply(**{flag: 1})]
+    result = run("-R", "O/R", "discussion", "replies", "7", "p", "--json", "id,body,author,hidden,deleted")
+    assert result.exit_code == 0, result.exception
+    assert json.loads(result.output) == [
+        {"id": "child", "body": None, "author": None, "hidden": flag == "is_hide", "deleted": flag == "is_deleted"}
+    ]
+
+
+def test_reply_json_roundtrips_unicode_and_controls_without_emitting_terminal_bytes(run, client):
+    body = "说\U0001f48e\nmarkdown\t\u0000\u001b\u007f\u009b\u202e"
+    client.get.return_value = [reply(md_content=body)]
+    result = run("-R", "O/R", "discussion", "replies", "7", "p", "--json", "body,id")
+    assert result.exit_code == 0, result.exception
+    data = result.stdout_bytes
+    assert all(ch == 10 or 32 <= ch < 127 for ch in data)
+    assert json.loads(data) == [{"body": body, "id": "child"}]
+    client.get.assert_called_once()
+
+
+@pytest.mark.parametrize("args", [(), ("--json", "body"), ("--json", "id")])
+def test_invalid_unicode_reply_fails_before_any_table_or_json_output(run, client, args):
+    client.get.return_value = [reply("ok"), reply(md_content="bad\ud800text")]
+    result = run("-R", "O/R", "discussion", "replies", "7", "p", *args)
+    assert isinstance(result.exception, APIError)
+    assert "Invalid Unicode" in str(result.exception)
+    assert not result.stdout_bytes
+    client.get.assert_called_once()
+
+
+def test_reply_table_omits_hidden_content_and_escapes_controls(run, client):
+    client.get.return_value = [reply("x", md_content="line 1\nline 2\x1b[2J"), reply("y", is_hide=1)]
+    result = run("-R", "O/R", "discussion", "replies", "7", "p")
+    assert result.exit_code == 0, result.exception
+    assert result.output == "x writer (2026-01-01T01:00:00Z)\n  line 1\n  line 2\\x1b[2J\ny [hidden]\n"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["0", "p"],
+        ["1"],
+        ["1", ""],
+        ["1", ".."],
+        ["1", "a/b"],
+        ["1", "a%2Fb"],
+        ["1", "a\\b"],
+        ["1", "a b"],
+        ["1", "a\x1b"],
+        ["1", "https://gitcode.com/O/R/discussions/1"],
+        ["1", "p?other"],
+        ["1", "p", "-R", "github.com/O/R"],
+        ["1", "p", "-R", ""],
+        ["1", "p", "-R", "O/%2e%2e"],
+        ["1", "p", "--page", "0"],
+        ["1", "p", "--per-page", "101"],
+        ["1", "p", "--json", "content"],
+    ],
+)
+def test_reply_invalid_selection_does_not_access_api(run, client, args):
+    assert run("-R", "O/R", "discussion", "replies", *args).exit_code != 0
+    assert not client.mock_calls
+
+
+@pytest.mark.parametrize(
+    "bad_row",
+    [
+        None,
+        reply("p"),
+        reply("ok"),
+        reply(""),
+        reply(123),
+        reply(parent_id="wrong"),
+        reply(type=1),
+        reply(type=True),
+        reply(type="2"),
+        reply(type=2.0),
+        reply(type=None),
+        reply(is_hide=True),
+        reply(is_deleted=2),
+        reply(is_hide=None),
+        reply(author={}),
+        reply(md_content=None),
+        reply(created_at=""),
+        reply(created_at="time\nnewline"),
+    ],
+)
+def test_malformed_reply_after_a_good_row_fails_without_partial_output(run, client, bad_row):
+    client.get.return_value = [reply("ok"), bad_row]
+    result = run("-R", "O/R", "discussion", "replies", "7", "p")
+    assert isinstance(result.exception, APIError)
+    assert not result.output
+    client.get.assert_called_once()
+
+
+@pytest.mark.parametrize("rows", [{"replies": []}, [reply("a"), reply("b")]])
+def test_replies_bad_page_shape_or_exceeds_limit(run, client, rows):
+    client.get.return_value = rows
+    result = run("-R", "O/R", "discussion", "replies", "7", "p", "--per-page", "1")
+    assert isinstance(result.exception, APIError)
+    assert not result.output
+    client.get.assert_called_once()
+
+
+def test_replies_direct_command_only():
+    with pytest.raises(ProxyError, match="refusing to fall back"):
+        validate_gitcode_command(["discussion", "replies", "7", "p"])
 
 
 def test_single_post_create_with_stdin(run, client):

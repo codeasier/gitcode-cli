@@ -39,6 +39,20 @@ def parse_remote_url_with_host(url: str) -> tuple[str, str, str]:
     raise RepoResolutionError("Unsupported remote URL. Use a GitCode HTTPS or SSH repository URL.")
 
 
+def is_single_ref(branch: object) -> bool:
+    """Recognize a literal ref, not a wildcard, revision expression or missing branch."""
+    return (
+        isinstance(branch, str)
+        and bool(branch)
+        and not branch.startswith("-")
+        and not branch.endswith(".")
+        and ".." not in branch
+        and "@{" not in branch
+        and not any(ch.isspace() or not ch.isprintable() or ch in "~^:?*[\\" for ch in branch)
+        and all(part and not part.startswith(".") and not part.endswith(".lock") for part in branch.split("/"))
+    )
+
+
 def validate_gitcode_repo(host: str | None, owner: str, name: str) -> tuple[str, str]:
     if host is not None and host.lower().rstrip(".") not in {"gitcode.com", "ssh.gitcode.com"}:
         raise RepoResolutionError("Repository host is not supported; gc works with gitcode.com repositories.")

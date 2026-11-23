@@ -609,6 +609,21 @@ ENTRIES: list[CompatEntry] = [
     _e("pr status", "-q/--jq", CompatStatus.NOT_IN_CLI),
     _e("pr status", "-t/--template", CompatStatus.NOT_IN_CLI),
     # --- repo subcommands ---
+    _e(
+        "repo read-file",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; exclusive POSIX file output.",
+        proxy_allowed=False,
+    ),
+    *[
+        _e("repo read-file", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-R/--repo", "--ref", "-o/--output")
+    ],
+    *[
+        _e("repo read-file", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
+        for flag in ("--allow-escape-sequences", "--clobber", "--json", "-q/--jq", "-t/--template")
+    ],
     _e("repo view", None, CompatStatus.IMPLEMENTED, "Repository positional or -R/origin resolution"),
     _e("repo list", None, CompatStatus.IMPLEMENTED, "Owner argument defaults to the authenticated user"),
     _e("repo create", None, CompatStatus.IMPLEMENTED, "OWNER/NAME creates via POST /orgs/{org}/repos"),

@@ -25,7 +25,7 @@ def _node(command: str) -> dict:
 def test_manifest_covers_exact_selected_scope():
     assert COVERAGE["schema_version"] == 1
     assert COVERAGE["baseline_version"] == BASELINE["version"] == "2.89.0"
-    assert set(COVERAGE["commands"]) == {"", "issue", "issue create", "pr", "pr create"}
+    assert set(COVERAGE["commands"]) == {"", "issue", "issue create", "pr", "pr create", "pr status"}
     assert COVERAGE["gc_invariant_basis"] == "The pinned gh snapshot does not record usage or aliases."
     for command, policy in COVERAGE["commands"].items():
         expected_surface(_node(command), policy)

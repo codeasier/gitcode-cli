@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,63 @@ def test_installed_entrypoint_help(run_gc, entrypoint, command):
     assert "USAGE" in result.stdout
     assert "\x1b[" not in result.stdout
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("args", "code", "message"),
+    [
+        (["--help"], 0, "Inspect gc ? gh compatibility".encode("gbk")),
+        (["--unknown-宝↔"], 2, "--unknown-宝?".encode("gbk")),
+        (["binary-test"], 0, bytes.fromhex("00ff80a2")),
+        (["json-test"], 0, {"title": "宝?"}),
+    ],
+)
+def test_windows_eager_cli_messages_survive_a_gbk_pipe(gc_env, tmp_path, args, code, message):
+    # Real redirected GBK streams on every CI platform; only the CLI's platform check is simulated.
+    source = Path(__file__).resolve().parents[2] / "src"
+    entrypoint = """
+import json
+import sys
+from types import SimpleNamespace
+
+sys.path.insert(0, sys.argv.pop(1))
+from gitcode_cli import cli
+from gitcode_cli.utils import safe_echo
+
+assert sys.stdout.encoding.lower() == "gbk" and not sys.stdout.isatty()
+assert sys.stderr.encoding.lower() == "gbk" and not sys.stderr.isatty()
+# Python otherwise defaults stderr to backslashreplace independently of PYTHONIOENCODING.
+sys.stderr.reconfigure(errors="strict")
+cli.sys = SimpleNamespace(platform="win32", stdout=sys.stdout, stderr=sys.stderr)
+
+@cli.main.command("binary-test")
+def binary_test():
+    sys.stdout.buffer.write(bytes.fromhex("00ff80a2"))
+
+@cli.main.command("json-test")
+def json_test():
+    safe_echo(json.dumps({"title": "宝📚"}, ensure_ascii=False))
+
+cli.main()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", entrypoint, str(source), *args],
+        cwd=tmp_path,
+        env={**gc_env, "PYTHONIOENCODING": "gbk:strict"},
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == code, result.stderr
+    output = result.stderr if code else result.stdout
+    if args == ["binary-test"]:
+        assert output == message
+    elif args == ["json-test"]:
+        assert json.loads(output.decode("gbk")) == message
+    else:
+        assert message in output
+        output.decode("gbk")  # The whole stream must still use the initial codec.
+    assert b"Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize("entrypoint", ["gc", "gitcode"])

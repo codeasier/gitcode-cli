@@ -512,6 +512,11 @@
             "category": "wording",
             "reason": "gc uses the shorter noun phrase in this command summary.",
             "value": "Reopen pull request"
+          },
+          "status": {
+            "category": "semantics",
+            "reason": "Direct gc shows repository-open pull requests rather than gh's personal/current-branch status groups.",
+            "value": "Show open pull requests in the repository"
           }
         }
       },
@@ -564,6 +569,34 @@
               "target": "--jq",
               "takes_value": true
             }
+          }
+        }
+      },
+      "pr status": {
+        "gc_invariants": {
+          "usage": "cli pr status [flags]",
+          "aliases": []
+        },
+        "missing_flags": {
+          "--json": {
+            "category": "semantics",
+            "reason": "GitCode repository-open status does not implement gh's personal JSON groups."
+          },
+          "-q": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for jq."
+          },
+          "--jq": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for jq."
+          },
+          "-t": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for templates."
+          },
+          "--template": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for templates."
           }
         }
       }

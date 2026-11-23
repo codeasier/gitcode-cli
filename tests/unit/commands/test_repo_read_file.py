@@ -13,6 +13,7 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
+from gitcode_cli import repo_read as reads
 from gitcode_cli import repo_read_file as files
 from gitcode_cli.cli import main
 from gitcode_cli.gh_proxy import ProxyError, validate_gitcode_command
@@ -46,7 +47,7 @@ def provider(monkeypatch, tmp_config_dir):
 
     def configure(handler):
         fake = Mock(side_effect=handler)
-        monkeypatch.setattr(files.httpx, "Client", lambda **kwargs: real(transport=httpx.MockTransport(fake), **kwargs))
+        monkeypatch.setattr(reads.httpx, "Client", lambda **kwargs: real(transport=httpx.MockTransport(fake), **kwargs))
         return fake
 
     return configure

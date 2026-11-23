@@ -16,3 +16,4 @@
 - [Organizations and discussions](community-commands.md)
 
 - [Read a repository file without cloning](repo-read-file.md)
+- [List one page of a repository directory](repo-read-dir.md)

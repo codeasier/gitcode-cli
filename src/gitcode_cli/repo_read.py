@@ -1,4 +1,4 @@
-"""Common policy for direct CLI reads of repository files and directories."""
+"""Common policy for bounded, direct CLI reads from the GitCode repository API."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def _unique_fields(pairs: list[tuple[str, Any]]) -> dict:
 
 
 def bounded_json(
-    resource: Literal["Contents", "Tree"],
+    resource: Literal["Contents", "Tree", "fork sync status"],
     endpoint: str,
     params: dict[str, str],
     token: str,

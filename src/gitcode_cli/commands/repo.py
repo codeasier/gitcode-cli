@@ -20,6 +20,7 @@ from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
 from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
 from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
 from ..repo_read_file import METADATA_FIELDS, encode_file, fetch_file, write_file, write_stdout
+from ..repo_sync_status import read_sync_status
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -736,6 +737,18 @@ def repo_delete(ctx: click.Context, repo_name: str | None, repository: str | Non
     safe_echo(f"Deleted repository {target}")
 
 
+@repo_group.command("sync-status", short_help="Query GitCode fork synchronization status without syncing")
+@click.argument("repository", metavar="OWNER/FORK")
+@click.option("-b", "--branch", required=True, multiple=True, help="One explicit fork branch to query.")
+@click.pass_context
+def repo_sync_status(ctx: click.Context, repository: str, branch: tuple[str, ...]) -> None:
+    """Read the provider's status as JSON. Use a positional OWNER/FORK without -R; no branch is updated."""
+    app = ctx.obj["app"]
+    if app.repo is not None or len(branch) != 1:
+        raise click.UsageError("Specify one positional OWNER/FORK and one --branch; do not use -R.")
+    safe_echo(read_sync_status(repository, branch[0], app.token))
+
+
 @repo_group.command("sync")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("repository", required=False)
@@ -755,7 +768,7 @@ set_gc_help(
     gc_usage="gc repo <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["clone", "create", "fork", "list", "set-default"]),
-        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "view"]),
+        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "sync-status", "view"]),
     ],
     gc_examples=[
         "gc repo list",

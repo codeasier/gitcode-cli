@@ -18,7 +18,8 @@ from ..repo_default import configured_target, set_default, unset_default, view_d
 from ..repo_read import origin_target
 from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
 from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
-from ..repo_read_file import fetch_file, write_file, write_stdout
+from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
+from ..repo_read_file import METADATA_FIELDS, encode_file, fetch_file, write_file, write_stdout
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -354,16 +355,12 @@ def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
     return validate_gitcode_repo(*parse_repo_with_host(target))
 
 
-def _read_dir_fields(options: tuple[str, ...]) -> tuple[str, ...] | None:
+def _read_fields(options: tuple[str, ...], allowed: tuple[str, ...]) -> tuple[str, ...] | None:
     if not options:
         return None
     fields = tuple(field.strip() for field in options[0].split(","))
-    if (
-        len(options) != 1
-        or len(set(fields)) != len(fields)
-        or any(field not in READ_DIR_JSON_FIELDS for field in fields)
-    ):
-        raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(READ_DIR_JSON_FIELDS))
+    if len(options) != 1 or len(set(fields)) != len(fields) or any(field not in allowed for field in fields):
+        raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(allowed))
     return fields
 
 
@@ -395,7 +392,7 @@ def repo_read_dir(
     json_options: tuple[str, ...],
 ) -> None:
     """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
-    fields = _read_dir_fields(json_options)
+    fields = _read_fields(json_options, READ_DIR_JSON_FIELDS)
     owner, name = _read_target(ctx, repo_name)
     token = ctx.obj["app"].token
     entries = fetch_page(owner, name, path, ref, page, per_page, token)
@@ -421,15 +418,40 @@ set_gc_help(repo_read_dir, gc_json_fields=READ_DIR_JSON_FIELDS)
 )
 @click.option("--ref", help="Read this branch, tag, or commit (default: the repository default branch).")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Create a new file with the exact bytes (POSIX).")
+@click.option(
+    "--json",
+    "json_options",
+    is_flag=False,
+    multiple=True,
+    flag_value=",".join(METADATA_FIELDS),
+    metavar="[FIELDS]",
+    help="Print verified metadata as JSON. Select content explicitly for canonical Base64.",
+)
 @click.pass_context
-def repo_read_file(ctx: click.Context, path: str, repo_name: str | None, ref: str | None, output: Path | None) -> None:
-    """Read one file (up to 1 MiB) without cloning. Stdout accepts safe UTF-8 text only."""
+def repo_read_file(
+    ctx: click.Context,
+    path: str,
+    repo_name: str | None,
+    ref: str | None,
+    output: Path | None,
+    json_options: tuple[str, ...],
+) -> None:
+    """Read one file (up to 1 MiB) without cloning. Default stdout accepts safe UTF-8 text only."""
+    fields = _read_fields(json_options, READ_FILE_JSON_FIELDS)
+    if fields is not None and output is not None:
+        raise click.UsageError("Specify only one of --json and --output.")
     owner, name = _read_target(ctx, repo_name)
-    content = fetch_file(owner, name, path, ref, ctx.obj["app"].token)
-    if output is None:
+    token = ctx.obj["app"].token
+    content = fetch_file(owner, name, path, ref, token)
+    if fields is not None:
+        click.open_file("-", "wb").write(encode_file(path, content, fields, token))
+    elif output is None:
         write_stdout(content)
     else:
         write_file(output, content)
+
+
+set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)
 
 
 @repo_group.command("list")

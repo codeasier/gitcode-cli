@@ -49,6 +49,12 @@ BASE = "/api/v8/repos/o/r/actions/"
 SYNTHETIC = "fixture-only-token"
 
 
+def _separate_stderr_runner():
+    # Click 8.0/8.1 mix streams by default; Click 8.2+ always captures them separately.
+    opts = {"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}
+    return CliRunner(**opts)
+
+
 @pytest.fixture
 def api(monkeypatch):
     expected = []
@@ -258,7 +264,20 @@ def test_view_with_steps_budget_counts_steps_across_selected_jobs(api):
 def test_view_with_steps_validates_full_hierarchy_before_emitting_window(api, stages, diagnostic):
     expect, invoke, _, calls = api
     expect("runs/111", {**DETAIL, "stages": stages})
-    result = invoke(main, "--token", SYNTHETIC, "-R", "o/r", "run", "view", "111", "--with-steps", "--limit", "1")
+    result = invoke(
+        main,
+        "--token",
+        SYNTHETIC,
+        "-R",
+        "o/r",
+        "run",
+        "view",
+        "111",
+        "--with-steps",
+        "--limit",
+        "1",
+        runner=_separate_stderr_runner(),
+    )
     assert result.exit_code == 1 and diagnostic in result.stderr and result.stdout == ""
     assert calls == [("GET", "runs/111")]
 
@@ -290,10 +309,21 @@ def test_view_with_steps_rejects_non_scalar_or_control_text(api, field, text):
 def test_view_with_steps_never_rewrites_identity_or_status_to_redaction_placeholder(api, field, text):
     expect, invoke, _, _ = api
     expect("runs/111", {**DETAIL, "stages": [_stage("s", [{**JOB, field: text}])]})
-    result = invoke(main, "--token", SYNTHETIC, "-R", "o/r", "run", "view", "111", "--with-steps")
+    result = invoke(
+        main,
+        "--token",
+        SYNTHETIC,
+        "-R",
+        "o/r",
+        "run",
+        "view",
+        "111",
+        "--with-steps",
+        runner=_separate_stderr_runner(),
+    )
     assert result.exit_code == 1 and result.stdout == ""
     assert "Cannot safely display Actions snapshot identity or status" in result.stderr
-    assert text not in result.output
+    assert text not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -658,9 +688,7 @@ def test_cancel_stops_only_matching_attempt_once(api, answer, opt):
     expect("runs/111", RUNNING)
     expect("runs/111/stop", {"success": True}, method="POST")
     expect("runs/111", {**RUNNING, "status": "CANCELED"})
-    # Click 8.1 mixes stderr into stdout by default; Click 8.2+ always captures them separately.
-    runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
-    result = invoke(actions.run, *CANCEL, *opt, input=answer, runner=runner)
+    result = invoke(actions.run, *CANCEL, *opt, input=answer, runner=_separate_stderr_runner())
     assert result.exit_code == 0, result.output
     stdout = result.stdout
     if answer is not None:

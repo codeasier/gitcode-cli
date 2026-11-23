@@ -648,9 +648,16 @@ ENTRIES: list[CompatEntry] = [
         _e("repo read-file", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
         for flag in ("-R/--repo", "--ref", "-o/--output")
     ],
+    _e(
+        "repo read-file",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: verified inline metadata and opt-in Base64 content; no URL fields.",
+        proxy_allowed=False,
+    ),
     *[
         _e("repo read-file", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
-        for flag in ("--allow-escape-sequences", "--clobber", "--json", "-q/--jq", "-t/--template")
+        for flag in ("--allow-escape-sequences", "--clobber", "-q/--jq", "-t/--template")
     ],
     _e("repo view", None, CompatStatus.IMPLEMENTED, "Repository positional or -R/origin resolution"),
     _e("repo list", None, CompatStatus.IMPLEMENTED, "Owner argument defaults to the authenticated user"),

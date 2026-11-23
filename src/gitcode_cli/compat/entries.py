@@ -610,6 +610,22 @@ ENTRIES: list[CompatEntry] = [
     _e("pr status", "-t/--template", CompatStatus.NOT_IN_CLI),
     # --- repo subcommands ---
     _e(
+        "repo read-dir",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: one non-recursive Tree page; explicit --ref required.",
+        proxy_allowed=False,
+    ),
+    *[_e("repo read-dir", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False) for flag in ("-R/--repo", "--ref")],
+    *[
+        _e("repo read-dir", flag, CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False)
+        for flag in ("--page", "--per-page")
+    ],
+    *[
+        _e("repo read-dir", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
+        for flag in ("--json", "-q/--jq", "-t/--template")
+    ],
+    _e(
         "repo read-file",
         None,
         CompatStatus.IMPLEMENTED,

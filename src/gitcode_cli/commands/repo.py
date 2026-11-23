@@ -14,7 +14,9 @@ from ..formatters import format_repo_detail, format_repo_list, output_result, re
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
-from ..repo_read_file import fetch_file, origin_target, write_file, write_stdout
+from ..repo_read import origin_target
+from ..repo_read_dir import MAX_PAGE, fetch_page
+from ..repo_read_file import fetch_file, write_file, write_stdout
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -303,6 +305,38 @@ def repo_view(
     )
 
 
+def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
+    app = ctx.obj["app"]
+    target = repo_name if repo_name is not None else app.repo
+    if target is None:
+        target = origin_target(_origin_repository_arg())
+    return validate_gitcode_repo(*parse_repo_with_host(target))
+
+
+@repo_group.command("read-dir", short_help="List one page of a GitCode directory")
+@click.argument("path", required=False)
+@click.option("-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the Git origin.")
+@click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
+@click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
+@click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
+@click.pass_context
+def repo_read_dir(ctx: click.Context, path: str | None, repo_name: str | None, ref: str, page: int, per_page: int):
+    """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
+    owner, name = _read_target(ctx, repo_name)
+    lines = fetch_page(owner, name, path, ref, page, per_page, ctx.obj["app"].token)
+    if not lines:
+        message = "No entries on this page; the Tree API does not confirm the path is an existing directory."
+        if page == 1 and path is not None:
+            raise click.ClickException(message + " Inspect its parent at the same commit to check the path.")
+        safe_echo(message, err=True)
+        return
+    click.open_file("-", "wb").write(("\n".join(lines) + "\n").encode("utf-8"))
+    if len(lines) == per_page and page == MAX_PAGE:
+        safe_echo("Full page at the maximum page number; remaining entries are unknown.", err=True)
+    elif len(lines) == per_page:
+        safe_echo(f"Full page; try --page {page + 1} with the same --ref and --per-page (it may be empty).", err=True)
+
+
 @repo_group.command("read-file", short_help="Read a file from a GitCode repository")
 @click.argument("path")
 @click.option("-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the Git origin.")
@@ -311,12 +345,8 @@ def repo_view(
 @click.pass_context
 def repo_read_file(ctx: click.Context, path: str, repo_name: str | None, ref: str | None, output: Path | None) -> None:
     """Read one file (up to 1 MiB) without cloning. Stdout accepts safe UTF-8 text only."""
-    app = ctx.obj["app"]
-    target = repo_name if repo_name is not None else app.repo
-    if target is None:
-        target = origin_target(_origin_repository_arg())
-    owner, name = validate_gitcode_repo(*parse_repo_with_host(target))
-    content = fetch_file(owner, name, path, ref, app.token)
+    owner, name = _read_target(ctx, repo_name)
+    content = fetch_file(owner, name, path, ref, ctx.obj["app"].token)
     if output is None:
         write_stdout(content)
     else:
@@ -624,7 +654,7 @@ set_gc_help(
     gc_usage="gc repo <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["clone", "create", "fork", "list"]),
-        ("TARGETED COMMANDS", ["delete", "edit", "read-file", "rename", "sync", "view"]),
+        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "view"]),
     ],
     gc_examples=[
         "gc repo list",

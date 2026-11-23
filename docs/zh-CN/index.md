@@ -16,3 +16,4 @@
 - [组织与讨论](community-commands.md)
 
 - [不克隆仓库读取指定文件](../en/repo-read-file.md)
+- [按页列出仓库目录（英文指南）](../en/repo-read-dir.md)

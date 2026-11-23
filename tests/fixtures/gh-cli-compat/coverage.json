@@ -515,8 +515,8 @@
           },
           "status": {
             "category": "semantics",
-            "reason": "Direct gc shows repository-open pull requests rather than gh's personal/current-branch status groups.",
-            "value": "Show open pull requests in the repository"
+            "reason": "Direct gc offers repository or personal scopes, not gh's grouped/current-branch status.",
+            "value": "Show open pull requests by repository or personal scope"
           }
         }
       },
@@ -576,6 +576,13 @@
         "gc_invariants": {
           "usage": "cli pr status [flags]",
           "aliases": []
+        },
+        "additional_flags": {
+          "--scope": {
+            "category": "extension",
+            "reason": "Direct gc can select one GitCode personal PR queue.",
+            "value": {"target": "--scope", "takes_value": true}
+          }
         },
         "missing_flags": {
           "--json": {

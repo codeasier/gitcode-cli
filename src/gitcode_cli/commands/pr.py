@@ -19,6 +19,7 @@ from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import project_pr
+from ..personal_pr_status import SCOPES, personal_status
 from ..pr_git import checkout_head, delete_head
 from ..repo import resolve_repo
 from ..services import IssueService, PullRequestService, UserService
@@ -1032,15 +1033,38 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
 @pr_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-c", "--conflict-status", is_flag=True, help="Read the GitCode conflict check for up to 20 open PRs.")
+@click.option(
+    "--scope",
+    type=click.Choice(SCOPES),
+    metavar="SCOPE",
+    help="Personal GitCode scope across repositories; use -R to restrict it.",
+)
 @click.pass_context
-def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool) -> None:
+def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool, scope: str | None) -> None:
     app = ctx.obj["app"]
+    if scope is not None:
+        if conflict_status:
+            raise click.UsageError("--scope cannot be combined with --conflict-status.")
+        if "" in (repo_name, app.repo):
+            raise click.UsageError("Expected a repository after --repo.")
+        targets = {resolve_repo(value) for value in (repo_name, app.repo) if value is not None}
+        if len(targets) > 1:
+            raise click.UsageError("Conflicting repository selectors for personal PR status.")
+        target = "/".join(targets.pop()) if targets else None
+        rows = personal_status(app.token, scope, target)
+        where = f"in {target}" if target is not None else "across repositories"
+        safe_echo(f"Open pull requests {where} (GitCode scope: {scope})")
+        for row in rows:
+            safe_echo(f"  {row.repository}#{row.number}\t{row.title}")
+        if not rows:
+            safe_echo("  No open pull requests in this scope")
+        return
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
     result = adapter.status(owner, repo, conflict_status=conflict_status)
-    scope = "; first page only, up to 20 PRs" if conflict_status else ""
-    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message}{scope})")
+    page_note = "; first page only, up to 20 PRs" if conflict_status else ""
+    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message}{page_note})")
     if result.items:
         for item in result.items:
             title = item["title"]
@@ -1286,8 +1310,13 @@ pr_checkout.short_help = "Check out a pull request locally"
 pr_checkout.help = "Check out a pull request locally."
 pr_ready.short_help = "Mark a pull request as ready for review"
 pr_ready.help = "Mark a pull request as ready for review."
-pr_status.short_help = "Show open pull requests in the repository"
-pr_status.help = "Show the repository’s first page of open pull requests, not personal or current-branch groups."
+pr_status.short_help = "Show open pull requests by repository or personal scope"
+pr_status.help = (
+    "By default, show the first page of open pull requests in the repository. "
+    "Use --scope for one authenticated GitCode queue: " + ", ".join(SCOPES) + ". "
+    "With --scope, the view is account-wide even in a checkout unless you pass -R OWNER/REPO. "
+    "It is not the gh current-branch or grouped status view."
+)
 pr_audit.short_help = "Audit pull requests against merge-readiness rules"
 pr_audit.help = (
     "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "

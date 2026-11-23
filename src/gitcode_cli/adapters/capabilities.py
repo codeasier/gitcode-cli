@@ -41,7 +41,7 @@ CAPABILITY_MESSAGES = {
         "GitCode has no verified request-changes review API. No comment or review was posted. "
         "Use --comment to post ordinary feedback."
     ),
-    "PR_STATUS_GH_SEMANTICS": ("GitCode API approximation -- user-specific filtering is not available"),
+    "PR_STATUS_GH_SEMANTICS": ("GitCode API approximation -- repository view, use --scope for personal status"),
     "REPO_CREATE_INTERNAL": "GitCode repositories are either public or private; --internal is not supported.",
     "REPO_FORK_DEFAULT_BRANCH_ONLY": (
         "GitCode fork API always copies every branch from the upstream repository; "

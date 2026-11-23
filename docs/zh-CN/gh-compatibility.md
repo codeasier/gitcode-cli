@@ -88,6 +88,7 @@ gc pr diff 42 --patch > review.patch
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`。更新还要求 `title`；close/reopen 和部分字段编辑保留读取到的当前标题，无法取得标题时拒绝写入。 |
 | PR 状态 | `gc pr status -R OWNER/REPO -c`（`--conflict-status`）查看仓库第一页的打开 PR，最多 20 个。它为每条记录读取一次 [PR 详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)，只报告 `mergeable_state.conflict_passed`：通过、未通过，缺失或非布尔值显示未知；这不代表 PR 可以合入。详情读取失败或身份不一致时整个报告失败；不加 `-c` 不读取详情。仓库视图没有实现 [gh 个人状态](https://cli.github.com/manual/gh_pr_status)、当前分支分组及其 JSON 结构，指向 GitCode 的代理会拒绝 `gh pr status`。脚本可用 `gc pr list -s open -A @me --json number,title` 查询自己创建的打开 PR。 |
+| 个人 PR 队列 | `gc pr status --scope need_my_review` 列出该队列中的打开 PR。即使在仓库内执行，默认也查询**整个账号**；加 `-R OWNER/REPO` 只显示目标仓库精确匹配的 PR。每次选择一个[官方范围](https://atomgit-api-doc.atomgit.com/10.users/185.list_authorized_users_pull_request_list.html)：`created_by_me`（我创建的）、`assigned_to_me`（分配给我的）、`need_my_approve`（需要我审查）、`need_my_review`（需要我评审）。后两者独立向平台查询，不根据指派人员推断，不表示已经批准或可以合入。不支持组合冲突检查、gh 代理、当前分支分组或 JSON。 |
 | PR squash | `--squash` 按当前 GitCode 契约发送 `merge_method=merge` 和独立布尔字段 `squash=true`。 |
 | PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
 | 写入结果 | merge 必须明确返回 `merged=true`（或整数 `1`）后才能报告成功或删除分支。重定向、已受理但未完成、非法 JSON 及非预期空响应均报错。结果不确定时应先核实远端状态再重试。已完成 merge/close 但分支删除被拒绝时，返回非零退出码并明确报告部分完成。 |
@@ -102,6 +103,8 @@ gc pr diff 42 --patch > review.patch
 | 仓库归档 | `gc repo view --json isArchived` 根据[仓库详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/)读取归档状态；状态未知或字段矛盾时输出 `null`。GitCode 的[组织仓库状态接口](https://docs.gitcode.com/docs/apis/put-api-v-5-org-org-repo-repo-status/)规定整数 `2` 归档、`0` 恢复。gc 尚未实现这两项写操作。 |
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |
+
+个人状态通过 `GET /api/v5/user/pulls` 传入所选范围和 `state=open`。该接口未列出仓库筛选参数，`-R` 在本地按 `base.repo.full_path` 过滤账号结果，不使用来源分支的 fork 仓库名。只输出目标仓库、PR 编号和标题。最多读取 10 个数据页（每页 100 条）并确认末尾空页，响应合计不超过 16 MiB。任何页读取失败、身份缺失、记录重复或超限都会终止，不会误报为空或输出部分结果。只使用[官方通用 Bearer 请求头](https://docs.gitcode.com/docs/apis/)；此端点示例使用查询参数传令牌，尚未经真实账号验证其请求头兼容性，不会回退到查询参数。
 
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 

@@ -675,9 +675,14 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "repo set-default",
         None,
-        CompatStatus.NOT_IN_CLI,
-        "gc resolves repositories from the git origin remote instead of a per-directory default",
+        CompatStatus.IMPLEMENTED,
+        "Partial: direct repo view/read-file/read-dir only; no writes, picker or fork discovery.",
+        proxy_allowed=False,
     ),
+    *[
+        _e("repo set-default", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-v/--view", "-u/--unset")
+    ],
     _e("repo autolink", None, CompatStatus.NOT_IN_CLI),
     _e("repo gitignore", None, CompatStatus.NOT_IN_CLI),
     _e("repo license", None, CompatStatus.NOT_IN_CLI),

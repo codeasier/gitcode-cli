@@ -81,6 +81,21 @@ History flags cannot be combined with inline-comment, discussion, or web options
 
 Comment updates and deletion use GitCode's documented [edit](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id) and [delete](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id) endpoints. `--patch` uses `GET /repos/{owner}/{repo}/pulls/{number}/patch`, observed to return a mail-format patch in a read-only probe against public `GitCode-official-team/GitCode-Docs` PR #1 on 2026-10-30. This patch endpoint is not listed in the public v5 reference; the CLI rejects non-patch responses and does not substitute an aggregate diff. `--patch` and `--name-only` are mutually exclusive. Redirect or pipe `--patch` output: it writes the returned text as UTF-8 bytes without stripping ANSI sequences, translating newlines, or adding a newline. Direct terminal output is rejected before writing any patch bytes so untrusted terminal control sequences cannot execute; ordinary `pr diff` remains the human-readable view.
 
+## Default GitCode repository in a checkout
+
+```sh
+gc repo set-default upstream             # existing GitCode remote name
+gc repo set-default owner/repo            # exact name as written in one GitCode remote
+gc repo set-default --view
+gc repo set-default --unset
+```
+
+This is a **partial, read-only** approximation of `gh repo set-default`. The local Git setting is shared across linked worktrees. Setting, viewing and unsetting it do not require authentication or network access, and leave fetch/push URLs and native `gh` configuration unchanged. The pin uses one canonical GitCode **fetch** URL declared directly in this repository’s local config. Remotes provided only by includes or other config scopes cannot be pinned. Use the remote name if multiple remotes match an owner/repo. There is no interactive picker or lookup of fork parents.
+
+**Only direct `gc repo view`, `gc repo read-file`, and `gc repo read-dir` use this default.** A supplied repository argument or `-R` takes precedence; an empty selector is an error. With no pin these commands use origin. With a malformed pin, removed/repointed remote, ambiguous URL, or URL rewrite they stop instead of reading from origin. Set the default again, unset it, or select an explicit repository.
+
+**Do not assume a subsequent write uses the repository you just viewed.** Issues, PRs (including creation, branch inference and checkout), releases, Actions, label/discussion commands, raw API calls and all repository-management commands retain their existing targeting. To write to the repository you viewed, specify it explicitly with `-R` where supported. The optional `gh` proxy does not consult this pin or forward GitCode `repo set-default` commands.
+
 ## GitCode differences and limitations
 
 | Area | Difference in `gc` |

@@ -14,3 +14,5 @@
 - [全站搜索](../en/global-search.md)
 - [仓库任务标签](../en/task-labels.md)
 - [组织与讨论](community-commands.md)
+
+- [不克隆仓库读取指定文件](../en/repo-read-file.md)

@@ -14,3 +14,5 @@
 - [Global search](global-search.md)
 - [Repository task labels](task-labels.md)
 - [Organizations and discussions](community-commands.md)
+
+- [Read a repository file without cloning](repo-read-file.md)

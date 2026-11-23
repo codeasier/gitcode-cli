@@ -30,7 +30,8 @@ def _encode_path(value: str, *, allow_root: bool = False) -> str:
         raise ValueError("Use valid UTF-8 path text without unpaired surrogates.") from None
 
 
-def _endpoint(owner: str, repo: str, path: str, *, allow_root: bool = False) -> str:
+def contents_path(owner: str, repo: str, path: str, *, allow_root: bool = False) -> str:
+    """Build a v5 Contents path without interpreting literal filename characters as URL syntax."""
     encoded_owner = _encode_path(owner)
     encoded_repo = _encode_path(repo)
     if "/" in encoded_owner or "/" in encoded_repo:
@@ -88,21 +89,21 @@ class FileService:
         self.client = client
 
     def get(self, owner: str, repo: str, path: str, **params: Any) -> Any | None:
-        return self.client.get(_endpoint(owner, repo, path, allow_root=True), params=params)
+        return self.client.get(contents_path(owner, repo, path, allow_root=True), params=params)
 
     def create(self, owner: str, repo: str, path: str, *, branch: str, message: str, content: str) -> Any | None:
         payload = _write_payload(branch, message)
         payload["content"] = _content(content)
-        return self.client.post(_endpoint(owner, repo, path), json=payload)
+        return self.client.post(contents_path(owner, repo, path), json=payload)
 
     def update(
         self, owner: str, repo: str, path: str, *, branch: str, message: str, content: str, sha: str
     ) -> Any | None:
         payload = _write_payload(branch, message)
         payload.update(content=_content(content), sha=_blob_sha(sha))
-        return self.client.put(_endpoint(owner, repo, path), json=payload)
+        return self.client.put(contents_path(owner, repo, path), json=payload)
 
     def delete(self, owner: str, repo: str, path: str, *, branch: str, message: str, sha: str) -> Any | None:
         payload = _write_payload(branch, message)
         payload["sha"] = _blob_sha(sha)
-        return self.client.delete(_endpoint(owner, repo, path), json=payload)
+        return self.client.delete(contents_path(owner, repo, path), json=payload)

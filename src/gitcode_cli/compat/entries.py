@@ -95,6 +95,14 @@ ENTRIES: list[CompatEntry] = [
         proxy_allowed=False,
     ),
     _e(
+        "run view",
+        "--with-steps",
+        CompatStatus.IMPLEMENTED,
+        "GitCode-only bounded stage/job/step observations; no GitHub conclusion or execution order.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
+    _e(
         "run rerun",
         None,
         CompatStatus.IMPLEMENTED,

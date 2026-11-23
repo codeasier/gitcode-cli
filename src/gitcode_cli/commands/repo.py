@@ -16,7 +16,8 @@ from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
-from ..repo_read_dir import MAX_PAGE, fetch_page
+from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
+from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
 from ..repo_read_file import fetch_file, write_file, write_stdout
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
@@ -353,6 +354,19 @@ def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
     return validate_gitcode_repo(*parse_repo_with_host(target))
 
 
+def _read_dir_fields(options: tuple[str, ...]) -> tuple[str, ...] | None:
+    if not options:
+        return None
+    fields = tuple(field.strip() for field in options[0].split(","))
+    if (
+        len(options) != 1
+        or len(set(fields)) != len(fields)
+        or any(field not in READ_DIR_JSON_FIELDS for field in fields)
+    ):
+        raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(READ_DIR_JSON_FIELDS))
+    return fields
+
+
 @repo_group.command("read-dir", short_help="List one page of a GitCode directory")
 @click.argument("path", required=False)
 @click.option(
@@ -361,22 +375,43 @@ def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
 @click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
 @click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
 @click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
+@click.option(
+    "--json",
+    "json_options",
+    is_flag=False,
+    multiple=True,
+    flag_value=",".join(READ_DIR_JSON_FIELDS),
+    metavar="[FIELDS]",
+    help="Output one JSON array. Optionally select comma-separated fields.",
+)
 @click.pass_context
-def repo_read_dir(ctx: click.Context, path: str | None, repo_name: str | None, ref: str, page: int, per_page: int):
+def repo_read_dir(
+    ctx: click.Context,
+    path: str | None,
+    repo_name: str | None,
+    ref: str,
+    page: int,
+    per_page: int,
+    json_options: tuple[str, ...],
+) -> None:
     """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
+    fields = _read_dir_fields(json_options)
     owner, name = _read_target(ctx, repo_name)
-    lines = fetch_page(owner, name, path, ref, page, per_page, ctx.obj["app"].token)
-    if not lines:
+    token = ctx.obj["app"].token
+    entries = fetch_page(owner, name, path, ref, page, per_page, token)
+    if not entries:
         message = "No entries on this page; the Tree API does not confirm the path is an existing directory."
         if page == 1 and path is not None:
             raise click.ClickException(message + " Inspect its parent at the same commit to check the path.")
         safe_echo(message, err=True)
-        return
-    click.open_file("-", "wb").write(("\n".join(lines) + "\n").encode("utf-8"))
-    if len(lines) == per_page and page == MAX_PAGE:
+    click.open_file("-", "wb").write(encode_page(entries, fields, token))
+    if len(entries) == per_page and page == MAX_PAGE:
         safe_echo("Full page at the maximum page number; remaining entries are unknown.", err=True)
-    elif len(lines) == per_page:
+    elif len(entries) == per_page:
         safe_echo(f"Full page; try --page {page + 1} with the same --ref and --per-page (it may be empty).", err=True)
+
+
+set_gc_help(repo_read_dir, gc_json_fields=READ_DIR_JSON_FIELDS)
 
 
 @repo_group.command("read-file", short_help="Read a file from a GitCode repository")

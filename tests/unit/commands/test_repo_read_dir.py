@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import inspect
+import json
 from unittest.mock import Mock
 
 import httpx
@@ -235,3 +236,130 @@ def test_encoded_token_not_printed_or_reflected(install):
         result = run(["--token", "dummy/secret", *ARGS, *extra])
         assert result.exit_code == 1 and not result.stdout and "dummy" not in result.stderr
         assert req.call_count == expected
+
+
+def test_json_page_projects_native_child_fields_preserving_order_and_kind(install):
+    rows = [
+        item('z"🌍', DIR, "blob", mode="120000", sha="a" * 40),
+        item("a", DIR, "commit", sha="B" * 40),
+        item("m", DIR, "tree", sha="1" * 40),
+    ]
+
+    def handle(req):
+        assert req.method == "GET" and req.url.path == f"/api/v5/repos/Ascend/msinsight/git/trees/{COMMIT}"
+        assert dict(req.url.params) == {"file_path": DIR, "page": "3", "per_page": "3"}
+        assert "authorization" not in req.headers
+        return httpx.Response(
+            200,
+            json={
+                "sha": "e" * 40,
+                "tree": [
+                    {**row, "gitSHA": COMMIT, "gitType": "file", "url": "https://ignored.invalid", "size": 9}
+                    for row in rows
+                ],
+            },
+        )
+
+    provider = install(handle)
+    result = run([*ARGS, DIR, "--page", "3", "--per-page", "3", "--json"], charset="gbk")
+    assert result.exit_code == 0, result.stderr
+    output = json.loads(result.stdout_bytes.decode("utf-8"))
+    assert output == [{"name": r["name"], "path": r["path"], "gitSHA": r["sha"], "gitType": r["type"]} for r in rows]
+    assert list(output[0]) == ["name", "path", "gitSHA", "gitType"]
+    assert "--page 4" in result.stderr and "may be empty" in result.stderr
+    provider.assert_called_once()
+
+
+def test_json_selected_keys_and_max_page_hint(install):
+    def handle(req):
+        assert dict(req.url.params) == {"page": str(MAX_PAGE), "per_page": "1"}
+        return httpx.Response(200, json={"tree": [item("a", "", "blob")]})
+
+    provider = install(handle)
+    result = run([*ARGS, "--json", "gitType, name", "--per-page", "1", "--page", str(MAX_PAGE)])
+    assert result.exit_code == 0 and list(json.loads(result.stdout)[0].items()) == [("gitType", "blob"), ("name", "a")]
+    assert "remaining entries are unknown" in result.stderr
+    provider.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--json", "size"],
+        ["--json", "mode"],
+        ["--json", "content"],
+        ["--json", "path,gitSha"],
+        ["--json="],
+        ["--json", "path,"],
+        ["--json", ",name"],
+        ["--json", "path, path"],
+        ["--json", "path", "--json", "name"],
+        ["--json", "untrusted-not-for-echoing"],
+        ["--json", "--per-page", "0"],
+        ["--json", "--per-page", "101"],
+        ["--json", "--page", str(MAX_PAGE + 1)],
+        ["--json", "--jq", "."],
+        ["--json", "--template", "{{.path}}"],
+    ],
+)
+def test_invalid_json_selector_or_page_fails_before_lookup(install, monkeypatch, options):
+    origin = Mock(side_effect=AssertionError("invalid selector should not resolve origin"))
+    monkeypatch.setattr("gitcode_cli.commands.repo._origin_repository_arg", origin)
+    provider = install(lambda _: pytest.fail("no API call expected"))
+    result = run(["repo", "read-dir", "--ref", COMMIT, *options])
+    assert result.exit_code == 2 and result.stdout_bytes == b"" and "untrusted-not-for-echoing" not in result.stderr
+    provider.assert_not_called()
+    origin.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        item("b", sha=None),
+        item("b", type="blob"),
+        item("b", mode="bad"),
+        item("b", path="wrong/b"),
+        item("a"),
+        item("dummy-secret"),
+        item("dummy%2Fsecret"),
+    ],
+)
+def test_json_rejects_whole_page_even_when_bad_field_not_selected(install, bad):
+    provider = install(lambda _: httpx.Response(200, json={"tree": [item("a"), bad]}))
+    token = "dummy/secret" if bad["name"] == "dummy%2Fsecret" else "dummy-secret"
+    result = run(["--token", token, *ARGS, DIR, "--json", "gitType"])
+    assert result.exit_code == 1 and result.stdout_bytes == b"" and "dummy" not in result.stderr
+    provider.assert_called_once()
+
+
+@pytest.mark.parametrize("payload", [{"tree": [item("a"), item("b")]}, {"truncated": True, "tree": [item("a")]}])
+def test_json_refuses_invalid_page_without_truncation(install, payload):
+    provider = install(lambda _: httpx.Response(200, json=payload))
+    result = run([*ARGS, DIR, "--per-page", "1", "--json", "path"])
+    assert result.exit_code == 1 and result.stdout_bytes == b""
+    provider.assert_called_once()
+
+
+@pytest.mark.parametrize(("extra", "ok"), [([], True), ([DIR], False), ([DIR, "--page", "2"], True)])
+def test_json_empty_pages_report_ambiguity_on_stderr(install, extra, ok):
+    provider = install(lambda _: httpx.Response(200, json={"tree": []}))
+    result = run([*ARGS, *extra, "--json"])
+    assert result.exit_code == (0 if ok else 1)
+    assert result.stdout_bytes == (b"[]\n" if ok else b"") and "does not confirm" in result.stderr
+    provider.assert_called_once()
+
+
+def test_encoded_json_cannot_reconstitute_a_token(install):
+    # JSON inserts a backslash before a quote; that secret never appeared in the native line.
+    provider = install(lambda _: httpx.Response(200, json={"tree": [item('z"x', "", "blob")]}))
+    result = run(["--token", r"z\"x", *ARGS, "--json", "name"])
+    assert result.exit_code == 1 and not result.stdout_bytes
+    assert r"z\"x" not in result.stderr
+    provider.assert_called_once()
+
+
+def test_json_discoverable_and_still_direct_only():
+    help_text = run(["repo", "read-dir", "--help"]).output
+    assert "--json" in help_text and "JSON FIELDS" in help_text and "gitSHA" in help_text
+    with pytest.raises(ProxyError, match="refusing to fall back"):
+        validate_gitcode_command(["repo", "read-dir", "--ref", "main", "--json", "path", "-R", "gitcode.com/o/r"])

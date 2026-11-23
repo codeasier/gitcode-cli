@@ -621,10 +621,14 @@ ENTRIES: list[CompatEntry] = [
         _e("repo read-dir", flag, CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False)
         for flag in ("--page", "--per-page")
     ],
-    *[
-        _e("repo read-dir", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
-        for flag in ("--json", "-q/--jq", "-t/--template")
-    ],
+    _e(
+        "repo read-dir",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: name, path, gitSHA and gitType from one validated GitCode Tree page.",
+        proxy_allowed=False,
+    ),
+    *[_e("repo read-dir", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False) for flag in ("-q/--jq", "-t/--template")],
     _e(
         "repo read-file",
         None,

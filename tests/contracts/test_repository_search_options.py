@@ -1,6 +1,7 @@
 """Offline wire contracts for the dedicated v5 repository search endpoint."""
 
 import json
+from inspect import signature
 
 import httpx
 import pytest
@@ -22,7 +23,8 @@ def search(monkeypatch):
         client = GitCodeClient(TOKEN, base_url=BASE)
         monkeypatch.setattr(AppContext, "client", lambda _: client)
         try:
-            runner = CliRunner()
+            # Click 8.1 merges stderr into stdout unless explicitly disabled.
+            runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
             yield (
                 router.get(BASE + "search/repositories"),
                 lambda *args: runner.invoke(main, ["--token", TOKEN, "search", "repos", "example", *args]),
@@ -70,5 +72,6 @@ def test_rejected_option_does_not_retry_with_broader_search(search, status):
     route.respond(status, json={"message": "repository search option denied"})
     result = invoke("--include-forks", "true", "--sort", "watches", "--json", "id")
     assert result.exit_code == 1 and "repository search option denied" in result.stderr
-    assert not result.stdout and TOKEN not in result.output
+    assert not result.stdout
+    assert TOKEN not in result.stdout and TOKEN not in result.stderr
     assert route.call_count == 1

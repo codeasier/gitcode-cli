@@ -66,6 +66,16 @@ gc pr checkout 42 --force
 
 PR checkout 从已验证的源仓库拉取，不再假定源分支位于 `origin`。`--detach` 检出已核实的不可变 head SHA，不创建或重置本地分支。`--force` 只重置 upstream 对应同一源仓库及分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改。缺失、不相关或不明确的 upstream 均拒绝，remote 名称不必是 `origin`。不使用 `--force` 时，已有分支必须已指向核实的 SHA。新分支从该 SHA 创建；若现存 remote 中恰有一个使用规范 HTTPS/SSH 源 URL 及标准分支 fetch 映射，则保留对应 upstream。缺少 tracking ref 时，以 compare-and-swap 保护创建，绝不覆盖已有 ref。否则不擅自建立 upstream，之后使用 `--force` 前须明确配置源 remote/upstream。自定义端口、HTTPS URL 内嵌凭据和 remote helper 不作为 upstream 身份证明，不保存临时路由 remote。所有模式均要求 API 提供完整 head SHA；API 查询到拉取之间 head 已变化时，在改变本地检出状态前报错。URL 固定针对 Git 配置重写，不会禁用原生 HTTPS 重定向或替代 Git 认证。
 
+### 按路径排除变更文件名
+
+```bash
+gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
+```
+
+直接调用 `gc` 会按原有顺序过滤文件列表，只匹配本来要显示的路径（重命名时不同时匹配新旧两个名字）。匹配完整路径或文件名，区分大小写，因此不含 `/` 的模式可以匹配任意层级的文件。`*` 可匹配单个路径分段内的零个或多个字符：`generated/*` 排除 `generated/a.py`，但保留 `generated/sub/a.py`。`**` 不递归。
+
+每个选项只接受一个非空模式，最多重复指定 32 个模式，每个模式最多 512 个 UTF-8 字节。这是 [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go) 的子集：查询前拒绝 `?`、方括号字符类、反斜杠转义、逗号、双引号和 不可打印字符。面向 GitCode 的 `gh` 代理不转发此选项。普通 diff 和邮件格式补丁正文不支持过滤。
+
 ### PR 评论历史与补丁
 
 ```bash

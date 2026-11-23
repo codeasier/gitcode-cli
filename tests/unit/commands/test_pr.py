@@ -1446,6 +1446,146 @@ class TestPrDiff:
         mock_client.get.assert_called_once_with("/repos/owner/repo/pulls/42/files")
         mock_client.request.assert_not_called()
 
+    def test_exclude_matches_displayed_path_or_basename_once_and_preserves_order(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [
+            {"filename": "zeta.png", "binary": True},
+            {"filename": "dir/sub/ci.yml"},
+            {"path": "generated/file"},
+            {"path": "generated/sub/file"},
+            {"new_path": "renamed.md", "old_path": "old.yml"},
+            {"new_path": "hidden.yml", "old_path": "previous.md"},
+            {"filename": "literal.name", "new_path": "ignored.yml"},
+            {"filename": "dir/FILE.YML"},
+            {"old_path": "nested/deleted.yml", "deleted_file": True},
+        ]
+        result = runner.invoke(
+            main, ["pr", "diff", "42", "--name-only", "-e", "*.yml", "--exclude=generated/*", "-e*.yml"]
+        )
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == [
+            "zeta.png",
+            "generated/sub/file",
+            "renamed.md",
+            "literal.name",
+            "dir/FILE.YML",
+        ]
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
+    @pytest.mark.parametrize(
+        ("pattern", "keep"),
+        [
+            ("*.txt", ["dir/sub/a"]),
+            ("dir/**", ["a.txt", "dir/sub/a", "dir/sub/.b.txt"]),
+            ("dir/*/a", ["a.txt", "dir/a.txt", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("育*.txt", ["a.txt", "dir/a.txt", "dir/sub/a", "dir/sub/.b.txt"]),
+            ("dir/a", ["a.txt", "dir/a.txt", "dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("a.txt", ["dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("a**.txt", ["dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("a.tx*.txt", ["a.txt", "dir/a.txt", "dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("*x*.txt", ["a.txt", "dir/a.txt", "dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]),
+            ("*", []),
+        ],
+    )
+    def test_exclude_slash_not_recursive_and_empty_output(self, runner, mock_client, mock_repo, pattern, keep):
+        names = ["a.txt", "dir/a.txt", "dir/sub/a", "dir/sub/.b.txt", "dir/育.txt"]
+        mock_client.get.return_value = [{"filename": name} for name in names]
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "-e", pattern])
+        assert result.exit_code == 0, result.output
+        assert result.output == "".join(name + "\n" for name in keep)
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
+    def test_exclude_uses_go_basename_for_trailing_slashes(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = [{"filename": "nested/file.txt///"}, {"filename": "//"}, {"filename": "keep.py"}]
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "-e", "*.txt", "-e", "/"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == "keep.py\n"
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
+    def test_exclude_validates_every_row_before_output(self, mock_client, mock_repo):
+        mock_client.get.return_value = [{"filename": "keep.md"}, {"path": "skip.py"}, {}]
+        result = _cli_runner().invoke(main, ["pr", "diff", "42", "--name-only", "-e*.py"])
+        assert result.exit_code == 1
+        assert "no filename" in result.stderr
+        assert result.stdout == ""
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (["-e*.md"], "requires --name-only"),
+            (["--patch", "-e*.md"], "requires --name-only"),
+            (["--name-only", "--patch", "-e*.md"], "cannot be used with --patch"),
+        ]
+        + [
+            (["--name-only", "-e*.md", "--exclude", pattern], "Repeat the flag")
+            for pattern in (
+                "",
+                "[ab]",
+                "[",
+                "?",
+                "\\*",
+                "tail\\",
+                "a,b",
+                '"a"',
+                "a\nb",
+                "\x7f",
+                "synthetic-marker\x85",
+                "synthetic-marker\x9b",
+                "synthetic-marker\u202e",
+            )
+        ],
+    )
+    def test_exclude_invalid_before_resolution_or_reads(self, monkeypatch, mock_client, args, message):
+        monkeypatch.setattr("gitcode_cli.commands.pr._resolve_pr_repo", lambda *_: pytest.fail("must not resolve repo"))
+        result = _cli_runner().invoke(main, ["pr", "diff", *args])
+        assert result.exit_code == 2
+        assert message in result.stderr
+        assert "synthetic-marker" not in result.stderr
+        assert result.stdout == ""
+        assert not mock_client.mock_calls
+
+    def test_exclude_accepts_exact_count_and_utf8_size_limits(self, runner, mock_client, mock_repo):
+        # 512 UTF-8 bytes in total; no path component exceeds 255 bytes.
+        name = ("育" * 80 + "/") * 2 + "育" * 10
+        mock_client.get.return_value = [{"filename": name}, {"filename": "keep.py"}]
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", *["-e", "*.txt"] * 31, "--exclude", name])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == "keep.py\n"
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            (["-e", "*.tmp"] * 33, "at most 32 --exclude patterns"),
+            (["--exclude", "a" * 513], "at most 512 UTF-8 bytes"),
+            (["--exclude", "育" * 171], "at most 512 UTF-8 bytes"),
+            (["--exclude", "\udc80"], "must be valid UTF-8"),
+        ],
+    )
+    def test_exclude_out_of_bounds_before_resolution_or_reads(self, monkeypatch, mock_client, options, message):
+        monkeypatch.setattr("gitcode_cli.commands.pr._resolve_pr_repo", lambda *_: pytest.fail("must not resolve repo"))
+
+        result = _cli_runner().invoke(main, ["pr", "diff", "--name-only", *options])
+
+        assert result.exit_code == 2
+        assert message in result.stderr
+        assert result.stdout == ""
+        assert not mock_client.mock_calls
+
+    def test_exclude_adversarial_stars_do_not_backtrack(self, runner, mock_client, mock_repo):
+        kept = "a" * 250
+        mock_client.get.return_value = [{"filename": kept}, {"filename": kept + "b"}]
+
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "-e", "*a" * 100 + "*b*"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == kept + "\n"
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
     def test_name_only_empty_files_has_no_output(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["pr", "diff", "42", "--name-only"])
 

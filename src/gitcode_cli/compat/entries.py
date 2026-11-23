@@ -567,7 +567,13 @@ ENTRIES: list[CompatEntry] = [
     _e("pr edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("pr diff", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("pr diff", "--color", CompatStatus.NOT_IN_CLI),
-    _e("pr diff", "-e/--exclude", CompatStatus.NOT_IN_CLI),
+    _e(
+        "pr diff",
+        "-e/--exclude",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        proxy_allowed=False,
+    ),
     _e(
         "pr diff",
         "--name-only",

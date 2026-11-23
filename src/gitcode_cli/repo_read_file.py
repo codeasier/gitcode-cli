@@ -5,21 +5,40 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import os
 import unicodedata
 from pathlib import Path
 from typing import Any, BinaryIO
+from urllib.parse import quote
 
 import click
 
+from ._redact import redact
 from .errors import APIError, GCError
 from .release_files import directory, save_verified
 from .repo_read import MAX_RESPONSE, bounded_json, origin_target, validate_path, validate_target
 from .services.files import contents_path
 
-__all__ = ["MAX_FILE", "MAX_RESPONSE", "fetch_file", "origin_target", "write_file", "write_stdout"]
+__all__ = [
+    "JSON_FIELDS",
+    "MAX_FILE",
+    "MAX_RESPONSE",
+    "METADATA_FIELDS",
+    "encode_file",
+    "fetch_file",
+    "origin_target",
+    "write_file",
+    "write_stdout",
+]
 
 MAX_FILE = 1024 * 1024
+METADATA_FIELDS = ("name", "path", "gitSHA", "size", "type", "encoding")
+JSON_FIELDS = (*METADATA_FIELDS, "content")
+
+
+def _blob_sha(raw: bytes) -> str:
+    return hashlib.sha1(f"blob {len(raw)}\0".encode("ascii") + raw, usedforsecurity=False).hexdigest()
 
 
 def _decode(row: Any, path: str) -> bytes:
@@ -39,8 +58,7 @@ def _decode(row: Any, path: str) -> bytes:
         raise APIError("Invalid Base64 file content.") from None
     if len(raw) != size or base64.b64encode(raw).decode("ascii") != content:
         raise APIError("Contents response contained invalid Base64 or the wrong number of bytes.")
-    sha = hashlib.sha1(f"blob {size}\0".encode("ascii") + raw, usedforsecurity=False).hexdigest()
-    if row.get("sha") != sha:
+    if row.get("sha") != _blob_sha(raw):
         raise APIError("File bytes do not match the Git blob SHA in the Contents response.")
     return raw
 
@@ -51,6 +69,27 @@ def fetch_file(owner: str, repo: str, path: str, ref: str | None, token: str) ->
     params = {"ref": ref} if ref is not None else {}
     row = bounded_json("Contents", contents_path(owner, repo, path), params, token, (owner, repo, path, ref or ""))
     return _decode(row, path)
+
+
+def encode_file(path: str, raw: bytes, fields: tuple[str, ...], token: str) -> bytes:
+    """Project only the verified path and inline blob, never response URLs or extra fields."""
+    values: dict[str, str | int] = {
+        "name": path.rsplit("/", 1)[-1],
+        "path": path,
+        "size": len(raw),
+        "type": "file",
+        "encoding": "base64",
+    }
+    if "gitSHA" in fields:
+        values["gitSHA"] = _blob_sha(raw)
+    if "content" in fields:
+        if token and (token.encode("ascii") in raw or quote(token, safe="").encode("ascii") in raw):
+            raise APIError("Refusing to display the active GitCode token.")
+        values["content"] = base64.b64encode(raw).decode("ascii")
+    text = json.dumps({field: values[field] for field in fields}, ensure_ascii=False) + "\n"
+    if redact(text, token) != text:
+        raise APIError("Refusing to display the active GitCode token.")
+    return text.encode("utf-8")
 
 
 def write_stdout(raw: bytes) -> None:

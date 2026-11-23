@@ -6,6 +6,7 @@ import base64
 import errno
 import hashlib
 import inspect
+import json
 import os
 from unittest.mock import Mock
 
@@ -268,3 +269,123 @@ def test_competing_publish_is_preserved(provider, tmp_path, monkeypatch):
     result = _runner().invoke(main, [*ARGS, "f", "-o", str(dest)])
     assert result.exit_code == 1 and "Output already exists" in result.stderr
     assert dest.read_bytes() == b"competitor" and not list(tmp_path.glob(".gc-release-*"))
+
+
+@pytest.mark.parametrize("data", [b"", b"\0\xff\x1b[2J\r\n", b"x" * files.MAX_FILE], ids=["empty", "binary", "limit"])
+def test_json_verifies_one_blob_and_content_is_explicit(data, provider):
+    path = 'dir/棋 "1".png'
+    row = record(path, data)
+
+    def handle(req):
+        assert req.method == "GET" and req.url.path == "/api/v5/repos/team/project/contents/" + path
+        assert dict(req.url.params) == {"ref": "topic/assets"}
+        assert req.headers["Authorization"] == "Bearer synthetic"
+        return httpx.Response(200, json={**row, "gitSHA": "not-the-blob", "htmlUrl": "do not trust"})
+
+    runner = _runner()
+    args = ["--token", "synthetic", *ARGS, path, "--ref", "topic/assets", "--json"]
+    req = provider(handle)
+    metadata = runner.invoke(main, args)
+    assert metadata.exit_code == 0, metadata.stderr
+    assert list(json.loads(metadata.stdout_bytes).items()) == [
+        ("name", '棋 "1".png'),
+        ("path", path),
+        ("gitSHA", row["sha"]),
+        ("size", len(data)),
+        ("type", "file"),
+        ("encoding", "base64"),
+    ]
+    req.assert_called_once()
+    req.reset_mock()
+
+    projected = runner.invoke(main, [*args, "content, size,encoding"])
+    assert projected.exit_code == 0, projected.stderr
+    assert list(json.loads(projected.stdout_bytes).items()) == [
+        ("content", row["content"]),
+        ("size", len(data)),
+        ("encoding", "base64"),
+    ]
+    assert b"\x1b" not in projected.stdout_bytes and projected.stdout_bytes.endswith(b"\n")
+    req.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--json", "gitUrl"],
+        ["--json", "path,downloadUrl"],
+        ["--json", "private-selector"],
+        ["--json="],
+        ["--json", "path,"],
+        ["--json", "size, size"],
+        ["--json", "name", "--json", "path"],
+        ["--json", "path", "--jq", ".path"],
+        ["--json", "path", "--template", "{{.path}}"],
+    ],
+)
+def test_invalid_json_before_target_or_fetch(options, provider, monkeypatch):
+    target = Mock(side_effect=AssertionError("invalid selector should not resolve target"))
+    monkeypatch.setattr("gitcode_cli.commands.repo._read_target", target)
+    req = provider(lambda _: pytest.fail("unexpected request"))
+    res = _runner().invoke(main, ["repo", "read-file", "f", *options])
+    assert res.exit_code == 2 and not res.stdout_bytes and "private-selector" not in res.stderr
+    target.assert_not_called()
+    req.assert_not_called()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_json_and_file_are_mutually_exclusive_before_any_read_or_write(tmp_path, provider, existing):
+    dest = tmp_path / "out"
+    if existing:
+        dest.write_bytes(b"keep")
+    req = provider(lambda _: pytest.fail("unexpected request"))
+    res = _runner().invoke(main, [*ARGS, "f", "-o", str(dest), "--json"])
+    assert res.exit_code == 2 and not res.stdout_bytes and "--json and --output" in res.stderr
+    if existing:
+        assert dest.read_bytes() == b"keep"
+    else:
+        assert not dest.exists()
+    req.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"type": "dir"},
+        {"name": "other"},
+        {"path": "elsewhere"},
+        {"sha": "0" * 40},
+        {"size": True},
+        {"size": files.MAX_FILE + 1},
+        {"encoding": "none"},
+        {"content": "Yh=="},
+    ],
+)
+def test_metadata_rejects_invalid_unselected_blob_fields(provider, updates):
+    req = provider(lambda _: httpx.Response(200, json={**record("f", b"a"), **updates}))
+    res = _runner().invoke(main, [*ARGS, "f", "--json", "path"])
+    assert res.exit_code == 1 and not res.stdout_bytes
+    req.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("token", "path", "data", "field"),
+    [
+        ("synthetic-only", "f", b"prefix synthetic-only suffix", "content"),
+        ("synthetic/only", "f", b"prefix synthetic%2Fonly suffix", "content"),
+        ("c3ludGhldGlj", "f", b"synthetic", "content"),
+        (r"z\"x", 'z"x', b"", "name"),
+    ],
+)
+def test_json_does_not_echo_authentication(token, path, data, field, provider):
+    req = provider(lambda _: httpx.Response(200, json=record(path, data)))
+    res = _runner().invoke(main, ["--token", token, *ARGS, path, "--json", field])
+    assert res.exit_code == 1 and not res.stdout_bytes and token not in res.stderr
+    req.assert_called_once()
+
+
+def test_json_fields_discoverable_without_proxy_mapping():
+    help_text = _runner().invoke(main, ["repo", "read-file", "--help"]).output
+    assert "--json" in help_text and "JSON FIELDS" in help_text and "gitSHA" in help_text
+    with pytest.raises(ProxyError, match="refusing to fall back"):
+        validate_gitcode_command(["repo", "read-file", "f", "-R", "gitcode.com/o/r", "--json", "size"])

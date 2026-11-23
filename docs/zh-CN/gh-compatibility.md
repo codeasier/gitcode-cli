@@ -99,7 +99,7 @@ gc pr diff 42 --patch > review.patch
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
 | Draft/ready 操作 | `gc pr ready --undo` 通过 GitCode 的 PR 更新能力切换 draft 状态，但语义可能不同于 GitHub draft PR。 |
 | 仓库同步 | `gc repo sync [-b 分支]` 从 fork 的父仓库同步一个远端分支，不做全分支同步。详见[仓库同步](repo-sync.md)；不支持任意 `--source`、`--force` 或同步本地检出。 |
-| 仓库归档 | 未实现 `gc repo archive`/`unarchive`；GitCode 仅文档化了一个缺少请求参数说明的 org 级归档端点。 |
+| 仓库归档 | `gc repo view --json isArchived` 根据[仓库详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/)读取归档状态；状态未知或字段矛盾时输出 `null`。GitCode 的[组织仓库状态接口](https://docs.gitcode.com/docs/apis/put-api-v-5-org-org-repo-repo-status/)规定整数 `2` 归档、`0` 恢复。gc 尚未实现这两项写操作。 |
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |
 

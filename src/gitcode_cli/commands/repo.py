@@ -111,12 +111,25 @@ def _normalize_repo_owner(item: dict) -> Any:
     }
 
 
-def _is_archived(item: dict) -> bool:
-    if item.get("archived") is not None:
-        return bool(item.get("archived"))
-    # GitCode exposes archive state only through the Chinese-labeled `status` field
-    # (e.g. 已归档); treat unrecognized values as not archived.
-    return "归档" in str(item.get("status") or "")
+def _is_archived(item: dict) -> bool | None:
+    """Report only an explicit archive state; unknown or conflicting evidence is null."""
+    flag = item.get("archived")
+    if flag is not None and not isinstance(flag, bool):
+        return None
+    status = item.get("status")
+    if status is None:
+        return flag
+    # The v5 schema describes 0/2; its examples use the localized labels.
+    # Avoid truthiness or substring matches (notably "未归档" and "已归档").
+    if type(status) not in (int, str):
+        return None
+    if status in (0, "0", "开始", "未归档"):
+        state = False
+    elif status in (2, "2", "关闭", "已归档"):
+        state = True
+    else:
+        return None
+    return state if flag is None or flag == state else None
 
 
 def _normalize_repo_fields(item: dict) -> dict:

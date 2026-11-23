@@ -99,7 +99,7 @@ Comment updates and deletion use GitCode's documented [edit](https://docs.gitcod
 | Issue deletion | `gc issue delete` relies on GitCode issue deletion behavior that is not documented in the public API and may change. |
 | Draft/readiness operations | `gc pr ready --undo` toggles draft state through the GitCode PR update capability; behavior may differ from GitHub draft PR semantics. |
 | Repository sync | `gc repo sync [-b BRANCH]` syncs one remote fork branch from its parent, never all branches. See [fork sync](repo-sync.md); arbitrary `--source`, `--force` and local sync are not supported. |
-| Repository archive | `gc repo archive`/`unarchive` are not implemented; GitCode documents only an org-scoped archive endpoint without request parameters. |
+| Repository archive | `gc repo view --json isArchived` reads the [repository status](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/) and reports `null` if the state is unknown or contradictory. GitCode documents an [organization-scoped status update](https://docs.gitcode.com/docs/apis/put-api-v-5-org-org-repo-repo-status/): integer `2` archives and `0` restores. Neither write is implemented in gc. |
 | Repository topics and deploy keys | GitCode v5 has no repository topics or deploy-key API, so `repo edit --add-topic/--remove-topic` and `repo deploy-key` are unavailable. |
 | Browser flows | `--web` opens the corresponding GitCode page; browser-created content depends on GitCode's web UI. |
 

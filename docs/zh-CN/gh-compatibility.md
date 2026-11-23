@@ -114,9 +114,12 @@ gc repo set-default --unset
 | Issue 删除 | `gc issue delete` 依赖 GitCode issue 删除行为，该接口目前未在公开 API 中明确记录，后续可能变化。 |
 | Draft/ready 操作 | `gc pr ready --undo` 通过 GitCode 的 PR 更新能力切换 draft 状态，但语义可能不同于 GitHub draft PR。 |
 | 仓库同步 | `gc repo sync [-b 分支]` 从 fork 的父仓库同步一个远端分支，不做全分支同步。详见[仓库同步](repo-sync.md)；不支持任意 `--source`、`--force` 或同步本地检出。 |
+| 按归档状态筛选 | 直接运行 `gc repo list [OWNER] --archived` 或 `--no-archived`，在原有的[当前用户](https://docs.gitcode.com/docs/apis/get-api-v-5-user-repos/)、[指定用户公开仓库](https://docs.gitcode.com/en/docs/users/#5-get-the-public-repositories-of-a-user)或[组织](https://docs.gitcode.com/docs/apis/get-api-v-5-orgs-org-repos/)列表内筛选。状态取自响应字段，不是查询参数，也不代表可见性。先筛选再取 `--limit`，不逐仓查询详情。在应用条数限制前验证每个已获取页面的行格式及仓库 ID 是否缺失或重复。若匹配状态无法确认、分页无效或扫描 100 页仍无法确定结果，则报错且不输出部分列表。不加这两个选项会保留未知项，使用 `--json nameWithOwner,isArchived` 可看到 `null`。GitCode 目标的 gh 代理不转发这两个选项。 |
 | 仓库归档 | `gc repo view --json isArchived` 根据[仓库详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/)读取归档状态；状态未知或字段矛盾时输出 `null`。GitCode 的[组织仓库状态接口](https://docs.gitcode.com/docs/apis/put-api-v-5-org-org-repo-repo-status/)规定整数 `2` 归档、`0` 恢复。gc 尚未实现这两项写操作。 |
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |
+
+GitCode 的[本人列表](https://docs.gitcode.com/en/docs/apis/get-api-v-5-user-repos/)、[组织列表](https://docs.gitcode.com/en/docs/apis/get-api-v-5-orgs-org-repos/)和[仓库详情](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo/)英文示例中，同一仓库 ID 对应中文状态与英文 `start` 或 `close`。新列表筛选和列表 `isArchived` 仅在已知 0/2 状态及中文标签之外接受这两个精确值。[另一套 AtomGit 文档](https://atomgit-api-doc.atomgit.com/en/10.users/172.get_user_s_specific_repository.html)针对 `api.atomgit.com`，其中的不同拼写不作为 GitCode 判定依据。上述仅有文档及离线测试证据，尚未实测；`repo view` 解析行为不变。
 
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 

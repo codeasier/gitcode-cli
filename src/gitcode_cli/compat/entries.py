@@ -642,14 +642,13 @@ ENTRIES: list[CompatEntry] = [
         "repo archive",
         None,
         CompatStatus.NOT_IN_CLI,
-        "GitCode documents an org-scoped archive endpoint (PUT /api/v5/org/{org}/repo/{repo}/status)"
-        " without documented request parameters",
+        "Organization-scoped PUT with status=2 is documented; no validated write workflow is implemented",
     ),
     _e(
         "repo unarchive",
         None,
         CompatStatus.NOT_IN_CLI,
-        "GitCode documents no unarchive endpoint",
+        "The same organization-scoped PUT documents status=0; no validated restore workflow is implemented",
     ),
     _e(
         "repo deploy-key",

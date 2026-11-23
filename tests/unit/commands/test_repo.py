@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -65,6 +66,7 @@ def repo_detail():
         "created_at": "2026-01-01T00:00:00+08:00",
         "updated_at": "2026-02-01T00:00:00+08:00",
         "pushed_at": "2026-03-01T00:00:00+08:00",
+        "status": "开始",
     }
 
 
@@ -215,14 +217,40 @@ class TestRepoView:
         assert '"isArchived": false' in result.output
         assert '"pushedAt"' in result.output
 
-    def test_view_json_marks_archived_status(self, runner, mock_client, mock_repo, repo_detail):
-        repo_detail["status"] = "已归档"
-        mock_client.get.return_value = repo_detail
-
-        result = runner.invoke(main, ["repo", "view", "--json", "isArchived"])
-
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"status": "开始"}, False),
+            ({"status": "关闭"}, True),
+            ({"status": "0"}, False),
+            ({"status": "2"}, True),
+            ({"status": 0}, False),
+            ({"status": 2}, True),
+            ({"status": "未归档"}, False),
+            ({"status": "已归档"}, True),
+            ({"archived": False}, False),
+            ({"archived": True}, True),
+            ({"status": "关闭", "archived": True}, True),
+            ({"status": "关闭", "archived": False}, None),
+            ({"status": "开始", "archived": True}, None),
+            ({}, None),
+            ({"status": None}, None),
+            ({"status": "可能已归档"}, None),
+            ({"status": False}, None),
+            ({"status": 2.0}, None),
+            ({"status": {}}, None),
+            ({"archived": "false"}, None),
+            ({"status": "关闭", "archived": 1}, None),
+            ({"status": "future", "archived": True}, None),
+        ],
+    )
+    def test_view_archive_state_requires_unambiguous_evidence(self, runner, mock_client, payload, expected):
+        mock_client.get.return_value = {"full_name": "owner/repo", **payload}
+        result = runner.invoke(main, ["repo", "view", "owner/repo", "--json", "isArchived"])
         assert result.exit_code == 0
-        assert '"isArchived": true' in result.output
+        assert json.loads(result.output)["isArchived"] is expected
+        mock_client.get.assert_called_once_with("/repos/owner/repo")
+        mock_client.put.assert_not_called()
 
     def test_view_bare_json_lists_available_fields(self, runner, mock_client, mock_repo):
         result = runner.invoke(main, ["repo", "view", "--json"])

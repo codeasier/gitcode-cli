@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlsplit
 import click
 
 from ..errors import APIError
-from ..repo import validate_gitcode_repo
+from ..repo import is_single_ref, validate_gitcode_repo
 from ..services import RepoService
 from .base import AdapterActionResult
 
@@ -49,20 +49,6 @@ def _matches_forkness(item: dict[str, Any], *, fork: bool, source: bool) -> bool
 
 def _drop_none(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
-
-
-def _is_single_branch(branch: Any) -> bool:
-    # A missing, blank or wildcard ref must never become an unscoped sync request.
-    return (
-        isinstance(branch, str)
-        and bool(branch)
-        and not branch.startswith("-")
-        and not branch.endswith(".")
-        and ".." not in branch
-        and "@{" not in branch
-        and not any(ch.isspace() or not ch.isprintable() or ch in "~^:?*[\\" for ch in branch)
-        and all(part and not part.startswith(".") and not part.endswith(".lock") for part in branch.split("/"))
-    )
 
 
 def _confirmed_fork_full_name(item: Any, organization: str, repo: str) -> str:
@@ -290,7 +276,7 @@ class RepoAdapter:
             validate_gitcode_repo(None, parent_owner, parent_repo)
             upstream = self.service.get(parent_owner, parent_repo)
             branch = upstream.get("default_branch") if isinstance(upstream, dict) else None
-        if not _is_single_branch(branch):
+        if not is_single_ref(branch):
             raise click.ClickException("Cannot verify a single branch to sync; specify --branch. No sync was sent.")
         item = self.service.sync(owner, repo, branch=branch)
         if not isinstance(item, dict) or item.get("repo_sync_result") is not True:

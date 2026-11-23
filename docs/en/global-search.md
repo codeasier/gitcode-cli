@@ -6,6 +6,22 @@ listed by each command's `--help`. Search does not interpret GitHub's raw
 qualifier syntax.
 
 ```bash
+gc search repos parser --include-forks true --sort watches --order desc --json fullName,watchersCount
+```
+
+Repository search uses the [dedicated repository endpoint][repos]. By default
+it omits `fork` (the API excludes forks). Pass `--include-forks true` to
+include forks **and** original repositories, or `--include-forks false` to
+explicitly exclude forks. Unlike [gh][gh-repos], `only` is not supported.
+`--sort watches` sorts by watch count on the server; it is a GitCode option.
+These options are for direct `gc search repos` only, not the gh proxy.
+
+The [GitCode reference][legacy-repos] notes that fork inclusion may depend on a
+provider allowlist. The CLI keeps its existing bound of 20 repositories per
+page and 100 pages. If the server rejects the query, gc reports the error
+rather than retrying without the requested options.
+
+```bash
 gc search prs "improve telemetry" --sort updated --limit 25 --json number,title,state,repository,url
 ```
 
@@ -29,3 +45,7 @@ search operations. Their `gh search` equivalents are not implemented by `gc`.
 [typed]: https://atomgit-api-doc.atomgit.com/en/4.search/461.search_by_type.html
 [hosts]: https://atomgit-api-doc.atomgit.com/en/guide/1.quick-start.html
 [index]: https://atomgit-api-doc.atomgit.com/llms.txt
+
+[repos]: https://atomgit-api-doc.atomgit.com/en/4.search/82.search_repositories.html
+[legacy-repos]: https://docs.gitcode.com/docs/apis/get-api-v-5-search-repositories/
+[gh-repos]: https://cli.github.com/manual/gh_search_repos

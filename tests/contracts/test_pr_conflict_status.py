@@ -7,7 +7,7 @@ from click.testing import CliRunner
 from gitcode_cli.cli import main
 from gitcode_cli.client import GitCodeClient
 from gitcode_cli.context import AppContext
-from gitcode_cli.gh_proxy import ProxyError, validate_gitcode_command
+from gitcode_cli.gh_proxy import ProxyError, dispatch
 
 TOKEN = "status-contract-synthetic"
 BASE = "https://conflict.invalid/api/v5/"
@@ -137,6 +137,9 @@ def test_empty_page_reads_no_detail(invoke):
 
 
 @pytest.mark.parametrize("flags", [[], ["-c"], ["--json", "number"]])
-def test_repository_status_never_proxied_as_gh_personal_status(flags):
-    with pytest.raises(ProxyError, match="not supported"):
-        validate_gitcode_command(["pr", "status", *flags])
+def test_repository_status_never_proxied_as_gh_personal_status(monkeypatch, flags):
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("must not fall back to native gh"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("neither backend may run"))
+    with pytest.raises(ProxyError, match="use gc pr status directly") as exc:
+        dispatch(["pr", "status", *flags], {"GC_GH_TARGET": "gitcode"})
+    assert "refusing to fall back" in str(exc.value)

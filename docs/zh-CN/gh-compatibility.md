@@ -17,16 +17,16 @@ gc setup gh-proxy --configure
 路由优先级如下：
 
 1. `GC_GH_TARGET=gitcode|github`
-2. 显式 `-R HOST/OWNER/REPO` 或 `--repo` 参数中的 host
+2. 显式 `-R HOST/OWNER/REPO`、`--repo`，或原生 `gh api` / `gh auth` 的主机选择参数中的 host
 3. Issue/PR URL 中的 host，或 `repo view/clone/fork/edit/delete/sync` 的仓库位置参数中的 host（忽略选项值）
 4. 当前仓库 `origin` 的 host
 5. 无法判断目标时使用原生 GitHub CLI
 
 默认识别 `gitcode.com` 和 `ssh.gitcode.com`，包括 `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`。`ssh://git@ssh.github.com:443/OWNER/REPO.git` 等 GitHub SSH 地址会路由到原生 `gh`。私有部署可以通过 `GC_GITCODE_HOSTS` 配置逗号分隔的额外 host。自动查找原生 `gh` 失败时，可用 `GC_REAL_GH` 指定其可执行文件。代理查找时会排除自身目录；在 POSIX 上通过进程替换保留原始参数、标准流、信号和退出状态。
 
-GitCode 路由采用失败关闭策略：兼容性注册表中不存在的命令会直接拒绝，不会转发给 GitHub。`gc setup gh-proxy --uninstall` 会移除 shim，并且只删除由该命令管理且带标记的 shell/OpenCode 配置。
+GitCode 路由采用失败关闭策略：已知不支持的命令和参数会直接拒绝，不会转发给任一后端。`gc api` 和 `gc pr checks` 等仅支持直接调用的命令不会由代理转发。对于可识别的 Issue 或 PR 参数，即使不在 GitCode 工作目录，GitCode 链接仍会选用这套路由规则。`gc setup gh-proxy --uninstall` 会移除 shim，并且只删除由该命令管理且带标记的 shell/OpenCode 配置。
 
-Issue/PR URL 与显式 host 或 `GC_GH_TARGET` 冲突时会被拒绝。直接使用 `gc` 的 Issue/PR 命令会在访问 API 前校验有效 URL、`-R` 或 origin 的 host，不会将其他平台的目标映射为 GitCode 同名仓库。完整 GitCode URL 可在本地 checkout 之外使用。`GC_GITCODE_HOSTS` 只改变代理路由，不会改变 CLI 固定的 GitCode API 地址，也不会授权其他 host。
+显式的 GitCode 与 GitHub 目标互相冲突时，代理会在调用后端之前拒绝。检查范围包括仓库位置参数、Issue/PR URL、`--repo`、`--hostname` 和 `GC_GH_TARGET`。原生 `--hostname` 可以选用 GitHub 后端，但不会成为 GitCode 后端支持的参数。直接使用 `gc` 的 Issue/PR 命令会在访问 API 前校验有效 URL、`-R` 或 origin 的 host，不会将其他平台的目标映射为 GitCode 同名仓库。完整 GitCode URL 可在本地 checkout 之外使用，仓库 URL 可带一个末尾斜杠。代理不会把原生 `GH_HOST` 或 `GH_REPO` 转成 GitCode 参数。如果任一变量指向已识别的 GitCode 主机，须显式传入兼容的 GitCode 参数，否则请直接使用 `gc`。原生 GitHub 的变量值保持不变。`GC_GITCODE_HOSTS` 只改变代理路由，不会改变 CLI 固定的 GitCode API 地址，也不会授权其他 host。
 
 在 GitCode 仓库中，`gh --version` 会明确标识 pygitcode proxy、GitCode 目标和 `gc` 后端；`gh auth status` 会显示 `gitcode.com`、GitCode API host、脱敏 token，并明确提示命令目标是 GitCode 而非 GitHub。在 GitHub 仓库中，这两个命令仍保持原生 GitHub CLI 输出。
 

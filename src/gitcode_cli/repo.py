@@ -7,9 +7,12 @@ from urllib.parse import unquote, urlsplit
 from .errors import RepoResolutionError
 
 _URL_HOST = r"(?P<host>\[[^\]]+\]|[^/:]+)"
-HTTPS_RE = re.compile(rf"https?://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
-SSH_URL_RE = re.compile(rf"ssh://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
-SSH_RE = re.compile(r"(?:[^@/:]+@)?(?P<host>[^:]+):(?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
+# The transport suffix is optional, but dots inside a repository slug are
+# ordinary characters. Bare dot segments are not repository names.
+_REMOTE_REPO = r"(?!\.{1,2}(?:\.git)?$|\.git$)(?P<repo>[^/]+?)(?:\.git)?"
+HTTPS_RE = re.compile(rf"https?://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/{_REMOTE_REPO}$")
+SSH_URL_RE = re.compile(rf"ssh://(?:[^@/]+@)?{_URL_HOST}(?::\d+)?/(?P<owner>[^/]+)/{_REMOTE_REPO}$")
+SSH_RE = re.compile(rf"(?:[^@/:]+@)?(?P<host>[^:]+):(?P<owner>[^/]+)/{_REMOTE_REPO}$")
 
 
 def parse_repo_with_host(repo: str) -> tuple[str | None, str, str]:
@@ -29,8 +32,11 @@ def parse_repo(repo: str) -> tuple[str, str]:
 
 
 def parse_remote_url_with_host(url: str) -> tuple[str, str, str]:
+    # A repository checkout URL may end in one slash after the slug or
+    # transport suffix. Do not silently normalize intermediate separators.
+    value = url.strip().removesuffix("/")
     for pattern in (HTTPS_RE, SSH_URL_RE, SSH_RE):
-        match = pattern.match(url.strip())
+        match = pattern.match(value)
         if match:
             host = match.group("host")
             if host.startswith("[") and host.endswith("]"):

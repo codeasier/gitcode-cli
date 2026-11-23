@@ -133,3 +133,37 @@ class TestResolveRepo:
         with pytest.raises(RepoResolutionError) as ctx:
             resolve_repo()
         assert ctx.value.__cause__ is exc
+
+
+@pytest.mark.parametrize(
+    ("url", "host"),
+    [
+        ("https://gitcode.com/owner/repo.name.git", "gitcode.com"),
+        ("https://gitcode.com/owner/repo.name", "gitcode.com"),
+        ("git@gitcode.com:owner/repo.name.git", "gitcode.com"),
+        ("ssh://git@ssh.gitcode.com:443/owner/repo.name.git", "ssh.gitcode.com"),
+    ],
+)
+def test_remote_url_keeps_dots_in_repository_slug(url, host):
+    assert parse_remote_url_with_host(url) == (host, "owner", "repo.name")
+
+
+@pytest.mark.parametrize("name", [".", "..", ".git", "..git", "...git"])
+def test_remote_url_rejects_dot_segments_and_suffix_without_name(name):
+    with pytest.raises(RepoResolutionError):
+        parse_remote_url_with_host(f"https://gitcode.com/owner/{name}")
+
+
+@pytest.mark.parametrize(
+    ("url", "host"),
+    [
+        ("https://gitcode.com/owner/repo.name/", "gitcode.com"),
+        ("https://gitcode.com/owner/repo.name.git/", "gitcode.com"),
+        ("ssh://git@ssh.gitcode.com:443/owner/repo.name.git/", "ssh.gitcode.com"),
+        ("git@gitcode.com:owner/repo.name.git/", "gitcode.com"),
+    ],
+)
+def test_remote_url_removes_exactly_one_optional_final_slash(url, host):
+    assert parse_remote_url_with_host(url) == (host, "owner", "repo.name")
+    with pytest.raises(RepoResolutionError):
+        parse_remote_url_with_host(url + "/")

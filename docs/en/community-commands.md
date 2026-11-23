@@ -18,3 +18,15 @@ List defaults to open discussions, newest update first. GitCode supports server-
 This is a subset of the preview gh discussion surface, not GitHub GraphQL compatibility. Discussion/comment URLs, labels on writes, comment editing/deletion/replies, cursors, browser mode, and unlisted formatting flags are not supported. Use `--help` for available flags and JSON fields.
 
 Official v5 definitions: [authenticated organizations](https://docs.gitcode.com/en/docs/orgs/), [list discussions](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-discuss/), [view](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-discuss-number/), [list comments](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-discuss-number-comment/), [create](https://docs.gitcode.com/docs/apis/post-api-v-5-repos-owner-repo-discuss/), [edit](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-discuss-number/), and [add a comment](https://docs.gitcode.com/en/docs/apis/post-api-v-5-repos-owner-repo-discuss-number-comment/).
+
+## List organization Kanban boards
+
+`gc org dashboards --org acme` prints one page as board number (iid) and name. To select fields on the next page:
+
+```sh
+gc org dashboards --org acme --page 2 --per-page 20 --json id,iid,name,status,visibility
+```
+
+Use a single organization slug (an ASCII letter or digit, then letters, digits, dots, underscores or hyphens; at most 255 characters), not a URL, nested namespace or repository. No checkout is needed; `-R` is rejected. The CLI requests exactly one page (page 1–10000; 1–100 rows; default 20), not the full collection or its totals. Status is 0 (open) or 1 (closed); visibility is 1 (public) or 2 (private). The organization is the request scope: the API does not echo the parent organization on each board, so this command cannot verify row ownership independently. It does not infer any other fields, items, descriptions or permissions. A failed page produces no rows. This native, read-only command does not implement or forward `gh project`.
+
+[GitCode's v5 list contract](https://docs.gitcode.com/docs/apis/get-api-v-5-org-owner-kanban-list/) defines the singular `org` route and envelope. [AtomGit endpoint 244](https://atomgit-api-doc.atomgit.com/en/16.dashboard/244.get_the_list_of_organization_kanbans.html) permits anonymous reads or a user access token, but names no required OAuth scope. An anonymous request explicitly filters for public boards (`visibility=1`) and rejects the entire page if any result is nonpublic or unrecognized. A configured token is sent only in the [GitCode Bearer header](https://docs.gitcode.com/en/docs/guide/); it may receive private boards if permitted by the provider. There is no auth fallback, redirect or automatic retry. The anonymous/authenticated access policy is documented and tested with mocked responses, not confirmed against a live GitCode organization.

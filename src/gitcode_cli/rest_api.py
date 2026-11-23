@@ -198,7 +198,9 @@ def _confirmed_status(status: int, method: str) -> bool:
     return True
 
 
-def _read(response: httpx.Response, method: str, token: str, remaining: int) -> tuple[Page, int, bytes]:
+def _read(
+    response: httpx.Response, method: str, token: str, remaining: int, *, strict_json: bool
+) -> tuple[Page, int, bytes]:
     status = response.status_code
     uncertain = "" if method in READ_METHODS else _UNCERTAIN
     if status == 202:
@@ -212,7 +214,9 @@ def _read(response: httpx.Response, method: str, token: str, remaining: int) -> 
         return Page(status, headers, None, False), 0, b""
     raw = _checked_size(response, remaining, uncertain)
     try:
-        data = json.loads(raw)
+        # Typed consumers make decisions from individual keys; duplicate keys
+        # would make results (such as visibility filters) ambiguous.
+        data = json.loads(raw, object_pairs_hook=_unique_fields if strict_json else None)
         if uncertain and data is None:
             raise ValueError
         clean = clean_response(data, token)
@@ -265,6 +269,8 @@ def fetch(
     query: dict[str, str],
     body: bytes | None,
     paginate: bool,
+    *,
+    strict_json: bool = False,
 ) -> list[Page]:
     url, params = _request_target(endpoint, version, query, token)
     if method not in READ_METHODS | {"POST", "PUT", "PATCH", "DELETE"} or (paginate and method != "GET"):
@@ -289,7 +295,7 @@ def fetch(
                 with client.stream(
                     method, url, params=params, headers=request_headers, content=body, follow_redirects=False
                 ) as response:
-                    page, used, digest = _read(response, method, token, remaining)
+                    page, used, digest = _read(response, method, token, remaining, strict_json=strict_json)
                 remaining -= used
                 if not paginate:
                     return [page]

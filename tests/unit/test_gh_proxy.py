@@ -85,6 +85,13 @@ def test_gitcode_help_cannot_dispatch_direct_only_api_or_consume_help_flag(monke
     assert "synthetic-marker" not in str(exc.value)
 
 
+@pytest.mark.parametrize("option", [["-e", "*.md"], ["-e*.md"], ["--exclude=*.md"], ["--exclude", "*.md"]])
+def test_gitcode_pr_diff_exclude_is_direct_only(monkeypatch, option):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: pytest.fail("proxy must not dispatch"))
+    with pytest.raises(ProxyError, match=r"does not support -e/--exclude for pr diff"):
+        dispatch(["pr", "diff", *option, "--name-only", "https://gitcode.com/o/r/pull/42"], {})
+
+
 def test_unknown_gitcode_command_refusal_does_not_echo_arguments():
     with pytest.raises(ProxyError, match="refusing to fall back") as exc:
         validate_gitcode_command(["synthetic-marker", "literal-argument"])

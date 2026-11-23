@@ -111,7 +111,6 @@
       ],
       "diff": [
         {"name": "--color", "reason": "diff color rendering is outside the selected #86 placeholder set"},
-        {"name": "-e", "reason": "diff exclude filtering is outside the selected #86 placeholder set"},
         {"name": "--web", "reason": "opening PR diff in browser is outside the selected #86 placeholder set"}
       ],
       "list": [

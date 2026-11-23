@@ -66,6 +66,16 @@ gc pr checkout 42 --force
 
 PR checkout fetches from the verified source repository rather than assuming `origin` contains the source branch. `--detach` checks out the verified immutable head SHA without creating or resetting a local branch. `--force` resets an existing branch only when its upstream identifies that source repository and branch, discarding its local commits and tracked working-tree changes. Missing, unrelated or ambiguous upstreams are refused; remote names need not be `origin`. Without `--force`, an existing branch must already point to the verified SHA. New branches are created at that SHA. If exactly one existing remote has the canonical HTTPS/SSH source URL and standard branch fetch mapping, its upstream is retained; a missing tracking ref is created with a compare-and-swap guard, never overwriting an existing ref. Otherwise no upstream is invented: configure an unambiguous source remote/upstream before using `--force` later. Custom ports, embedded HTTPS credentials and remote helpers are not accepted as proof of upstream identity. No temporary routing remote is saved. All modes require a full API head SHA and reject a head changed between the API read and fetch before changing the local checkout. URL pinning addresses Git configuration rewrites; it does not disable native HTTPS redirects or replace Git authentication.
 
+### Exclude changed file names
+
+```bash
+gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
+```
+
+Direct `gc` filters the existing file list, in order, using the path it would print (the displayed name on a rename, not both names). Matches are case-sensitive, against the entire path or its basename, so a pattern without `/` can match a file at any depth. `*` can match zero or more characters within a component: `generated/*` excludes `generated/a.py` but keeps `generated/sub/a.py`. `**` does not recurse.
+
+Use one nonempty pattern per flag, with up to 32 patterns and at most 512 UTF-8 bytes per pattern. This is a subset of [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go): `?`, bracket classes, backslash escapes, commas, double quotes and nonprintable characters are rejected before lookup. The GitCode-targeted `gh` proxy does not forward this flag. Plain diff and mail-format patch bodies cannot be filtered.
+
 ### PR comment history and patches
 
 ```bash

@@ -1031,17 +1031,25 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
 
 @pr_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
+@click.option("-c", "--conflict-status", is_flag=True, help="Read the GitCode conflict check for up to 20 open PRs.")
 @click.pass_context
-def pr_status(ctx: click.Context, repo_name: str | None) -> None:
+def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool) -> None:
     app = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app.repo)
     service = PullRequestService(app.client())
     adapter = PullRequestAdapter(service)
-    result = adapter.status(owner, repo)
-    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message})")
+    result = adapter.status(owner, repo, conflict_status=conflict_status)
+    scope = "; first page only, up to 20 PRs" if conflict_status else ""
+    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message}{scope})")
     if result.items:
         for item in result.items:
-            safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{item['title']}")
+            title = item["title"]
+            suffix = ""
+            if conflict_status:
+                # Keep each check on exactly one terminal line despite untrusted PR titles.
+                title = "".join(c if c.isprintable() else ascii(c)[1:-1] for c in title)
+                suffix = f"\tconflict check: {item['conflict_check']}"
+            safe_echo(f"  #{safe_number(item, '?')}\t{item['state']}\t{title}{suffix}")
     else:
         safe_echo("  No open pull requests")
 
@@ -1278,8 +1286,8 @@ pr_checkout.short_help = "Check out a pull request locally"
 pr_checkout.help = "Check out a pull request locally."
 pr_ready.short_help = "Mark a pull request as ready for review"
 pr_ready.help = "Mark a pull request as ready for review."
-pr_status.short_help = "Show status of relevant pull requests"
-pr_status.help = "Show status of relevant pull requests."
+pr_status.short_help = "Show open pull requests in the repository"
+pr_status.help = "Show the repository’s first page of open pull requests, not personal or current-branch groups."
 pr_audit.short_help = "Audit pull requests against merge-readiness rules"
 pr_audit.help = (
     "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "

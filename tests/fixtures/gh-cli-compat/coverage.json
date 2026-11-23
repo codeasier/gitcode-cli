@@ -2,7 +2,7 @@
   "groups": {
     "auth": ["logout", "status", "switch", "token"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
-    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout", "status"],
     "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"],
     "release": ["create", "list", "delete-asset", "download", "edit", "upload", "view"]
   },
@@ -95,6 +95,11 @@
       ]
     },
     "pr": {
+      "status": [
+        {"name": "--json", "reason": "The direct repository-open view has no verified personal gh status groups."},
+        {"name": "--jq", "reason": "The command does not provide gh-compatible JSON."},
+        {"name": "--template", "reason": "The command does not provide gh-compatible JSON."}
+      ],
       "checkout": [
         {"name": "--recurse-submodules", "reason": "submodule checkout behavior is outside the selected #86 placeholder set"}
       ],

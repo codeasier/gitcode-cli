@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import click
 
-from ..errors import GCError
+from ..errors import APIError, GCError
+from ..json_projection import json_number
 from ..services import IssueService, PullRequestService, UserService
 from ._current_user import resolve_me
 from ._milestones import milestone_number, resolve_pr_milestone
@@ -69,6 +71,33 @@ def _comment_creation_key(comment: dict[str, Any]) -> tuple[datetime, int]:
     except ValueError as exc:
         raise click.ClickException("Unable to determine the last pull request comment's creation time.") from exc
     return created, int(comment_id)
+
+
+def _status_base_matches(item: dict, owner: str, repo: str) -> bool:
+    # A fork's head may have a different owner. Compare only advertised base identity.
+    base = item.get("base")
+    source = base.get("repo") if isinstance(base, dict) else None
+    if not isinstance(source, dict):
+        return source is None
+    path = f"{owner}/{repo}"
+    namespace = source.get("namespace")
+    if (
+        source.get("path", repo) != repo
+        or (isinstance(namespace, dict) and namespace.get("path", owner) != owner)
+        or any(source.get(key, path) != path for key in ("full_path", "full_name", "path_with_namespace"))
+    ):
+        return False
+    if "html_url" not in source:
+        return True
+    if not isinstance(source["html_url"], str):
+        return False
+    try:
+        url = urlsplit(source["html_url"])
+    except ValueError:
+        return False
+    return (
+        url.scheme in ("http", "https") and url.netloc.lower() == "gitcode.com" and url.path.rstrip("/") == f"/{path}"
+    )
 
 
 class PullRequestAdapter:
@@ -346,8 +375,61 @@ class PullRequestAdapter:
             )
         return item
 
-    def status(self, owner: str, repo: str) -> AdapterActionResult:
-        items = self.service.list(owner, repo, state="open")
+    def _conflict_status(self, owner: str, repo: str) -> list[dict]:
+        # Match the list endpoint's default first page; never fan out across the repository.
+        page_size = 20
+        page = self.service.list(owner, repo, state="open", page=1, per_page=page_size)
+        if not isinstance(page, list) or len(page) > page_size:
+            raise APIError("Cannot verify the open pull request page for conflict checks.")
+        rows = []
+        seen: set[int] = set()
+        for item in page:
+            if not isinstance(item, dict):
+                raise APIError("Cannot verify a pull request in the status list.")
+            number = json_number(item.get("number"))
+            listed_id = json_number(item.get("id"))
+            if (
+                not number
+                or number in seen
+                or ("id" in item and not listed_id)
+                or not isinstance(item.get("title"), str)
+                or not item["title"].strip()
+                or item.get("state") not in ("open", "opened")
+                or not _status_base_matches(item, owner, repo)
+            ):
+                raise APIError("Cannot verify a unique, open pull request in the status list.")
+            seen.add(number)
+            detail = self.service.get(owner, repo, number)
+            if (
+                not isinstance(detail, dict)
+                or json_number(detail.get("number")) != number
+                or detail.get("state") not in ("open", "opened")
+                or not _status_base_matches(detail, owner, repo)
+                or (listed_id is not None and json_number(detail.get("id")) != listed_id)
+            ):
+                raise APIError(
+                    f"Cannot verify open pull request #{number} against its detail; repeat the status check."
+                )
+            gates = detail.get("mergeable_state")
+            if isinstance(gates, dict) and "merge_request_id" in gates:
+                gate_id = json_number(gates["merge_request_id"])
+                if not gate_id or gate_id != json_number(detail.get("id")):
+                    raise APIError(f"Cannot verify the conflict check belongs to pull request #{number}.")
+            passed = gates.get("conflict_passed") if isinstance(gates, dict) else None
+            label = "passed" if passed is True else "not passed" if passed is False else "unknown"
+            # Titles are mutable and optional in the detail response, not identity.
+            title = detail.get("title")
+            rows.append(
+                {
+                    **item,
+                    "title": title if isinstance(title, str) and title.strip() else item["title"],
+                    "conflict_check": label,
+                }
+            )
+        return rows
+
+    def status(self, owner: str, repo: str, *, conflict_status: bool = False) -> AdapterActionResult:
+        items = self._conflict_status(owner, repo) if conflict_status else self.service.list(owner, repo, state="open")
         return AdapterActionResult(
             items=items,
             message=capability_message("PR_STATUS_GH_SEMANTICS"),

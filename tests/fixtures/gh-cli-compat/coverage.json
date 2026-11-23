@@ -2,7 +2,7 @@
   "groups": {
     "auth": ["logout", "status", "switch", "token"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
-    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout"],
+    "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout", "status"],
     "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"],
     "release": ["create", "list", "delete-asset", "download", "edit", "upload", "view"]
   },
@@ -95,6 +95,11 @@
       ]
     },
     "pr": {
+      "status": [
+        {"name": "--json", "reason": "The direct repository-open view has no verified personal gh status groups."},
+        {"name": "--jq", "reason": "The command does not provide gh-compatible JSON."},
+        {"name": "--template", "reason": "The command does not provide gh-compatible JSON."}
+      ],
       "checkout": [
         {"name": "--recurse-submodules", "reason": "submodule checkout behavior is outside the selected #86 placeholder set"}
       ],
@@ -507,6 +512,11 @@
             "category": "wording",
             "reason": "gc uses the shorter noun phrase in this command summary.",
             "value": "Reopen pull request"
+          },
+          "status": {
+            "category": "semantics",
+            "reason": "Direct gc shows repository-open pull requests rather than gh's personal/current-branch status groups.",
+            "value": "Show open pull requests in the repository"
           }
         }
       },
@@ -559,6 +569,34 @@
               "target": "--jq",
               "takes_value": true
             }
+          }
+        }
+      },
+      "pr status": {
+        "gc_invariants": {
+          "usage": "cli pr status [flags]",
+          "aliases": []
+        },
+        "missing_flags": {
+          "--json": {
+            "category": "semantics",
+            "reason": "GitCode repository-open status does not implement gh's personal JSON groups."
+          },
+          "-q": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for jq."
+          },
+          "--jq": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for jq."
+          },
+          "-t": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for templates."
+          },
+          "--template": {
+            "category": "semantics",
+            "reason": "The repository-open status view does not expose gh JSON for templates."
           }
         }
       }

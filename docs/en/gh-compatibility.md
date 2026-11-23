@@ -102,6 +102,7 @@ This is a **partial, read-only** approximation of `gh repo set-default`. The loc
 | --- | --- |
 | Authentication | GitCode uses an `access_token` query parameter rather than GitHub's API authentication model. |
 | Issue create/update API | GitCode issue create/update sends `repo` in the request body. Updates also require `title`; close/reopen and partial edits preserve the fetched title and refuse to write if it is unavailable. |
+| Personal Issue status | Direct `gc issue status -R OWNER/REPO` reads only [repository issues](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/) assigned to or created by the active account, verifying repository and actor IDs as well as names. It never reads the account-wide issue feed. The API does not document mention filtering: text marks it unavailable, `--json mentioned` returns `null` (not an empty list), and `issue list --mention` is refused. The GitCode-targeted proxy refuses `gh issue status`. |
 | PR status | Use `gc pr status -R OWNER/REPO -c` (`--conflict-status`) for the first page of open PRs, up to 20. It reads each [PR detail](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/) once and reports only GitCode’s `mergeable_state.conflict_passed` check: passed, not passed, or unknown when absent/non-boolean. This is not merge readiness. A failed detail request or inconsistent identity aborts the report; without `-c` no detail requests are made. The GitCode-targeted proxy refuses `gh pr status`: this repository view does not implement [gh’s personal status](https://cli.github.com/manual/gh_pr_status), current-branch group, or JSON contract. For scriptable authored PRs, use `gc pr list -s open -A @me --json number,title`. |
 | PR squash | `--squash` sends `merge_method=merge` and the separate boolean `squash=true`, following the current GitCode contract. |
 | PR checkout and branch deletion | Require a fully qualified source repository identity and full head SHA. Fetch uses the source repository's canonical HTTPS URL and verifies the fetched commit. Deletion uses an explicit SHA lease so concurrent pushes are preserved. Missing/contradictory source metadata is rejected; a bare repository name or `head.ref` alone is insufficient. Native Git HTTPS credentials must be available. URL rewrites that change the effective fetch/push URL are refused; accepted operations pin a command-scoped target without changing saved Git configuration. |
@@ -121,3 +122,26 @@ This is a **partial, read-only** approximation of `gh repo set-default`. The loc
 On POSIX, saved token configuration uses a private directory (`0700`), atomic file replacement (`0600`), and rejects linked storage. HTTP transport logs and raised errors redact the active token. Windows file privacy relies on the user's profile ACL.
 
 The squash/title contracts were checked against the [merge](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge) and [Issue update](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number) documentation on 2026-10-30. Offline contract checks do not establish live sandbox compatibility.
+
+### Repository-scoped issue status
+
+For scripts use `gc issue status -R owner/repo --json assigned,createdBy` or `--jq '.assigned[].title'`.
+Both queues return only issue summaries (id, number, state, title, created_at, label names), not raw bodies or URLs.
+Each queue is limited to ten pages of 50 issues and must reach an empty terminal page. A malformed or repeated row,
+an unconfirmed identity, a rate limit, or an unexhausted scan gives an error, without a partial report. These are
+sequential reads of open issues, not a transaction. Offline contracts are not live provider acceptance.
+
+Provider pagination hints, including first, previous, next, and last links, must agree with
+the requested page, repository, and filters and with the pages actually
+received. The command never follows response links. Without `-R`, only an
+unambiguous GitCode origin is accepted.
+
+The SDK's `IssueAdapter.status` uses the same verified queues and retains the
+`AdapterActionResult` wrapper. The standard `GitCodeClient` reuses its own
+HTTP transport for bounded, bearer-only calls; a custom client must explicitly
+implement `read_issue_status_page(endpoint, params)`, returning the bounded
+JSON value, headers, and exact canonical request URL without retries or
+redirects. The standard client allows no query on account or repository
+metadata, and only the bounded open-issue pagination and exactly one author
+or assignee filter on repository queues. Unsupported clients fail before
+their token is read.

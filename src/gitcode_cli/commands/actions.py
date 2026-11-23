@@ -222,7 +222,8 @@ def run_artifacts(ctx, repo_name, run_id, page, limit, attempt, commit):
 @run.command("download")
 @click.argument("run_id")
 @repo_option
-@click.option("--artifact-id", required=True, help="Exact artifact ID from 'run artifacts'.")
+@click.option("--artifact-id", multiple=True, help="Select one exact artifact ID instead of --name.")
+@click.option("--name", multiple=True, help="Select one unique, case-sensitive artifact name instead of --artifact-id.")
 @click.option("-a", "--attempt", type=click.IntRange(1), required=True, help="Observed current attempt (only 1).")
 @click.option("--commit", required=True, help="Expected full head commit SHA.")
 @click.option(
@@ -233,9 +234,16 @@ def run_artifacts(ctx, repo_name, run_id, page, limit, attempt, commit):
     help="New ZIP file under an existing safe local directory; never overwritten or extracted.",
 )
 @click.pass_context
-def run_download(ctx, repo_name, run_id, artifact_id, attempt, commit, output):
+def run_download(ctx, repo_name, run_id, artifact_id, name, attempt, commit, output):
     """Save one verified artifact ZIP, without extracting it."""
     from ..services.actions_artifacts import ActionsArtifactService  # noqa: PLC0415
 
+    if len(artifact_id) + len(name) != 1:
+        raise click.UsageError("Specify exactly one --artifact-id or --name, once.")
     with _service(ctx, repo_name) as svc:
-        _show(ctx, ActionsArtifactService(svc).download(run_id, artifact_id, attempt, commit, output))
+        _show(
+            ctx,
+            ActionsArtifactService(svc).download(
+                run_id, artifact_id[0] if artifact_id else None, attempt, commit, output, name=name[0] if name else None
+            ),
+        )

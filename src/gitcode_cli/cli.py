@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.metadata
 import sys
+from typing import Any
 
 import click
 from click.shell_completion import get_completion_class
@@ -32,9 +33,19 @@ def _configure_stdout_encoding() -> None:
     if sys.platform != "win32":
         return
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure") and stream.isatty():
+        if hasattr(stream, "reconfigure"):
             with contextlib.suppress(Exception):
-                stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+                if stream.isatty():
+                    stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+                elif getattr(stream, "errors", None) not in {
+                    "backslashreplace",
+                    "ignore",
+                    "namereplace",
+                    "replace",
+                    "xmlcharrefreplace",
+                }:
+                    # Keep the pipe's encoding. Backslash escapes such as \U... would corrupt JSON.
+                    stream.reconfigure(errors="replace")  # type: ignore[attr-defined]
 
 
 def _get_version() -> str:
@@ -45,6 +56,11 @@ def _get_version() -> str:
 
 
 class _GCMainGroup(GCSectionGroup):
+    def main(self, *args: Any, **kwargs: Any) -> Any:
+        # Click may print help or usage errors before invoking the group callback.
+        _configure_stdout_encoding()
+        return super().main(*args, **kwargs)
+
     def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
@@ -63,7 +79,6 @@ class _GCMainGroup(GCSectionGroup):
 @click.option("--token", hidden=True, help="Override authentication token.")
 @click.pass_context
 def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:
-    _configure_stdout_encoding()
     ctx.ensure_object(dict)
     try:
         resolved_token = token or get_token()

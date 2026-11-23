@@ -81,6 +81,21 @@ gc pr diff 42 --patch > review.patch
 
 评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
 
+## 设置检出目录的默认 GitCode 仓库
+
+```sh
+gc repo set-default upstream             # 已存在的 GitCode 远端名
+gc repo set-default owner/repo            # 必须与唯一 GitCode 远端中的仓库名完全相同
+gc repo set-default --view
+gc repo set-default --unset
+```
+
+这是对 `gh repo set-default` 的**部分兼容，仅影响读取**。设置、查看或取消默认仓库只操作本地 Git 配置，链接的 worktree 共享该设置。无需认证或联网，不修改远端的获取/推送 URL 或原生 `gh` 配置。只能选择在该仓库本地配置中直接声明、且只有一个受支持 GitCode **fetch** URL 的远端；仅在 include 文件或其他配置作用域声明的远端不能固定。若有多个远端对应相同仓库，请指定远端名。不提供交互式选单或 fork 父仓库查询。
+
+**只有直接调用 `gc repo view`、`gc repo read-file` 和 `gc repo read-dir` 时才使用此默认仓库。** 显式仓库参数或 `-R` 优先；显式空值报错。未设置时仍使用 origin。配置损坏、远端被删除或改指其他仓库、URL 有歧义或被重写时，命令会停止，不回退到 origin。可重新设置、取消设置或显式指定目标。
+
+**刚查看的仓库不一定是后续写操作的目标。** Issue、PR（含创建、分支推断和 checkout）、Release、Actions、标签、讨论、原始 API 和所有仓库管理命令均不采用此设置，目标选择与原来相同。要写入刚查看的仓库，请在支持的命令上显式指定 `-R`。`gh` 代理不读取此设置，不转发目标为 GitCode 的 `repo set-default` 命令。
+
 ## GitCode 差异与限制
 
 | 范围 | `gc` 中的差异 |

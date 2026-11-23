@@ -8,11 +8,13 @@ import subprocess
 import sys
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import __version__
 from .compat import CompatStatus, iter_entries
 from .errors import RepoResolutionError
 from .repo import parse_remote_url_with_host, parse_repo_with_host, parse_resource_url
+from .repo_default import proxy_remote_urls
 
 GITCODE_HOSTS_ENV = "GC_GITCODE_HOSTS"
 
@@ -75,7 +77,7 @@ def _origin_host() -> str | None:
 # ([HOST/]OWNER/REPO or a full URL). `repo rename <new-name>` and
 # `repo list <owner>` are deliberately excluded: their positionals do not
 # carry host information.
-_REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
+_REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync", "set-default"}
 
 
 def _is_repo_selector(command: str) -> bool:
@@ -92,13 +94,52 @@ def _repo_candidate_host(candidate: str) -> str | None:
     return None
 
 
-def _positional_repo_host(argv: Sequence[str]) -> str | None:
+def _remote_host(url: str) -> str | None:
+    if "://" in url:
+        try:
+            parsed = urlsplit(url)
+            return parsed.hostname if parsed.scheme.lower() in {"https", "http", "ssh", "git"} else None
+        except ValueError:
+            return None
+    # Only SCP-style URLs are meaningful here, never parse a local path as HOST/OWNER/REPO.
+    if ":" in url and "::" not in url:
+        try:
+            return parse_remote_url_with_host(url)[0]
+        except RepoResolutionError:
+            pass
+    return None
+
+
+def _positional_repo_host(argv: Sequence[str], env: Mapping[str, str] | None = None) -> str | None:
     """Extract the repo positional, not a preceding option's value."""
     command, tail, _ = _command_parts(argv)
     if not _is_repo_selector(command):
         return None
-    candidate = _first_positional(tail, _value_options(command))
-    return _repo_candidate_host(candidate) if candidate is not None else None
+    if command != "repo set-default":
+        candidate = _first_positional(tail, _value_options(command))
+        return _repo_candidate_host(candidate) if candidate is not None else None
+    selectors = [value for flag, value in _arguments(tail, _value_options(command)) if not flag]
+    if len(selectors) > 1:
+        raise ProxyError("Ambiguous set-default selector; specify exactly one host-qualified repository.")
+    candidate = next(iter(selectors), None)
+    if candidate is None:
+        return None
+    if "/" not in candidate:
+        try:
+            declared, effective = proxy_remote_urls(candidate)
+        except RepoResolutionError as exc:
+            raise ProxyError(str(exc)) from exc
+        hosts = _gitcode_hosts(os.environ if env is None else env)
+        raw_host, actual_host = _remote_host(declared), _remote_host(effective)
+        # Never send a GitCode selector to native gh, even if insteadOf
+        # changes the provider (in either direction) or the pin ignores it.
+        for host in (raw_host, actual_host):
+            if host and _normalize_host(host) in hosts:
+                return host
+        if actual_host:
+            return actual_host
+        raise ProxyError("Cannot verify the named remote provider; use a host-qualified repository.")
+    return _remote_host(candidate) or _repo_candidate_host(candidate)
 
 
 def _reject_proxy_token_option(argv: Sequence[str]) -> None:
@@ -162,7 +203,7 @@ def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None)
     env = os.environ if environ is None else environ
     _reject_ambiguous_gitcode_selector(argv, env)
     resource_host = _resource_url_host(argv)
-    positional_host = _positional_repo_host(argv)
+    positional_host = _positional_repo_host(argv, env)
     repo_hosts = _explicit_repo_hosts(argv)
     option_hosts = _option_hosts(argv)
     candidates = [*repo_hosts, *option_hosts]

@@ -14,6 +14,7 @@ from ..formatters import format_repo_detail, format_repo_list, output_result, re
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
+from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
 from ..repo_read_dir import MAX_PAGE, fetch_page
 from ..repo_read_file import fetch_file, write_file, write_stdout
@@ -175,6 +176,12 @@ def _require_valid_limit(limit: int | None) -> None:
         raise click.BadParameter("must be greater than 0", param_hint="--limit")
 
 
+def _explicit_read_target(*values: str | None) -> str | None:
+    if any(value is not None and not value.strip() for value in values):
+        raise click.UsageError("Explicit repository selectors must not be empty.")
+    return next((value for value in values if value is not None), None)
+
+
 def _check_bare_json(json_fields: str | None, fields: list[str]) -> None:
     if json_fields == "":
         safe_echo("Available fields: " + ", ".join(fields))
@@ -253,6 +260,32 @@ def repo_group() -> None:
     pass
 
 
+@repo_group.command("set-default", short_help="Select the default for repo view, read-file and read-dir")
+@click.argument("repository", metavar="[REMOTE|[HOST/]OWNER/REPO]", required=False)
+@click.option("-v", "--view", is_flag=True, help="Print the configured repository read default.")
+@click.option("-u", "--unset", is_flag=True, help="Remove the configured repository read default.")
+@click.pass_context
+def repo_set_default(ctx: click.Context, repository: str | None, view: bool, unset: bool) -> None:
+    """Select a local GitCode fetch remote for repo view, read-file and read-dir only.
+
+    No other commands, including writes, use this setting. No network or authentication required.
+    """
+    if ctx.obj["app"].repo is not None:
+        raise click.UsageError("Use a positional remote or repository, not -R, to set the default.")
+    if sum((repository is not None, view, unset)) != 1:
+        raise click.UsageError("Specify one existing remote or repository, --view, or --unset.")
+    if view:
+        target = view_default()
+        if target is None:
+            safe_echo("No GitCode read default is set; repo view, read-file and read-dir use origin.", err=True)
+        else:
+            safe_echo("/".join(target))
+    elif unset:
+        unset_default()
+    elif repository is not None:
+        set_default(repository)
+
+
 @repo_group.command("view")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("repository", required=False)
@@ -279,7 +312,11 @@ def repo_view(
 ) -> None:
     app = ctx.obj["app"]
     _check_bare_json(json_fields, getattr(repo_view, "gc_json_fields", []))
-    owner, repo = _resolve_repo_target(app, repo_name, repository)
+    explicit = _explicit_read_target(repository, repo_name, app.repo)
+    if explicit is not None:
+        owner, repo = _parse_repository_arg(explicit)
+    else:
+        owner, repo = configured_target() or _parse_repository_arg(_origin_repository_arg())
     if web:
         open_in_browser(f"https://gitcode.com/{owner}/{repo}")
         return
@@ -307,15 +344,20 @@ def repo_view(
 
 def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
     app = ctx.obj["app"]
-    target = repo_name if repo_name is not None else app.repo
+    target = _explicit_read_target(repo_name, app.repo)
     if target is None:
+        default = configured_target()
+        if default is not None:
+            return default
         target = origin_target(_origin_repository_arg())
     return validate_gitcode_repo(*parse_repo_with_host(target))
 
 
 @repo_group.command("read-dir", short_help="List one page of a GitCode directory")
 @click.argument("path", required=False)
-@click.option("-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the Git origin.")
+@click.option(
+    "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
+)
 @click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
 @click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
 @click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
@@ -339,7 +381,9 @@ def repo_read_dir(ctx: click.Context, path: str | None, repo_name: str | None, r
 
 @repo_group.command("read-file", short_help="Read a file from a GitCode repository")
 @click.argument("path")
-@click.option("-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the Git origin.")
+@click.option(
+    "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
+)
 @click.option("--ref", help="Read this branch, tag, or commit (default: the repository default branch).")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Create a new file with the exact bytes (POSIX).")
 @click.pass_context
@@ -653,7 +697,7 @@ set_gc_help(
     repo_group,
     gc_usage="gc repo <command> [flags]",
     gc_command_sections=[
-        ("GENERAL COMMANDS", ["clone", "create", "fork", "list"]),
+        ("GENERAL COMMANDS", ["clone", "create", "fork", "list", "set-default"]),
         ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "view"]),
     ],
     gc_examples=[
@@ -665,12 +709,14 @@ set_gc_help(
         "A repository can be supplied as argument in any of the following formats:",
         '- by name, e.g. "OWNER/REPO" or "HOST/OWNER/REPO"; or',
         '- by URL, e.g. "https://gitcode.com/OWNER/REPO".',
-        "When omitted, gc resolves the repository from the git origin remote.",
+        "When omitted, see the command help for its default repository behavior.",
     ],
 )
 
 repo_view.short_help = "View a repository"
-repo_view.help = "View a repository. With no argument, the repository is taken from the git origin remote."
+repo_view.help = (
+    "View a repository. With no explicit target, use the configured gc default if set, otherwise the git origin remote."
+)
 set_gc_help(
     repo_view,
     gc_usage="gc repo view [{<repository> | -R OWNER/REPO}] [flags]",

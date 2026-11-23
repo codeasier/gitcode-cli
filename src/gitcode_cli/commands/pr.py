@@ -1051,8 +1051,8 @@ def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool, 
         if len(targets) > 1:
             raise click.UsageError("Conflicting repository selectors for personal PR status.")
         target = "/".join(targets.pop()) if targets else None
-        rows = personal_status(app.token, scope, target)
-        where = f"in {target}" if target is not None else "across repositories"
+        canonical, rows = personal_status(app.token, scope, target)
+        where = f"in {canonical}" if canonical is not None else "across repositories"
         safe_echo(f"Open pull requests {where} (GitCode scope: {scope})")
         for row in rows:
             safe_echo(f"  {row.repository}#{row.number}\t{row.title}")

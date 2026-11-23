@@ -104,7 +104,7 @@ gc pr diff 42 --patch > review.patch
 | 仓库主题与部署密钥 | GitCode v5 没有仓库 topics 和 deploy-key API，`repo edit --add-topic/--remove-topic` 与 `repo deploy-key` 不可用。 |
 | 浏览器流程 | `--web` 会打开对应 GitCode 页面；页面内创建或编辑能力取决于 GitCode Web UI。 |
 
-个人状态通过 `GET /api/v5/user/pulls` 传入所选范围和 `state=open`。该接口未列出仓库筛选参数，`-R` 在本地按 `base.repo.full_path` 过滤账号结果，不使用来源分支的 fork 仓库名。只输出目标仓库、PR 编号和标题。最多读取 10 个数据页（每页 100 条）并确认末尾空页，响应合计不超过 16 MiB。任何页读取失败、身份缺失、记录重复或超限都会终止，不会误报为空或输出部分结果。只使用[官方通用 Bearer 请求头](https://docs.gitcode.com/docs/apis/)；此端点示例使用查询参数传令牌，尚未经真实账号验证其请求头兼容性，不会回退到查询参数。
+个人状态通过 `GET /api/v5/user/pulls` 传入所选范围和 `state=open`。该接口未列出仓库筛选参数。仅在传入 `-R` 时，先在同一 API 域读取[仓库元数据](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/)，以仓库数字 ID 和规范 `full_name` 确认目标（支持平台认可的 ASCII 大小写变体）；然后在本地按 PR 的 `base.repo.full_path` 和 `base.repo.id` 同时匹配，不使用来源分支的 fork 仓库名。只输出目标仓库、PR 编号和标题。最多读取 10 个数据页（每页 100 条）并确认末尾空页，响应合计不超过 16 MiB（含可选的仓库元数据读取，最多 1 MiB）。任何页读取失败、身份缺失、记录重复或超限都会终止，不会误报为空或输出部分结果。只使用[官方通用 Bearer 请求头](https://docs.gitcode.com/docs/apis/)；接口文档列出了查询参数令牌，尚未经真实账号验证这些请求的 Bearer 兼容性，不会回退到查询参数。
 
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 

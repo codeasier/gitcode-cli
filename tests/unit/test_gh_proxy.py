@@ -9,7 +9,7 @@ import pytest
 from gitcode_cli.gh_proxy import (
     ProxyError,
     _exec,
-    _explicit_repo,
+    _explicit_repos,
     _positional_repo_host,
     dispatch,
     find_real_gh,
@@ -28,12 +28,12 @@ from gitcode_cli.gh_proxy import (
     ],
 )
 def test_explicit_repo(args, expected):
-    assert _explicit_repo(args) == expected
+    assert _explicit_repos(args) == ([expected] if expected else [])
 
 
 def test_target_override_has_highest_priority(monkeypatch):
     monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "github.com")
-    assert select_target(["-R", "github.com/o/r"], {"GC_GH_TARGET": "gitcode"}) == "gitcode"
+    assert select_target(["pr", "view", "1"], {"GC_GH_TARGET": "gitcode"}) == "gitcode"
 
 
 @pytest.mark.parametrize(
@@ -178,9 +178,10 @@ def test_positional_owner_repo_falls_back_to_origin(monkeypatch):
     assert select_target(["repo", "clone", "o/r"], {}) == "github"
 
 
-def test_explicit_repo_flag_beats_positional(monkeypatch):
-    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
-    assert select_target(["repo", "view", "github.com/o/r", "-R", "gitcode.com/a/b"], {}) == "gitcode"
+def test_repo_flag_and_positional_cannot_select_opposite_backends(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit conflict must win"))
+    with pytest.raises(ProxyError, match="Explicit target hosts conflict"):
+        select_target(["repo", "view", "github.com/o/r", "-R", "gitcode.com/a/b"], {})
 
 
 def test_unknown_context_defaults_to_github(monkeypatch):
@@ -415,3 +416,320 @@ def test_repo_positional_routing_skips_option_values(args, monkeypatch):
 )
 def test_repo_option_value_never_selects_a_host(args):
     assert _positional_repo_host(args) is None
+
+
+@pytest.mark.parametrize("origin", [None, "github.com"])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pr", "view", "-c", "https://gitcode.com/o/r/pull/1"],
+        ["issue", "view", "-c", "https://gitcode.com/o/r/issues/1"],
+        ["pr", "view", "-wc", "https://gitcode.com/o/r/pull/1"],
+        ["pr", "edit", "-r", "reviewer", "https://gitcode.com/o/r/pull/1"],
+        ["pr", "edit", "-rreviewer", "https://gitcode.com/o/r/pull/1"],
+        ["pr", "view", "-c", "-R", "gitcode.com/o/r", "1"],
+        ["pr", "view", "-wRgitcode.com/o/r", "1"],
+        ["issue", "view", "--", "https://gitcode.com/o/r/issues/1"],
+        ["--", "pr", "--", "view", "-c", "https://gitcode.com/o/r/pull/1"],
+    ],
+)
+def test_gitcode_resource_options_dispatch_to_gc_without_rewriting(monkeypatch, argv, origin):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: origin)
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls[0][0:2] == (sys.executable, ["-m", "gitcode_cli.cli", *argv])
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pr", "edit", "-r", "https://gitcode.com/o/r/pull/1", "12"],
+        ["pr", "view", "-q", "https://gitcode.com/o/r/pull/1", "12"],
+        ["issue", "edit", "--attach", "https://gitcode.com/o/r/issues/1", "12"],
+        ["pr", "create", "--body", "--repo=gitcode.com/o/r"],
+        ["pr", "view", "-c", "https://github.com/o/r/pull/1"],
+        ["pr", "checks", "-i", "10", "https://github.com/o/r/pull/1", "--watch"],
+        ["repo", "clone", "-u", "gitcode.com/o/r", "github.com/o/r"],
+        ["pr", "view", "1"],
+    ],
+)
+def test_native_or_no_target_arguments_stay_unchanged(monkeypatch, argv):
+    # Real native git/gh are never executed in routing tests.
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls == [("/native/gh", argv, {})]
+
+
+@pytest.mark.parametrize(
+    ("argv", "guide"),
+    [
+        (["pr", "checks", "-i", "10", "https://gitcode.com/o/r/pull/1"], "use gc pr checks directly"),
+        (["pr", "checks", "--", "https://gitcode.com/o/r/pull/1"], "use gc pr checks directly"),
+        (["pr", "--", "checks", "https://gitcode.com/o/r/pull/1"], "use gc pr checks directly"),
+        (["--", "api", "user?access_token=synthetic-marker"], "use gc api directly"),
+        (["-R", "gitcode.com/o/r", "release", "view", "synthetic-marker"], "use gc release view directly"),
+        (["issue", "lock", "-r", "synthetic-marker", "https://gitcode.com/o/r/issues/1"], "not supported"),
+        (["pr", "diff", "--color", "synthetic-marker", "https://gitcode.com/o/r/pull/1"], "--color"),
+        (["pr", "merge", "--auto", "https://gitcode.com/o/r/pull/1"], "--auto"),
+        (["repo", "clone", "-u", "synthetic-marker", "gitcode.com/o/r"], "--upstream-remote-name"),
+    ],
+)
+def test_gitcode_target_rejects_unsupported_routes_before_any_backend(monkeypatch, argv, guide):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: "gitcode.com" if argv[0] == "--" else None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("native gh must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("nothing may be dispatched"))
+    with pytest.raises(ProxyError, match=guide) as exc:
+        dispatch(argv, {})
+    assert "synthetic-marker" not in str(exc.value)
+
+
+def test_option_values_and_passthrough_are_not_blocked_flags():
+    validate_gitcode_command(["pr", "merge", "--body", "--auto", "1"])
+    validate_gitcode_command(["repo", "clone", "gitcode.com/o/r", "--", "--template=/tmp/git-template"])
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pr", "view", "-c", "-R", "github.com/o/r", "https://gitcode.com/o/r/pull/1"],
+        ["issue", "view", "-c", "https://gitcode.com/o/r/issues/1", "-Rgithub.com/o/r"],
+    ],
+)
+def test_resource_and_repo_host_conflict_is_not_hidden_by_boolean_flag(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit conflict must win"))
+    with pytest.raises(ProxyError, match="URL host conflicts with --repo"):
+        select_target(argv, {})
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["api", "--hostname", "gitcode.com", "user"],
+        ["api", "user", "--hostname=gitcode.com"],
+        ["auth", "login", "--hostname", "gitcode.com", "--with-token"],
+        ["auth", "status", "-h", "gitcode.com"],
+        ["auth", "token", "-hGitCode.com."],
+        ["auth", "refresh", "--hostname", "gitcode.com"],
+    ],
+)
+def test_explicit_native_hostname_for_gitcode_must_not_reach_either_backend(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit host must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("github must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may execute"))
+    with pytest.raises(ProxyError, match="refusing to fall back"):
+        dispatch(argv, {})
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["api", "--hostname=enterprise.example", "user"],
+        ["auth", "status", "-h", "github.com"],
+        ["auth", "token", "--hostname", "github.com"],
+    ],
+)
+def test_explicit_native_github_hostname_bypasses_gitcode_origin(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit host must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls == [("/native/gh", argv, {})]
+
+
+@pytest.mark.parametrize(
+    ("argv", "env"),
+    [
+        (["repo", "clone", "https://gitcode.com/o/r.git"], {"GC_GH_TARGET": "github"}),
+        (["repo", "view", "gitcode.com/o/r", "--repo=github.com/a/b"], {}),
+        (["api", "user", "--hostname", "gitcode.com"], {"GC_GH_TARGET": "github"}),
+        (["api", "user", "--hostname", "github.com"], {"GC_GH_TARGET": "gitcode"}),
+        (["pr", "view", "1", "-Rgithub.com/o/r"], {"GC_GH_TARGET": "gitcode"}),
+        (["pr", "view", "1", "-Rgitcode.com/o/r", "-Rgithub.com/o/r"], {}),
+        (["api", "--hostname=gitcode.com", "--hostname=github.com", "user"], {}),
+    ],
+)
+def test_explicit_gitcode_github_provider_conflicts_stop_before_backend(monkeypatch, argv, env):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit conflict must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("github must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may execute"))
+    with pytest.raises(ProxyError, match="conflict"):
+        dispatch(argv, env)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["api", "-f", "--hostname=gitcode.com", "user"],
+        ["api", "user", "--", "--hostname=gitcode.com"],
+        ["auth", "status", "--jq", "--hostname=gitcode.com"],
+        ["pr", "view", "-c", "-Hgitcode.com", "1"],
+    ],
+)
+def test_literal_and_unrelated_hostname_options_do_not_route(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    assert select_target(argv, {}) == "github"
+
+
+@pytest.mark.parametrize("flag", ["-h", "--homepage"])
+def test_repo_homepage_value_does_not_override_the_actual_gitcode_repository(monkeypatch, flag):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    args = ["repo", "edit", flag, "https://github.com/o/site", "https://gitcode.com/o/repo.with.dot.git"]
+    assert select_target(args, {}) == "gitcode"
+    if flag == "-h":
+        with pytest.raises(ProxyError, match="Use --homepage"):
+            validate_gitcode_command(args)
+    else:
+        validate_gitcode_command(args)
+
+
+@pytest.mark.parametrize("command", ["edit", "create"])
+def test_native_repo_homepage_short_option_remains_unchanged_without_gitcode_evidence(monkeypatch, command):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    argv = ["repo", command, "-h", "https://gitcode.com/o/homepage.repo", "github.com/o/work"]
+    assert dispatch(argv, {}) == 0
+    assert calls == [("/native/gh", argv, {})]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gitcode.com/o/a.b",
+        "https://gitcode.com/o/a.b.git",
+        "ssh://git@ssh.gitcode.com:443/o/a.b.git",
+        "git@gitcode.com:o/a.b.git",
+    ],
+)
+def test_dotted_gitcode_remote_routes_with_origin_and_explicit_positional(monkeypatch, url):
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.subprocess.run",
+        lambda *_a, **_kw: subprocess.CompletedProcess([], 0, stdout=url + "\n"),
+    )
+    assert select_target(["pr", "list"], {}) == "gitcode"
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit URL must win"))
+    assert select_target(["repo", "view", url], {}) == "gitcode"
+
+
+@pytest.mark.parametrize("flag", ["-t", "--show-token"])
+def test_auth_status_native_show_token_flag_cannot_mask_gitcode_hostname(monkeypatch, flag):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit host must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("github must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may execute"))
+    with pytest.raises(ProxyError, match="show-token"):
+        dispatch(["auth", "status", flag, "--hostname", "gitcode.com"], {})
+
+
+def test_auth_status_native_show_token_short_option_and_gc_long_template_remain_distinct(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    native = ["auth", "status", "-t", "--hostname", "github.com"]
+    assert dispatch(native, {}) == 0
+    assert calls == [("/native/gh", native, {})]
+    validate_gitcode_command(["auth", "status", "--template", "{{.state}}"])
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pr", "view", "--future-option", "opaque", "https://gitcode.com/o/r/pull/4"],
+        ["issue", "edit", "--future-option", "opaque", "https://gitcode.com/o/r/issues/4"],
+        ["repo", "view", "--future-option", "opaque", "https://gitcode.com/o/repo.with.dot"],
+    ],
+)
+def test_unknown_option_with_ambiguous_gitcode_selector_is_refused_without_dispatch(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("ambiguity must be handled first"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("github must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may execute"))
+    with pytest.raises(ProxyError, match="unrecognized option makes the GitCode .* ambiguous") as exc:
+        dispatch(argv, {})
+    assert "opaque" not in str(exc.value) and "https://" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["pr", "view", "--future-option", "opaque", "https://github.com/o/r/pull/4"],
+        ["issue", "edit", "--future-option", "opaque", "4"],
+        ["repo", "view", "--future-option", "opaque", "https://github.com/o/repo.with.dot"],
+    ],
+)
+def test_unknown_option_without_explicit_gitcode_evidence_does_not_preempt_native(monkeypatch, argv):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls == [("/native/gh", argv, {})]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gitcode.com/o/r/",
+        "https://gitcode.com/o/r.git/",
+        "ssh://git@ssh.gitcode.com:443/o/r.with.dot.git/",
+        "git@gitcode.com:o/r.with.dot.git/",
+    ],
+)
+def test_gitcode_remote_trailing_slash_stays_gitcode_in_positional_and_origin(monkeypatch, url):
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy.subprocess.run",
+        lambda *_a, **_kw: subprocess.CompletedProcess([], 0, stdout=url + "\n"),
+    )
+    assert select_target(["pr", "list"], {}) == "gitcode"
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit URL must win"))
+    assert select_target(["repo", "clone", url], {}) == "gitcode"
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"GH_HOST": "gitcode.com"},
+        {"GH_HOST": "GitCode.com."},
+        {"GH_REPO": "gitcode.com/o/r"},
+        {"GH_REPO": "ssh.gitcode.com/o/r", "GC_GH_TARGET": "github"},
+        {"GH_REPO": "gitcode.com/o/r", "GC_GH_TARGET": "gitcode"},
+        {"GH_HOST": "git.other.example", "GC_GITCODE_HOSTS": "git.other.example"},
+    ],
+)
+def test_exact_gitcode_host_in_native_env_requires_affirmative_gitcode_selection(monkeypatch, env):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("do not infer a different repository"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("github must not be selected"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may execute"))
+    with pytest.raises(ProxyError, match="Use gc directly"):
+        dispatch(["issue", "list"], env)
+
+
+def test_explicit_gitcode_repo_selection_does_not_reinterpret_native_environment(monkeypatch):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit -R must win"))
+    assert select_target(
+        ["issue", "list", "-R", "gitcode.com/exact/target"], {"GH_REPO": "gitcode.com/other/name"}
+    ) == ("gitcode")
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"GH_HOST": "github.com"},
+        {"GH_REPO": "github.com/o/r"},
+        {"GH_HOST": "gitcode.com.github.example"},
+        {"GH_REPO": "enterprise.example/gitcode.com/r"},
+    ],
+)
+def test_native_github_host_environment_passthrough_is_unchanged(monkeypatch, env):
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: None)
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: "/native/gh")
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    argv = ["issue", "list"]
+    assert dispatch(argv, env) == 0
+    assert calls == [("/native/gh", argv, env)]

@@ -17,16 +17,16 @@ gc setup gh-proxy --configure
 Routing priority is:
 
 1. `GC_GH_TARGET=gitcode|github`
-2. the host in an explicit `-R HOST/OWNER/REPO` or `--repo` value
+2. the host in explicit `-R HOST/OWNER/REPO` / `--repo`, or a native host selector on `gh api` / `gh auth`
 3. the Issue/PR URL's host, or the repository positional's host for `repo view/clone/fork/edit/delete/sync` (option values are ignored)
 4. the current repository's `origin` host
 5. the native GitHub CLI when the target cannot be determined
 
 `gitcode.com` and `ssh.gitcode.com` are recognized by default, including `ssh://git@ssh.gitcode.com:443/OWNER/REPO.git`. GitHub SSH endpoints such as `ssh://git@ssh.github.com:443/OWNER/REPO.git` route to the native `gh`. Set `GC_GITCODE_HOSTS` to a comma-separated list of additional GitCode deployment hosts. Set `GC_REAL_GH` to the native `gh` executable if automatic discovery cannot find it. The proxy excludes its own directory while searching, preserving arguments, standard streams, signals, and exit status on POSIX through process replacement.
 
-GitCode routing fails closed: commands absent from the compatibility registry are rejected rather than sent to GitHub. `gc setup gh-proxy --uninstall` removes the shim and only the marked shell/OpenCode configuration managed by this command.
+GitCode routing fails closed: commands and flags known to be unsupported are rejected without calling either backend. Commands marked direct-only, such as `gc api` and `gc pr checks`, are never forwarded by the proxy. For recognized issue and PR selectors, a GitCode URL still selects this policy outside a GitCode checkout. `gc setup gh-proxy --uninstall` removes the shim and only the marked shell/OpenCode configuration managed by this command.
 
-An Issue/PR URL conflicting with an explicit host or `GC_GH_TARGET` is rejected. Direct `gc` Issue/PR commands validate the effective URL, `-R`, or origin host before accessing the API; foreign hosts are never mapped to a same-named GitCode repository. A complete GitCode URL works outside a local checkout. `GC_GITCODE_HOSTS` changes proxy selection only; it does not change the CLI's fixed GitCode API endpoint or authorize foreign hosts.
+Conflicting explicit GitCode and GitHub targets are rejected before either backend runs. This includes a repository positional, Issue/PR URL, `--repo`, `--hostname` and `GC_GH_TARGET`. A native `--hostname` can select the GitHub backend, but does not become a supported flag on the GitCode backend. Direct `gc` Issue/PR commands validate the effective URL, `-R`, or origin host before accessing the API; foreign hosts are never mapped to a same-named GitCode repository. A complete GitCode URL works outside a local checkout, including repository URLs with one optional trailing slash. The proxy does not translate native `GH_HOST` or `GH_REPO` into GitCode arguments. If either names a recognized GitCode host, an explicit compatible GitCode argument is required; otherwise use `gc` directly. Native GitHub values are left unchanged. `GC_GITCODE_HOSTS` changes proxy selection only; it does not change the CLI's fixed GitCode API endpoint or authorize foreign hosts.
 
 In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy and names the GitCode target and `gc` backend. `gh auth status` similarly reports `gitcode.com`, the GitCode API host, a masked token, and an explicit notice that commands target GitCode rather than GitHub. In a GitHub repository, both commands continue to use the native GitHub CLI output.
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import importlib.metadata
 import os
+import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from . import __version__
@@ -44,31 +45,16 @@ def _target_for_host(host: str, environ: Mapping[str, str]) -> str:
     return "gitcode" if _normalize_host(host) in _gitcode_hosts(environ) else "github"
 
 
-def _explicit_repo(argv: Sequence[str]) -> str | None:
-    repo: str | None = None
-    tokens = _command_tokens(argv)
-    if tokens and tokens[0] in _RESOURCE_COMMANDS:
-        value_options = _resource_value_options(tokens[0], tokens[1] if len(tokens) > 1 else "")
-    else:
-        value_options = _REPO_VALUE_OPTIONS
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        if arg == "--":
-            break
-        if arg in {"-R", "--repo"} and index + 1 < len(argv):
-            repo = argv[index + 1]
-            index += 2
-            continue
-        if arg in value_options - {"-R", "--repo"}:
-            index += 2
-            continue
-        if arg.startswith("--repo="):
-            repo = arg.partition("=")[2]
-        elif arg.startswith("-R") and len(arg) > 2:
-            repo = arg[2:]
-        index += 1
-    return repo
+def _explicit_repos(argv: Sequence[str]) -> list[str]:
+    command, tail, start = _command_parts(argv)
+    # Global and subcommand -R options may both be present. Never take a
+    # routing hint from something supplied as another option's value.
+    return [
+        value
+        for options in (_arguments(argv[:start], _REPO_OPTIONS), _arguments(tail, _value_options(command)))
+        for flag, value in options
+        if flag in _REPO_OPTIONS and value is not None
+    ]
 
 
 def _origin_host() -> str | None:
@@ -92,52 +78,11 @@ def _origin_host() -> str | None:
 _REPO_POSITIONAL_COMMANDS = {"view", "clone", "fork", "edit", "delete", "sync"}
 
 
-# Values of these options must never become a repository routing hint.
-_REPO_VALUE_OPTIONS = {
-    "-b",
-    "--branch",
-    "-R",
-    "--repo",
-    "--json",
-    "-q",
-    "--jq",
-    "-t",
-    "--template",
-    "--org",
-    "--fork-name",
-    "-d",
-    "--description",
-    "--homepage",
-    "--default-branch",
-    "--visibility",
-}
+def _is_repo_selector(command: str) -> bool:
+    return command.startswith("repo ") and command.partition(" ")[2] in _REPO_POSITIONAL_COMMANDS
 
 
-def _positional_repo_host(argv: Sequence[str]) -> str | None:
-    """Extract the repo positional, not a preceding option's value."""
-    tokens = _command_tokens(argv)
-    if len(tokens) < 2 or tokens[0] != "repo" or tokens[1] not in _REPO_POSITIONAL_COMMANDS:
-        return None
-    # Global -R options have already been accounted for by select_target.
-    # Starting after the subcommand preserves option/argument boundaries.
-    index = list(argv).index(tokens[1], list(argv).index("repo") + 1) + 1
-    while index < len(argv):
-        candidate = argv[index]
-        if candidate == "--":
-            index += 1
-            if index == len(argv):
-                return None
-            candidate = argv[index]
-            break
-        if candidate in _REPO_VALUE_OPTIONS:
-            index += 2
-            continue
-        if candidate.startswith("-"):
-            index += 1
-            continue
-        break
-    else:
-        return None
+def _repo_candidate_host(candidate: str) -> str | None:
     for parser in (parse_remote_url_with_host, parse_repo_with_host):
         try:
             host, _, _ = parser(candidate)
@@ -145,6 +90,15 @@ def _positional_repo_host(argv: Sequence[str]) -> str | None:
             continue
         return host if host else None
     return None
+
+
+def _positional_repo_host(argv: Sequence[str]) -> str | None:
+    """Extract the repo positional, not a preceding option's value."""
+    command, tail, _ = _command_parts(argv)
+    if not _is_repo_selector(command):
+        return None
+    candidate = _first_positional(tail, _value_options(command))
+    return _repo_candidate_host(candidate) if candidate is not None else None
 
 
 def _reject_proxy_token_option(argv: Sequence[str]) -> None:
@@ -160,35 +114,77 @@ def _reject_proxy_token_option(argv: Sequence[str]) -> None:
         index += 2 if arg in {"-R", "--repo"} else 1
 
 
-def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None) -> str:
-    _reject_proxy_token_option(argv)
-    env = os.environ if environ is None else environ
-    resource_host = _resource_url_host(argv)
-    override = env.get("GC_GH_TARGET")
-    if override:
-        target = override.strip().lower()
-        if target not in {"gitcode", "github"}:
-            raise ProxyError("GC_GH_TARGET must be 'gitcode' or 'github'.")
-        if resource_host and target != _target_for_host(resource_host, env):
-            raise ProxyError("Issue/PR URL conflicts with GC_GH_TARGET.")
-        return target
-
-    explicit = _explicit_repo(argv)
-    if explicit:
+def _explicit_repo_hosts(argv: Sequence[str]) -> list[str]:
+    hosts = []
+    for explicit in _explicit_repos(argv):
+        if not explicit:
+            continue
         try:
             host, _, _ = parse_repo_with_host(explicit)
         except RepoResolutionError as exc:
             raise ProxyError(str(exc)) from exc
         if host:
-            if resource_host and _normalize_host(host) != _normalize_host(resource_host):
-                raise ProxyError("Issue/PR URL host conflicts with --repo.")
-            return _target_for_host(host, env)
+            hosts.append(host)
+    return hosts
 
-    if resource_host:
-        return _target_for_host(resource_host, env)
+
+def _option_hosts(argv: Sequence[str]) -> list[str]:
+    """Recognize the native host selector without accepting it in gc."""
+    command, tail, _ = _command_parts(argv)
+    options = _HOST_SELECTOR_OPTIONS.get(command)
+    if options is None:
+        return []
+    return [
+        value
+        for option, value in _arguments(tail, _value_options(command))
+        if option in options and value and re.fullmatch(r"[A-Za-z0-9.][A-Za-z0-9.-]*(?::[0-9]+)?", value)
+    ]
+
+
+def _gitcode_in_native_environment(env: Mapping[str, str]) -> bool:
+    gitcode_hosts = _gitcode_hosts(env)
+    host = env.get("GH_HOST", "")
+    parts = env.get("GH_REPO", "").split("/")
+    repo_host = parts[0] if len(parts) == 3 else ""
+    return any(value and value.strip().lower().rstrip(".") in gitcode_hosts for value in (host, repo_host))
+
+
+def _refuse_incompatible_gitcode_environment(env: Mapping[str, str], providers: set[str], override: str | None) -> None:
+    if _gitcode_in_native_environment(env) and (providers != {"gitcode"} or override == "github"):
+        raise ProxyError(
+            "GH_HOST or GH_REPO names GitCode, but these native gh settings are not translated by the proxy. "
+            "Use gc directly with a qualified -R gitcode.com/OWNER/REPO where applicable; refusing to fall back."
+        )
+
+
+def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None) -> str:
+    _reject_proxy_token_option(argv)
+    env = os.environ if environ is None else environ
+    _reject_ambiguous_gitcode_selector(argv, env)
+    resource_host = _resource_url_host(argv)
     positional_host = _positional_repo_host(argv)
-    if positional_host:
-        return _target_for_host(positional_host, env)
+    repo_hosts = _explicit_repo_hosts(argv)
+    option_hosts = _option_hosts(argv)
+    candidates = [*repo_hosts, *option_hosts]
+    candidates.extend(host for host in (resource_host, positional_host) if host is not None)
+    providers = {_target_for_host(host, env) for host in candidates}
+    override = env.get("GC_GH_TARGET")
+    if override:
+        target = override.strip().lower()
+        if target not in {"gitcode", "github"}:
+            raise ProxyError("GC_GH_TARGET must be 'gitcode' or 'github'.")
+        if providers - {target}:
+            raise ProxyError("Explicit target host conflicts with GC_GH_TARGET; neither backend was selected.")
+        _refuse_incompatible_gitcode_environment(env, providers, target)
+        return target
+
+    _refuse_incompatible_gitcode_environment(env, providers, None)
+    if resource_host and repo_hosts and _normalize_host(resource_host) != _normalize_host(repo_hosts[-1]):
+        raise ProxyError("Issue/PR URL host conflicts with --repo.")
+    if len(providers) > 1:
+        raise ProxyError("Explicit target hosts conflict across GitCode and GitHub; neither backend was selected.")
+    if providers:
+        return providers.pop()
 
     host = _origin_host()
     if host:
@@ -196,117 +192,313 @@ def select_target(argv: Sequence[str], environ: Mapping[str, str] | None = None)
     return "github"
 
 
-_RESOURCE_COMMANDS = {
-    "issue": {"view", "close", "reopen", "edit", "comment", "delete", "develop"},
-    "pr": {"view", "close", "reopen", "edit", "comment", "merge", "review", "checkout", "diff", "ready", "audit"},
+_REPO_OPTIONS = {"-R", "--repo"}
+_AUTH_HOST_OPTIONS = {"-h", "--hostname"}
+_HOST_SELECTOR_OPTIONS = {
+    "api": {"--hostname"},
+    **dict.fromkeys(
+        ("auth login", "auth logout", "auth refresh", "auth setup-git", "auth status", "auth switch", "auth token"),
+        _AUTH_HOST_OPTIONS,
+    ),
 }
+_FORMAT_OPTIONS = {"--json", "-q", "--jq", "-t", "--template"}
+_BODY_OPTIONS = {"-b", "--body", "-F", "--body-file"}
+_COMMENT_OPTIONS = {"-c", "--comment"}
+_EDIT_OPTIONS = {
+    *_BODY_OPTIONS,
+    "-t",
+    "--title",
+    "-a",
+    "--add-assignee",
+    "-l",
+    "--add-label",
+    "-m",
+    "--milestone",
+    "--remove-assignee",
+    "--remove-label",
+    "--add-project",
+    "--remove-project",
+    "--attach",
+}
+_ALIASES = {"ls": "list", "new": "create"}
+
+# Commands with a resource selector as their first positional. Include
+# known direct-only/native-only selectors so a GitCode URL still routes to
+# the GitCode policy before deciding whether the command may be forwarded.
 _RESOURCE_VALUE_OPTIONS = {
-    "-R",
-    "--repo",
+    "issue close": {*_COMMENT_OPTIONS, "--duplicate-of", "-r", "--reason"},
+    "issue comment": _BODY_OPTIONS,
+    "issue delete": set(),
+    "issue develop": {"-b", "--base", "-n", "--name", "--branch-repo"},
+    "issue edit": _EDIT_OPTIONS
+    | {
+        "--add-blocked-by",
+        "--add-blocking",
+        "--add-sub-issue",
+        "--parent",
+        "--remove-blocked-by",
+        "--remove-blocking",
+        "--remove-sub-issue",
+        "--type",
+    },
+    "issue lock": {"-r", "--reason"},
+    "issue pin": set(),
+    "issue reopen": _COMMENT_OPTIONS,
+    "issue transfer": set(),
+    "issue unlock": set(),
+    "issue unpin": set(),
+    "issue view": _FORMAT_OPTIONS,
+    "pr audit": _FORMAT_OPTIONS | {"-s", "--state", "-L", "--limit", "--th1", "--th2", "--minutes-keyword"},
+    "pr checkout": {"-b", "--branch"},
+    "pr checks": _FORMAT_OPTIONS | {"-i", "--interval", "--scan-limit"},
+    "pr close": _COMMENT_OPTIONS,
+    "pr comment": _BODY_OPTIONS
+    | {"--discussion-id", "--path", "--position", "--line", "--side", "--commit-id", "--commit"},
+    "pr diff": {"--color", "-e", "--exclude"},
+    "pr edit": _EDIT_OPTIONS | {"-B", "--base", "-r", "--add-reviewer", "--remove-reviewer"},
+    "pr lock": {"-r", "--reason"},
+    "pr merge": _BODY_OPTIONS | {"-t", "--subject", "-A", "--author-email", "--match-head-commit"},
+    "pr ready": set(),
+    "pr reopen": _COMMENT_OPTIONS,
+    "pr revert": _BODY_OPTIONS | {"-t", "--title"},
+    "pr review": _BODY_OPTIONS,
+    "pr unlock": set(),
+    "pr update-branch": set(),
+    "pr view": _FORMAT_OPTIONS,
+}
+
+# Option arities used when recognizing -R and positional repo selectors.
+# Include native flags that the registry rejects after selecting GitCode: their
+# values still must not be mistaken for a repository or resource selector.
+_LIST_OPTIONS = _FORMAT_OPTIONS | {"-L", "--limit", "-s", "--state", "-S", "--search"}
+_CREATE_OPTIONS = _BODY_OPTIONS | {
+    "-t",
+    "--title",
+    "-a",
+    "--assignee",
+    "-l",
+    "--label",
+    "-m",
+    "--milestone",
+    "-p",
+    "--project",
+    "-T",
+    "--template",
+    "--recover",
     "--json",
     "-q",
     "--jq",
-    "-t",
-    "--template",
-    "--title",
-    "--subject",
-    "-b",
-    "--body",
-    "-F",
-    "--body-file",
-    "-c",
-    "--comment",
-    "--branch",
-    "--base",
-    "--name",
-    "-n",
-    "--reason",
-    "--duplicate-of",
-    "--add-assignee",
-    "--remove-assignee",
-    "--add-label",
-    "--remove-label",
-    "--add-reviewer",
-    "--remove-reviewer",
-    "--milestone",
-    "-a",
-    "-l",
-    "--author-email",
-    "--match-head-commit",
-    "-A",
-    "--discussion-id",
-    "--path",
-    "--position",
-    "--line",
-    "--side",
-    "--commit-id",
-    "--commit",
-    "--state",
-    "--limit",
-    "-L",
-    "--th1",
-    "--th2",
-    "--minutes-keyword",
+    "--attach",
+}
+_OTHER_VALUE_OPTIONS = {
+    "api": {
+        "--api-version",
+        "-X",
+        "--method",
+        "-f",
+        "--raw-field",
+        "-F",
+        "--field",
+        "-H",
+        "--header",
+        "--input",
+        "--hostname",
+        "-q",
+        "--jq",
+        "-t",
+        "--template",
+        "--cache",
+        "--preview",
+    },
+    # Native gh reserves -t for --show-token, not gc's template shorthand.
+    "auth status": _FORMAT_OPTIONS - {"-t"},
+    "auth login": {"-h", "--hostname", "-p", "--git-protocol", "-s", "--scopes"},
+    "auth token": {"-h", "--hostname", "-u", "--user"},
+    "auth switch": {"-h", "--hostname", "-u", "--user"},
+    "auth logout": {"-h", "--hostname", "-u", "--user"},
+    "discussion comment": _BODY_OPTIONS,
+    "discussion create": _BODY_OPTIONS | {"-t", "--title", "-c", "--category"},
+    "discussion edit": _BODY_OPTIONS | {"-t", "--title", "-c", "--category"},
+    "issue create": _CREATE_OPTIONS,
+    "issue list": _LIST_OPTIONS
+    | {
+        "-a",
+        "--assignee",
+        "-A",
+        "--author",
+        "-l",
+        "--label",
+        "-m",
+        "--milestone",
+        "--mention",
+        "--app",
+        "--type",
+        "--parent",
+    },
+    "issue status": _FORMAT_OPTIONS,
+    "label create": {"-c", "--color", "-d", "--description"},
+    "label edit": {"-c", "--color", "-d", "--description", "-n", "--name"},
+    "label list": _LIST_OPTIONS,
+    "pr create": _CREATE_OPTIONS | {"-B", "--base", "-H", "--head", "-r", "--reviewer"},
+    "pr list": _LIST_OPTIONS
+    | {"-a", "--assignee", "-A", "--author", "-l", "--label", "-B", "--base", "-H", "--head", "--app"},
+    "pr status": _FORMAT_OPTIONS,
+    "release create": {"-t", "--title", "-n", "--notes", "-F", "--notes-file", "--target"},
+    "release edit": {"-t", "--title", "-n", "--notes", "-F", "--notes-file", "--target"},
+    "repo clone": {"-u", "--upstream-remote-name"},
+    "repo create": {
+        "-d",
+        "--description",
+        "-h",
+        "--homepage",
+        "-g",
+        "--gitignore",
+        "-l",
+        "--license",
+        "-s",
+        "--source",
+        "-r",
+        "--remote",
+        "-t",
+        "--team",
+        "-p",
+        "--template",
+    },
+    "repo edit": {
+        "-d",
+        "--description",
+        "-h",
+        "--homepage",
+        "--default-branch",
+        "--visibility",
+        "--add-topic",
+        "--remove-topic",
+        "--squash-merge-commit-message",
+    },
+    "repo fork": {"--remote-name", "--org", "--fork-name"},
+    "repo list": _FORMAT_OPTIONS | {"-L", "--limit", "--visibility", "-l", "--language", "--topic"},
+    "repo sync": {"-b", "--branch", "-s", "--source"},
+    "repo view": _FORMAT_OPTIONS | {"-b", "--branch"},
 }
 
 
-def _resource_value_options(group: str, command: str) -> set[str]:
-    options = set(_RESOURCE_VALUE_OPTIONS)
-    if group == "issue" and command == "develop":
-        options.discard("-l")
-    if group == "issue" and command == "close":
-        options.add("-r")
-    if command == "edit":
-        options.add("-m")
-    if command == "audit":
-        options.add("-s")
-    if group == "pr" and command == "review":
-        options -= {"-a", "-c", "--comment"}
-    return options
+def _value_options(command: str) -> set[str]:
+    command_opts = _RESOURCE_VALUE_OPTIONS.get(command, _OTHER_VALUE_OPTIONS.get(command, set()))
+    return _REPO_OPTIONS | command_opts | _HOST_SELECTOR_OPTIONS.get(command, set())
 
 
-def _resource_url_host(argv: Sequence[str]) -> str | None:
-    tokens = _command_tokens(argv)
-    if len(tokens) < 2 or tokens[1] not in _RESOURCE_COMMANDS.get(tokens[0], set()):
-        return None
-    group, command = tokens[:2]
-    index = list(argv).index(command, list(argv).index(group) + 1) + 1
-    value_options = _resource_value_options(group, command)
-    while index < len(argv):
-        arg = argv[index]
+def _option_parts(arg: str, value_options: set[str]) -> Iterator[tuple[str, str | None]]:
+    if arg.startswith("--"):
+        name, eq, attached = arg.partition("=")
+        yield name, attached if eq else None
+        return
+    # Support compact booleans and attached short values, e.g. -wc and -wRHOST/O/R.
+    for offset, char in enumerate(arg[1:], 2):
+        name = "-" + char
+        if name in value_options:
+            yield name, arg[offset:] or None
+            return
+        yield name, None
+
+
+def _arguments(args: Sequence[str], value_options: set[str]) -> Iterator[tuple[str, str | None]]:
+    """Yield option names and values, or an empty name for a positional."""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
         if arg == "--":
+            yield from (("", item) for item in args[index:])
+            return
+        if not arg.startswith("-") or arg == "-":
+            yield "", arg
+            continue
+        for name, inline in _option_parts(arg, value_options):
+            if name in value_options and inline is None and index < len(args):
+                yield name, args[index]
+                index += 1
+            else:
+                yield name, inline
+
+
+def _command_parts(argv: Sequence[str]) -> tuple[str, Sequence[str], int]:
+    """Locate the group/subcommand without treating global -R values as commands."""
+    index = 0
+    while index < len(argv) and argv[index].startswith("-"):
+        if argv[index] == "--":
             index += 1
             break
-        if arg in value_options:
-            index += 2
-        elif arg.startswith("-"):
-            index += 1
-        else:
-            break
+        index += 2 if argv[index] in _REPO_OPTIONS else 1
     if index >= len(argv):
-        return None
-    try:
-        target = parse_resource_url(argv[index], group)
-    except RepoResolutionError as exc:
-        raise ProxyError(str(exc)) from exc
+        return "", (), len(argv)
+    start = index
+    group = argv[index]
+    index += 1
+    if group != "api" and index < len(argv) and argv[index] == "--":
+        index += 1
+    if group != "api" and index < len(argv) and not argv[index].startswith("-"):
+        subcommand = _ALIASES.get(argv[index], argv[index])
+        return f"{group} {subcommand}", argv[index + 1 :], start
+    return group, argv[index:], start
+
+
+def _first_positional(argv: Sequence[str], value_options: set[str]) -> str | None:
+    return next((value for flag, value in _arguments(argv, value_options) if not flag), None)
+
+
+def _resource_candidate_host(command: str, candidate: str) -> str | None:
+    target = parse_resource_url(candidate, command.partition(" ")[0])
     return target[0] if target else None
 
 
-def _command_tokens(argv: Sequence[str]) -> list[str]:
-    tokens: list[str] = []
-    skip_next = False
-    for arg in argv:
-        if skip_next:
-            skip_next = False
+def _resource_url_host(argv: Sequence[str]) -> str | None:
+    command, tail, _ = _command_parts(argv)
+    if command not in _RESOURCE_VALUE_OPTIONS:
+        return None
+    candidate = _first_positional(tail, _value_options(command))
+    if candidate is None:
+        return None
+    try:
+        return _resource_candidate_host(command, candidate)
+    except RepoResolutionError as exc:
+        raise ProxyError(str(exc)) from exc
+
+
+def _reject_ambiguous_gitcode_selector(argv: Sequence[str], env: Mapping[str, str]) -> None:
+    command, tail, _ = _command_parts(argv)
+    is_repo = _is_repo_selector(command)
+    if not is_repo and command not in _RESOURCE_VALUE_OPTIONS:
+        return
+    values = _value_options(command)
+    known = values | {"-h", "--help"}
+    known.update(
+        flag
+        for entry in iter_entries()
+        if entry.command == command and entry.flag
+        for flag in [*entry.flag.split("/"), *entry.aliases]
+    )
+    first = True
+    uncertain = False
+    for flag, value in _arguments(tail, values):
+        if flag:
+            if first and flag not in known and value is None:
+                uncertain = True
             continue
-        if arg in {"-R", "--repo"}:
-            skip_next = True
+        if first:
+            first = False
+            if not uncertain:
+                return
             continue
-        if arg.startswith("--repo=") or (arg.startswith("-R") and len(arg) > 2):
-            continue
-        if not arg.startswith("-"):
-            tokens.append(arg)
-    return tokens
+        if value:
+            try:
+                host = _repo_candidate_host(value) if is_repo else _resource_candidate_host(command, value)
+            except RepoResolutionError:
+                continue
+            if host and _target_for_host(host, env) == "gitcode":
+                raise ProxyError(
+                    "An unrecognized option makes the GitCode repository or resource ambiguous. "
+                    "Put the repository or resource first, or use gc directly; refusing to fall back to GitHub."
+                )
 
 
 def validate_gitcode_command(argv: Sequence[str]) -> None:
@@ -321,28 +513,34 @@ def validate_gitcode_command(argv: Sequence[str]) -> None:
         validate_gitcode_command(topics)
         return
 
-    tokens = _command_tokens(argv)
-    if not tokens:
+    command, tail, _ = _command_parts(argv)
+    if not command or command in {"auth", "issue", "pr", "repo"}:
         return
-    if len(tokens) == 1 and tokens[0] in {"auth", "issue", "pr", "repo"}:
-        return
-
-    aliases = {"ls": "list", "new": "create"}
-    # The REST path is an argument to api, not a subcommand; don't inspect it.
-    command = tokens[0]
-    if len(tokens) >= 2 and command != "api":
-        command = " ".join([command, aliases.get(tokens[1], tokens[1])])
-    supported = {
-        entry.command
-        for entry in iter_entries()
-        if entry.flag is None and entry.proxy_allowed and entry.status is not CompatStatus.NOT_IN_CLI
-    }
-    if command not in supported:
-        if command == "api":
-            raise ProxyError(
-                "gh api is not enabled for GitCode; use gc api directly. The proxy is refusing to fall back."
-            )
+    entries = [entry for entry in iter_entries() if entry.command == command]
+    entry = next((entry for entry in entries if entry.flag is None), None)
+    if entry is None or entry.status is not CompatStatus.IMPLEMENTED:
         raise ProxyError("This gh command is not supported for GitCode; refusing to fall back to GitHub.")
+    if not entry.proxy_allowed:
+        raise ProxyError(
+            f"This gh command is not enabled for GitCode; use gc {entry.command} directly. "
+            "The proxy is refusing to fall back to GitHub."
+        )
+    blocked = {
+        flag: flag_entry.flag
+        for flag_entry in entries
+        if flag_entry.flag and (not flag_entry.proxy_allowed or flag_entry.status is not CompatStatus.IMPLEMENTED)
+        for flag in [*flag_entry.flag.split("/"), *flag_entry.aliases]
+    }
+    if command == "auth status":
+        blocked["-t"] = "-t/--show-token"
+    for flag, value in _arguments(tail, _value_options(command)):
+        if command in {"repo create", "repo edit"} and flag == "-h" and value is not None:
+            raise ProxyError("Use --homepage to set a GitCode homepage or --help for help; refusing to fall back.")
+        if flag in blocked:
+            raise ProxyError(
+                f"The GitCode proxy does not support {blocked[flag]} for {entry.command}. "
+                f"See gc {entry.command} --help; refusing to fall back to GitHub."
+            )
 
 
 def _same_file(left: str | Path, right: str | Path) -> bool:

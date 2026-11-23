@@ -17,3 +17,4 @@
 
 - [不克隆仓库读取指定文件](../en/repo-read-file.md)
 - [按页列出仓库目录（英文指南）](../en/repo-read-dir.md)
+- [观察指定的 GitCode 流水线运行（英文指南）](../en/actions-evidence.md#watch-one-run-without-changing-it)

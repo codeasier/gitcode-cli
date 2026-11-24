@@ -95,6 +95,19 @@ ENTRIES: list[CompatEntry] = [
         proxy_allowed=False,
     ),
     _e(
+        "run watch",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: bounded, run-level observation of the current GitCode attempt; no PR gate evidence.",
+        proxy_allowed=False,
+    ),
+    *[
+        _e("run watch", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-R/--repo", "-i/--interval", "--exit-status")
+    ],
+    _e("run watch", "--timeout", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
+    _e("run watch", "--compact", CompatStatus.NOT_IN_CLI, "No step-level watch.", proxy_allowed=False),
+    _e(
         "run rerun",
         None,
         CompatStatus.IMPLEMENTED,
@@ -202,7 +215,8 @@ ENTRIES: list[CompatEntry] = [
         "issue status",
         None,
         CompatStatus.IMPLEMENTED,
-        "Approximate: lacks gh user-specific filtering (ISSUE_STATUS_GH_SEMANTICS)",
+        "Direct gc: verified repository-scoped assigned/created queues; mentions are unavailable (null).",
+        proxy_allowed=False,
     ),
     _e(
         "issue develop",
@@ -228,7 +242,14 @@ ENTRIES: list[CompatEntry] = [
     _e("issue list", "-A/--author", CompatStatus.IMPLEMENTED, "@me resolves to the authenticated account login"),
     _e("issue list", "-a/--assignee", CompatStatus.IMPLEMENTED, "@me resolves to the authenticated account login"),
     _e("issue list", "--milestone", CompatStatus.IMPLEMENTED),
-    _e("issue list", "--mention", CompatStatus.IMPLEMENTED),
+    _e(
+        "issue list",
+        "--mention",
+        CompatStatus.UNSUPPORTED,
+        "No verified repository mention filter.",
+        unsupported_key="ISSUE_LIST_MENTION",
+        proxy_allowed=False,
+    ),
     _e(
         "issue list",
         "--app",
@@ -326,10 +347,28 @@ ENTRIES: list[CompatEntry] = [
     _e("issue edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("issue reopen", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("issue reopen", "-c/--comment", CompatStatus.IMPLEMENTED, "Implemented (PR #122)"),
-    _e("issue status", "-R/--repo", CompatStatus.IMPLEMENTED),
-    _e("issue status", "--json", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
-    _e("issue status", "-q/--jq", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
-    _e("issue status", "-t/--template", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
+    _e("issue status", "-R/--repo", CompatStatus.IMPLEMENTED, proxy_allowed=False),
+    _e(
+        "issue status",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "issue status",
+        "-q/--jq",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "issue status",
+        "-t/--template",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
     _e("issue develop", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e(
         "issue develop",
@@ -567,7 +606,13 @@ ENTRIES: list[CompatEntry] = [
     _e("pr edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("pr diff", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("pr diff", "--color", CompatStatus.NOT_IN_CLI),
-    _e("pr diff", "-e/--exclude", CompatStatus.NOT_IN_CLI),
+    _e(
+        "pr diff",
+        "-e/--exclude",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        proxy_allowed=False,
+    ),
     _e(
         "pr diff",
         "--name-only",
@@ -633,7 +678,7 @@ ENTRIES: list[CompatEntry] = [
         "repo read-file",
         None,
         CompatStatus.IMPLEMENTED,
-        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; exclusive POSIX file output.",
+        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; POSIX file output.",
         proxy_allowed=False,
     ),
     *[
@@ -647,9 +692,16 @@ ENTRIES: list[CompatEntry] = [
         "Direct CLI only: verified inline metadata and opt-in Base64 content; no URL fields.",
         proxy_allowed=False,
     ),
+    _e(
+        "repo read-file",
+        "--clobber",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: replace an explicit regular-file destination on POSIX; no directory expansion.",
+        proxy_allowed=False,
+    ),
     *[
         _e("repo read-file", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
-        for flag in ("--allow-escape-sequences", "--clobber", "-q/--jq", "-t/--template")
+        for flag in ("--allow-escape-sequences", "-q/--jq", "-t/--template")
     ],
     _e("repo view", None, CompatStatus.IMPLEMENTED, "Repository positional or -R/origin resolution"),
     _e("repo list", None, CompatStatus.IMPLEMENTED, "Owner argument defaults to the authenticated user"),
@@ -759,7 +811,13 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.NOT_IN_CLI,
         "Template repositories have no GitCode v5 equivalent",
     ),
-    _e("repo clone", "--no-upstream", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"),
+    _e(
+        "repo clone",
+        "--no-upstream",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc only; ordinary Git clone, without fork-parent discovery or registration.",
+        proxy_allowed=False,
+    ),
     _e(
         "repo clone", "-u/--upstream-remote-name", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"
     ),

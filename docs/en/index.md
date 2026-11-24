@@ -16,5 +16,5 @@
 - [Organizations and discussions](community-commands.md)
 
 - [Read a repository file without cloning](repo-read-file.md)
-- [List one page of a repository directory](repo-read-dir.md)
+- [List a repository directory by page or verify a complete tree](repo-read-dir.md)
 - [Watch one GitCode Actions run](actions-evidence.md#watch-one-run-without-changing-it)

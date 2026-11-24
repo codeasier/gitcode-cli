@@ -32,6 +32,12 @@ GitCode 路由采用失败关闭策略：已知不支持的命令和参数会直
 
 ## 已对齐能力
 
+`gc pr checks 42 -R owner/repo --json workflow,state,event` 可从同一份证据中按字段列出当前 PR
+提交的各条流水线，不逐个列出作业，也不判断哪些检查为必需。`state` 为原生运行状态，没有
+`bucket`；`COMPLETED` 不等于门禁通过。字段缺失或类型不符时返回 null。
+退出码不变，非零原因写入 stderr。确认没有运行时输出 `[]`（退出 3）；扫描不完整、证据
+不可获取或已过期时 stdout 无输出。去掉 `--json` 可查看完整的 v5 门禁及 v8 运行证据。
+
 | 能力 | `gc` 支持情况 |
 | --- | --- |
 | Issue 和 PR 的 list/view/create/comment/edit/close 流程 | 支持 |
@@ -119,7 +125,7 @@ gc repo set-default --unset
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`。更新还要求 `title`；close/reopen 和部分字段编辑保留读取到的当前标题，无法取得标题时拒绝写入。 |
 | 个人 Issue 状态 | 直调 `gc issue status -R OWNER/REPO` 只读取当前账号在[指定仓库](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/)负责及创建的打开 Issue，核对仓库路径、用户登录名和两者的 ID。不请求账号的全局 Issue。官方没有提及用户的过滤契约：文本注明不可用，`--json mentioned` 返回 `null` 而非空数组，`issue list --mention` 被拒绝。GitCode 代理拒绝 `gh issue status`。 |
-| PR 状态 | `gc pr status -R OWNER/REPO -c`（`--conflict-status`）查看仓库第一页的打开 PR，最多 20 个。它为每条记录读取一次 [PR 详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)，只报告 `mergeable_state.conflict_passed`：通过、未通过，缺失或非布尔值显示未知；这不代表 PR 可以合入。详情读取失败或身份不一致时整个报告失败；不加 `-c` 不读取详情。仓库视图没有实现 [gh 个人状态](https://cli.github.com/manual/gh_pr_status)、当前分支分组及其 JSON 结构，指向 GitCode 的代理会拒绝 `gh pr status`。脚本可用 `gc pr list -s open -A @me --json number,title` 查询自己创建的打开 PR。 |
+| PR 状态 | `gc pr status -R OWNER/REPO -c`（`--conflict-status`）默认查看仓库第一页的打开 PR。加 `--page 2`（或其他正整数页码）可查看指定的 [PR 列表页](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls/)。每次只读取一页，最多 20 个；仓库状态变化时，打开的 PR 可能移到其他页。它为每条记录读取一次 [PR 详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)，只报告 `mergeable_state.conflict_passed`：通过、未通过，缺失或非布尔值显示未知；这不代表 PR 可以合入。详情读取失败或身份不一致时整个报告失败；不加 `-c` 不读取详情。仓库视图没有实现 [gh 个人状态](https://cli.github.com/manual/gh_pr_status)、当前分支分组及其 JSON 结构，指向 GitCode 的代理会拒绝 `gh pr status`。脚本可用 `gc pr list -s open -A @me --json number,title` 查询自己创建的打开 PR。 |
 | PR squash | `--squash` 按当前 GitCode 契约发送 `merge_method=merge` 和独立布尔字段 `squash=true`。 |
 | PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
 | 写入结果 | merge 必须明确返回 `merged=true`（或整数 `1`）后才能报告成功或删除分支。重定向、已受理但未完成、非法 JSON 及非预期空响应均报错。结果不确定时应先核实远端状态再重试。已完成 merge/close 但分支删除被拒绝时，返回非零退出码并明确报告部分完成。 |

@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import os
+from inspect import signature
 
 import httpx
 import pytest
@@ -32,6 +33,8 @@ def invoke(monkeypatch, tmp_path):
     path.write_bytes(DATA)
     calls = []
     klass = httpx.Client
+    # Click 8.1 mixes stderr into stdout by default; newer versions separate them.
+    runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
     monkeypatch.setattr("gitcode_cli.cli.get_token", lambda: TOKEN)
     monkeypatch.setattr("gitcode_cli.repo_read.BASE_URL", "https://release.invalid/api/v5/")
 
@@ -51,12 +54,13 @@ def invoke(monkeypatch, tmp_path):
             return klass(transport=httpx.MockTransport(respond), **kwargs)
 
         monkeypatch.setattr("gitcode_cli.repo_read.httpx.Client", factory)
-        result = CliRunner().invoke(
+        result = runner.invoke(
             main, args if args is not None else ["release", "check-digest", TAG, str(path), "-R", "owner/repo"]
         )
         if result.exception and not isinstance(result.exception, SystemExit):
             raise result.exception
-        assert TOKEN not in result.output and "ticket=" not in result.output
+        for stream in (result.stdout, result.stderr):
+            assert TOKEN not in stream and "ticket=" not in stream
         return result
 
     return run, calls, path

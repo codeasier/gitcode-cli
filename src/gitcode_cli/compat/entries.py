@@ -437,6 +437,13 @@ ENTRIES: list[CompatEntry] = [
         proxy_allowed=False,
     ),
     _e("pr checks", None, CompatStatus.IMPLEMENTED, "Separate v5 gates and exact-head v8 runs.", proxy_allowed=False),
+    _e(
+        "pr checks",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Observed workflow runs only: workflow, state, event. Native GitCode statuses, not job or required checks.",
+        proxy_allowed=False,
+    ),
     _e("pr lock", None, CompatStatus.NOT_IN_CLI),
     _e("pr revert", None, CompatStatus.NOT_IN_CLI),
     _e("pr unlock", None, CompatStatus.NOT_IN_CLI),

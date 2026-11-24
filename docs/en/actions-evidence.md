@@ -47,6 +47,19 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   coverage, permission to merge, or merge readiness. This is a bounded observation,
   not an atomic server snapshot.
 
+## Select PR check fields
+
+To print one row per observed workflow for a PR, use
+`gc pr checks 42 -R owner/repo --json workflow,state,event`. Select any subset, once.
+Fields come from the existing [run-detail snapshot](https://docs.gitcode.com/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/):
+`workflow` is its name, `state` is the native run status, and `event` is `MR`.
+Missing or non-string field values are null. These are not individual jobs or required
+checks. There is no `bucket`: a `COMPLETED` run alone does not establish a pass.
+The usual exit codes above still apply. Nonzero outcomes are named on stderr, even
+when all displayed runs completed but the v5 gate failed. A complete empty result
+prints `[]` (exit 3); stale, incomplete or inaccessible evidence prints no rows
+(no stdout). Omit `--json` for the full report including gates and diagnostics.
+
 ## Watch one run without changing it
 
 ```console

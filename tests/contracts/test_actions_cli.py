@@ -689,3 +689,109 @@ def test_cancel_rejects_duplicate_keys_in_identity_and_acknowledgment(api, phase
     assert isinstance(result.exception, APIError) and result.stdout == ""
     assert ("Verify remote runs" in str(result.exception)) == (phase != "before")
     assert calls == expected_calls
+
+
+def _split_runner():
+    return CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
+
+
+@pytest.mark.parametrize(
+    ("status", "exit_code"),
+    [("COMPLETED", 0), ("FAILED", 1), ("CANCELED", 1), ("RUNNING", 8), ("IGNORED", 3)],
+)
+def test_check_rows_keep_native_state_and_exit(api, status, exit_code):
+    expect, invoke, v5, calls = api
+    v5.get.return_value = PR
+    name = "build " + SYNTHETIC + "\x1b[0m"
+    for _ in range(2 if status == "COMPLETED" else 1):
+        expect("runs", page([RUN]), query=checkq())
+        expect("runs/111", {**DETAIL, "status": status, "workflow_name": name})
+    result = invoke(actions.pr_checks, "42", "--json", "event,state,workflow", runner=_split_runner())
+    assert result.exit_code == exit_code
+    assert v5.get.call_count == 2 and all(method == "GET" for method, _ in calls)
+    assert SYNTHETIC not in result.output and "\x1b" not in result.output
+    assert list(json.loads(result.stdout)[0]) == ["event", "state", "workflow"]
+    assert json.loads(result.stdout) == [{"workflow": "build [REDACTED]\x1b[0m", "state": status, "event": "MR"}]
+
+
+@pytest.mark.parametrize(
+    ("gate", "outcome", "code"),
+    [
+        ({**GATE, "ci_state_passed": False}, "ci_gate_not_passed", 1),
+        ({"ci_state_passed": True}, "ci_gate_unverified", 3),
+    ],
+)
+def test_projected_completed_runs_never_erase_v5_gate_failure(api, gate, outcome, code):
+    expect, invoke, v5, _ = api
+    v5.get.side_effect = [PR, {**PR, "mergeable_state": gate}]
+    for _ in range(2):
+        expect("runs", page([RUN]), query=checkq())
+        expect("runs/111", {**DETAIL, "workflow_name": 0})
+    result = invoke(actions.pr_checks, "42", "--json", "workflow,state", runner=_split_runner())
+    assert result.exit_code == code and outcome in result.stderr
+    assert json.loads(result.stdout) == [{"workflow": None, "state": "COMPLETED"}]
+
+
+@pytest.mark.parametrize(
+    ("mode", "outcome"),
+    [
+        ("empty", "no_observed_runs"),
+        ("denied", "actions_unavailable"),
+        ("different", "unknown_revision"),
+        ("partial", "incomplete_scan"),
+        ("head", "head_changed"),
+        ("attempt", "actions_changed"),
+    ],
+)
+def test_projected_no_rows_distinguishes_empty_from_unknown(api, mode, outcome):
+    expect, invoke, v5, _ = api
+    v5.get.return_value = PR
+    if mode in {"head", "attempt"}:
+        for index in range(2):
+            expect("runs", page([RUN]), query=checkq("1"))
+            expect("runs/111", {**DETAIL, "attempt": 2 + int(index == 1 and mode == "attempt")})
+        if mode == "head":
+            v5.get.side_effect = [PR, {**PR, "head": {"sha": OTHER}}]
+    elif mode == "denied":
+        expect("runs", {}, http=403, query=checkq("1"))
+    elif mode == "empty":
+        expect("runs", page([]), query=checkq("1"))
+    else:
+        expect("runs", page([{**RUN, "head_sha": OTHER}], 2 if mode == "partial" else 1), query=checkq("1"))
+    result = invoke(actions.pr_checks, "42", "--scan-limit", "1", "--json", "state", runner=_split_runner())
+    assert result.exit_code == 3 and outcome in result.stderr
+    assert result.stdout == ("[]\n" if mode == "empty" else "")
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--json", "bucket"],
+        ["--json", ""],
+        ["--json", "state,"],
+        ["--json", "state,state"],
+        ["--json", "state", "--json", "event"],
+        ["--json", "state", "-R", "elsewhere/repo"],
+    ],
+)
+def test_invalid_check_projection_never_reads(api, args):
+    _, invoke, v5, calls = api
+    assert invoke(actions.pr_checks, "42", *args).exit_code == 2
+    assert not calls and not v5.get.called
+
+
+def test_project_latest_per_workflow_and_only_selected_fields(api):
+    expect, invoke, v5, calls = api
+    v5.get.return_value = PR
+    old = {**RUN, "workflow_run_id": "999", "run_number": 1}
+    other = {**RUN, "workflow_id": "8", "workflow_run_id": "222", "workflow_name": "lint", "status": "RUNNING"}
+    expect("runs", page([old, other, RUN]), query=checkq())
+    expect("runs/111", DETAIL)
+    expect("runs/222", {**other, "attempt": 1})
+    result = invoke(actions.pr_checks, "42", "--json", "workflow,state", runner=_split_runner())
+    assert result.exit_code == 8 and "pending" in result.stderr
+    assert json.loads(result.stdout) == [
+        {"workflow": "build", "state": "COMPLETED"},
+        {"workflow": "lint", "state": "RUNNING"},
+    ]
+    assert calls == [("GET", "runs"), ("GET", "runs/111"), ("GET", "runs/222")]

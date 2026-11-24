@@ -12,7 +12,7 @@ from ..adapters import RepoAdapter
 from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
-from ..helptext import GCSectionGroup, set_gc_help
+from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
 from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
@@ -613,17 +613,35 @@ def repo_create(
         )
 
 
-@repo_group.command("clone", context_settings={"ignore_unknown_options": True})
+class _RepoCloneCommand(GCSectionCommand):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click removes the first "--" before the callback. Check this new mode
+        # here so gh's -u NAME cannot accidentally select Git's upload-pack.
+        prefix = args[: args.index("--")] if "--" in args else args
+        if "--no-upstream" in prefix and any(
+            arg.startswith("-") and arg not in {"--no-upstream", "--help"} for arg in prefix
+        ):
+            raise click.UsageError(
+                "With --no-upstream, put native git clone options after --. Named fork remotes are not supported.",
+                ctx,
+            )
+        return super().parse_args(ctx, args)
+
+
+@repo_group.command("clone", cls=_RepoCloneCommand, context_settings={"ignore_unknown_options": True})
+@click.option("--no-upstream", is_flag=True, help="Do not discover or add a fork parent (the default).")
 @click.argument("repository")
 @click.argument("directory", required=False)
 @click.argument("gitflags", nargs=-1, type=click.UNPROCESSED)
-def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...]) -> None:
+def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...], no_upstream: bool) -> None:
     owner, repo = _parse_repository_arg(repository)
     # With ignore_unknown_options, click may stuff a passthrough flag into the
     # optional `directory` positional; prepending whatever landed there keeps
     # the original argument order for `git clone`.
     clone_args: list[str] = [directory] if directory else []
-    clone_args.extend(arg for arg in gitflags if arg != "--")
+    # An additional "--" in the explicit mode belongs to Git. Keep the
+    # historical passthrough behavior for invocations without the new flag.
+    clone_args.extend(gitflags if no_upstream else (arg for arg in gitflags if arg != "--"))
     _git_clone(f"https://gitcode.com/{owner}/{repo}.git", *clone_args)
 
 
@@ -821,7 +839,8 @@ repo_clone.short_help = "Clone a repository locally"
 repo_clone.help = "Clone a gitcode.com repository locally, passing extra flags to git clone after --."
 set_gc_help(
     repo_clone,
-    gc_usage="gc repo clone <repository> [<directory>] [-- <gitflags>...] [flags]",
+    gc_usage="gc repo clone [--no-upstream] <repository> [<directory>] [-- <gitflags>...]",
+    gc_examples=["gc repo clone --no-upstream owner/project work -- --depth 1"],
 )
 repo_fork.short_help = "Create a fork of a repository"
 repo_fork.help = "Create a fork of a repository. With no argument, the repository is taken from the git origin remote."

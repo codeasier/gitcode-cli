@@ -91,6 +91,12 @@ gc pr diff 42 --patch > review.patch
 
 评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
 
+### 克隆时不添加 fork 父仓库
+
+`gc repo clone --no-upstream owner/project work -- --depth 1` 显式选择直接调用 gc 时已有的行为：gc 调用原生 `git clone`，不查询 fork 父仓库、不从父仓库抓取，也不注册父仓库 remote。省略 `work` 时使用 Git 的默认目录。原生 Git 的传输、URL 重写、分支跟踪和退出码仍然生效；该选项不保证用户配置下的 Git 会连接哪个地址。
+
+此模式下，原生 Git 参数必须放在 `--` 后。例如 `-- -u PROGRAM` 指定的是 Git 的 **upload-pack**，不是 remote 名称。不带新选项的直接克隆仍按原方式透传 Git 参数。gc 不支持用 gh 的 `-u/--upstream-remote-name` 注册父仓库，GitCode 目标的 gh 代理仍拒绝两个 upstream 选项。
+
 ## 设置检出目录的默认 GitCode 仓库
 
 ```sh

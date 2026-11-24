@@ -772,7 +772,13 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.NOT_IN_CLI,
         "Template repositories have no GitCode v5 equivalent",
     ),
-    _e("repo clone", "--no-upstream", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"),
+    _e(
+        "repo clone",
+        "--no-upstream",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc only; ordinary Git clone, without fork-parent discovery or registration.",
+        proxy_allowed=False,
+    ),
     _e(
         "repo clone", "-u/--upstream-remote-name", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"
     ),

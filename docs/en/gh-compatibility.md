@@ -91,6 +91,12 @@ History flags cannot be combined with inline-comment, discussion, or web options
 
 Comment updates and deletion use GitCode's documented [edit](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id) and [delete](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id) endpoints. `--patch` uses `GET /repos/{owner}/{repo}/pulls/{number}/patch`, observed to return a mail-format patch in a read-only probe against public `GitCode-official-team/GitCode-Docs` PR #1 on 2026-10-30. This patch endpoint is not listed in the public v5 reference; the CLI rejects non-patch responses and does not substitute an aggregate diff. `--patch` and `--name-only` are mutually exclusive. Redirect or pipe `--patch` output: it writes the returned text as UTF-8 bytes without stripping ANSI sequences, translating newlines, or adding a newline. Direct terminal output is rejected before writing any patch bytes so untrusted terminal control sequences cannot execute; ordinary `pr diff` remains the human-readable view.
 
+### Clone without adding a fork parent
+
+`gc repo clone --no-upstream owner/project work -- --depth 1` explicitly selects the existing direct-gc behavior: gc invokes native `git clone` without looking up the fork parent, fetching from it, or registering it. Omit `work` to use Git's default destination. Native Git transport, URL rewrites, branch tracking and exit status still apply. This is not a guarantee about where user-configured Git connects.
+
+In this mode, place native options after `--`. For example, `-- -u PROGRAM` is Git's **upload-pack**, not a remote name. Plain direct clone keeps its existing native option passthrough. gc does not support gh's `-u/--upstream-remote-name` for parent registration. The GitCode-targeted gh proxy still refuses both upstream options.
+
 ## Default GitCode repository in a checkout
 
 ```sh

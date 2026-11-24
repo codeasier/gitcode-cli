@@ -123,7 +123,6 @@
     },
     "repo": {
       "clone": [
-        {"name": "--no-upstream", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "-u", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "--upstream-remote-name", "reason": "upstream remote management is not implemented by gc repo clone"}
       ],

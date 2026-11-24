@@ -15,8 +15,18 @@ import click
 
 from ..context import AppContext
 from ..errors import APIError
-from ..repo import resolve_repo
-from ..rest_api import MAX_BYTES, READ_METHODS, Page, clean_response, fetch, request_body, validate_field
+from ..repo import parse_repo_with_host, resolve_repo
+from ..repo_read import validate_target
+from ..rest_api import (
+    MAX_BYTES,
+    READ_METHODS,
+    Page,
+    clean_response,
+    fetch,
+    is_v8_runs_pagination_endpoint,
+    request_body,
+    validate_field,
+)
 from ..utils import safe_echo
 
 
@@ -49,13 +59,24 @@ def _input(stream: BinaryIO | None) -> bytes | None:
         raise click.UsageError("Unable to read the JSON request body.") from None
 
 
-def _endpoint(raw: str, repo: str | None) -> str:
+def _endpoint(raw: str, repo: str | None, *, pinned_scope: bool) -> tuple[str, tuple[str, str] | None]:
     placeholders = "{owner}" in raw or "{repo}" in raw
-    if repo or placeholders:
+    if pinned_scope:
+        if repo is None:
+            if placeholders:
+                raise click.UsageError("v8 run pagination placeholders require an explicit -R OWNER/REPO.")
+            return raw, None
+        host, owner, name = parse_repo_with_host(repo)
+        if host not in {None, "gitcode.com"}:
+            raise click.UsageError("v8 run pagination requires a canonical GitCode repository for -R.")
+        validate_target(owner, name, None)
+    elif repo or placeholders:
         owner, name = resolve_repo(repo)
-        if placeholders:
-            return raw.replace("{owner}", owner).replace("{repo}", name)
-    return raw
+    else:
+        return raw, None
+    if placeholders:
+        raw = raw.replace("{owner}", owner).replace("{repo}", name)
+    return raw, (owner, name)
 
 
 def _jq(executable: str, query: str, data: Any) -> list[Any]:
@@ -135,7 +156,9 @@ def _format(
 @click.option("-F", "--field", multiple=True, help="Flat field; integers, true, false and null are typed.")
 @click.option("-H", "--header", multiple=True, help="Accept or a conditional request header (Name: value).")
 @click.option("--input", "input_stream", type=click.File("rb"), help="JSON body from a file, or '-' for stdin.")
-@click.option("--paginate", is_flag=True, help="GET array pages until empty; at most 100 requests, no partial output.")
+@click.option(
+    "--paginate", is_flag=True, help="Page GET arrays or the v8 runs listing; at most 100 requests, no partial output."
+)
 @click.option("--slurp", is_flag=True, help="Return all pages as one JSON array (requires --paginate).")
 @click.option("-i", "--include", is_flag=True, help="Print the status and safe response headers before each body.")
 @click.option("--silent", is_flag=True, help="Do not print response bodies.")
@@ -183,7 +206,11 @@ def api_command(
         if executable is None:
             raise click.UsageError("--jq requires the jq executable on PATH.")
         jq_command = (executable, jq)
-    pages = fetch(_endpoint(endpoint, app.repo), api_version, method, app.token, header, query, body, paginate)
+    pin_scope = paginate and is_v8_runs_pagination_endpoint(endpoint, api_version)
+    resolved_endpoint, scope = _endpoint(endpoint, app.repo, pinned_scope=pin_scope)
+    if paginate and not pin_scope and is_v8_runs_pagination_endpoint(resolved_endpoint, api_version):
+        raise click.UsageError("v8 run pagination requires the literal actions/runs route.")
+    pages = fetch(resolved_endpoint, api_version, method, app.token, header, query, body, paginate, repo_scope=scope)
     try:
         output = _format(pages, include, silent, slurp, jq_command, app.token)
     except (OSError, ValueError, RecursionError, FutureTimeout, subprocess.SubprocessError):

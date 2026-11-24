@@ -66,6 +66,16 @@ gc pr checkout 42 --force
 
 PR checkout 从已验证的源仓库拉取，不再假定源分支位于 `origin`。`--detach` 检出已核实的不可变 head SHA，不创建或重置本地分支。`--force` 只重置 upstream 对应同一源仓库及分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改。缺失、不相关或不明确的 upstream 均拒绝，remote 名称不必是 `origin`。不使用 `--force` 时，已有分支必须已指向核实的 SHA。新分支从该 SHA 创建；若现存 remote 中恰有一个使用规范 HTTPS/SSH 源 URL 及标准分支 fetch 映射，则保留对应 upstream。缺少 tracking ref 时，以 compare-and-swap 保护创建，绝不覆盖已有 ref。否则不擅自建立 upstream，之后使用 `--force` 前须明确配置源 remote/upstream。自定义端口、HTTPS URL 内嵌凭据和 remote helper 不作为 upstream 身份证明，不保存临时路由 remote。所有模式均要求 API 提供完整 head SHA；API 查询到拉取之间 head 已变化时，在改变本地检出状态前报错。URL 固定针对 Git 配置重写，不会禁用原生 HTTPS 重定向或替代 Git 认证。
 
+### 按路径排除变更文件名
+
+```bash
+gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
+```
+
+直接调用 `gc` 会按原有顺序过滤文件列表，只匹配本来要显示的路径（重命名时不同时匹配新旧两个名字）。匹配完整路径或文件名，区分大小写，因此不含 `/` 的模式可以匹配任意层级的文件。`*` 可匹配单个路径分段内的零个或多个字符：`generated/*` 排除 `generated/a.py`，但保留 `generated/sub/a.py`。`**` 不递归。
+
+每个选项只接受一个非空模式，最多重复指定 32 个模式，每个模式最多 512 个 UTF-8 字节。这是 [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go) 的子集：查询前拒绝 `?`、方括号字符类、反斜杠转义、逗号、双引号和 不可打印字符。面向 GitCode 的 `gh` 代理不转发此选项。普通 diff 和邮件格式补丁正文不支持过滤。
+
 ### PR 评论历史与补丁
 
 ```bash
@@ -80,6 +90,12 @@ gc pr diff 42 --patch > review.patch
 历史参数不能与行内评论、讨论回复或 web 参数混用。编辑支持 `--body`、`--body-file`（`-` 表示标准输入）与 `--editor`，编辑器预填选中评论的正文。未显式指定正文来源时，交互模式打开编辑器，非交互模式要求提供正文来源。取消编辑或正文为空时不写入。
 
 评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
+
+### 克隆时不添加 fork 父仓库
+
+`gc repo clone --no-upstream owner/project work -- --depth 1` 显式选择直接调用 gc 时已有的行为：gc 调用原生 `git clone`，不查询 fork 父仓库、不从父仓库抓取，也不注册父仓库 remote。省略 `work` 时使用 Git 的默认目录。原生 Git 的传输、URL 重写、分支跟踪和退出码仍然生效；该选项不保证用户配置下的 Git 会连接哪个地址。
+
+此模式下，原生 Git 参数必须放在 `--` 后。例如 `-- -u PROGRAM` 指定的是 Git 的 **upload-pack**，不是 remote 名称。不带新选项的直接克隆仍按原方式透传 Git 参数。gc 不支持用 gh 的 `-u/--upstream-remote-name` 注册父仓库，GitCode 目标的 gh 代理仍拒绝两个 upstream 选项。
 
 ## 设置检出目录的默认 GitCode 仓库
 

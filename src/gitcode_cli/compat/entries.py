@@ -567,7 +567,13 @@ ENTRIES: list[CompatEntry] = [
     _e("pr edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("pr diff", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("pr diff", "--color", CompatStatus.NOT_IN_CLI),
-    _e("pr diff", "-e/--exclude", CompatStatus.NOT_IN_CLI),
+    _e(
+        "pr diff",
+        "-e/--exclude",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        proxy_allowed=False,
+    ),
     _e(
         "pr diff",
         "--name-only",
@@ -633,7 +639,7 @@ ENTRIES: list[CompatEntry] = [
         "repo read-file",
         None,
         CompatStatus.IMPLEMENTED,
-        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; exclusive POSIX file output.",
+        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; POSIX file output.",
         proxy_allowed=False,
     ),
     *[
@@ -647,9 +653,16 @@ ENTRIES: list[CompatEntry] = [
         "Direct CLI only: verified inline metadata and opt-in Base64 content; no URL fields.",
         proxy_allowed=False,
     ),
+    _e(
+        "repo read-file",
+        "--clobber",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: replace an explicit regular-file destination on POSIX; no directory expansion.",
+        proxy_allowed=False,
+    ),
     *[
         _e("repo read-file", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
-        for flag in ("--allow-escape-sequences", "--clobber", "-q/--jq", "-t/--template")
+        for flag in ("--allow-escape-sequences", "-q/--jq", "-t/--template")
     ],
     _e("repo view", None, CompatStatus.IMPLEMENTED, "Repository positional or -R/origin resolution"),
     _e("repo list", None, CompatStatus.IMPLEMENTED, "Owner argument defaults to the authenticated user"),
@@ -759,7 +772,13 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.NOT_IN_CLI,
         "Template repositories have no GitCode v5 equivalent",
     ),
-    _e("repo clone", "--no-upstream", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"),
+    _e(
+        "repo clone",
+        "--no-upstream",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc only; ordinary Git clone, without fork-parent discovery or registration.",
+        proxy_allowed=False,
+    ),
     _e(
         "repo clone", "-u/--upstream-remote-name", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"
     ),

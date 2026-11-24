@@ -1,5 +1,7 @@
 """Offline, read-only command contract for the GitCode repository conflict view."""
 
+from inspect import signature
+
 import httpx
 import pytest
 from click.testing import CliRunner
@@ -18,6 +20,9 @@ ROW = {"number": 7, "id": 107, "state": "open", "title": "First"}
 
 @pytest.fixture
 def invoke(monkeypatch):
+    # Click 8.1 mixes stderr into stdout unless separation is requested.
+    runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
+
     def run(args, *expected):
         steps = iter(expected)
 
@@ -33,10 +38,11 @@ def invoke(monkeypatch):
         with httpx.Client(transport=httpx.MockTransport(respond)) as mocked:
             monkeypatch.setattr("gitcode_cli.client.httpx.Client", lambda **_: mocked)
             monkeypatch.setattr(AppContext, "client", lambda _: GitCodeClient(TOKEN, base_url=BASE))
-            result = CliRunner().invoke(main, ["--token", TOKEN, "-R", "o/r", "pr", "status", *args])
+            result = runner.invoke(main, ["--token", TOKEN, "-R", "o/r", "pr", "status", *args])
         assert next(steps, None) is None
         if result.exception is not None and not isinstance(result.exception, SystemExit):
             raise result.exception
+        assert TOKEN not in result.stdout and TOKEN not in result.stderr
         return result
 
     return run
@@ -162,14 +168,14 @@ def test_bad_or_oversized_page_never_fans_out(invoke, rows):
 
 def test_duplicate_row_is_not_fetched_twice(invoke):
     result = invoke(["-c"], ("", PAGE, 200, [ROW, ROW]), ("/7", {}, 200, ROW))
-    assert result.exit_code == 1 and "unique" in result.output and "Open pull requests in" not in result.output
+    assert result.exit_code == 1 and "unique" in result.stderr and not result.stdout
 
 
 def test_later_detail_failure_does_not_publish_partial_report_or_retry(invoke):
     second = {**ROW, "number": 8, "id": 108, "title": "Second"}
     result = invoke(["--conflict-status"], ("", PAGE, 200, [ROW, second]), ("/7", {}, 200, ROW), ("/8", {}, 403, {}))
-    assert result.exit_code == 1 and "error:" in result.output
-    assert "Open pull requests in" not in result.output and "#7" not in result.output
+    assert result.exit_code == 1 and "error:" in result.stderr
+    assert not result.stdout and "#7" not in result.stderr
 
 
 def test_empty_page_reads_no_detail(invoke):
@@ -197,7 +203,7 @@ def test_empty_later_page_does_not_claim_empty_repository(invoke):
 def test_invalid_page_usage_never_reads(invoke, args):
     result = invoke(args)
     assert result.exit_code == 2
-    assert "--page" in result.output
+    assert "--page" in result.stderr
 
 
 @pytest.mark.parametrize("target", ["other/r", "github.com/o/r", ""])

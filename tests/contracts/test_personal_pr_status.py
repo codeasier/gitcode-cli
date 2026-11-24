@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import inspect
 import json
 
 import httpx
@@ -88,7 +89,10 @@ def invoke(monkeypatch, tmp_config_dir):
 
         monkeypatch.setattr(personal, "open_client", client)
         options = ["--token", token] if token else []
-        result = CliRunner().invoke(main, [*options, *global_args, "pr", "status", *args])
+        # Click 8.1 mixes the streams by default; newer Click captures them separately.
+        params = inspect.signature(CliRunner.__init__).parameters
+        runner = CliRunner(mix_stderr=False) if "mix_stderr" in params else CliRunner()
+        result = runner.invoke(main, [*options, *global_args, "pr", "status", *args])
         if result.exception is not None and not isinstance(result.exception, SystemExit):
             raise result.exception
         assert len(requests) == len(pages) + (lookup is not None)

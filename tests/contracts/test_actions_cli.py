@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from gitcode_cli.actions_client import MAX_RESPONSE, ActionsClient
+from gitcode_cli.cli import main
 from gitcode_cli.commands import actions
 from gitcode_cli.context import AppContext
 from gitcode_cli.errors import APIError, NetworkError
@@ -46,6 +47,12 @@ GATE = {"ci_state_passed": True, "merge_request_switch": {"only_allow_merge_if_p
 PR = {"number": 42, "head": {"sha": SHA}, "can_merge_check": False, "mergeable_state": GATE}
 BASE = "/api/v8/repos/o/r/actions/"
 SYNTHETIC = "fixture-only-token"
+
+
+def _separate_stderr_runner():
+    # Click 8.0/8.1 mix streams by default; Click 8.2+ always captures them separately.
+    opts = {"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}
+    return CliRunner(**opts)
 
 
 @pytest.fixture
@@ -126,6 +133,197 @@ def test_view_run_jobs_and_step_window(api):
     result = invoke(actions.run, "view", "111", "--job", "job-a")
     assert result.exit_code == 0 and "must-not-surface" not in result.output
     assert json.loads(result.output)["steps"][0]["job_run_id"] == "execution-a"
+
+
+def _stage(stage_id, jobs):
+    return {"id": stage_id, "name": "pipeline", "status": "RUNNING", "jobs": jobs, "pre": ["never-export"]}
+
+
+def test_view_with_steps_one_detail_only_no_raw_or_inferred_fields(api):
+    expect, invoke, _, calls = api
+    step_name = "编译 🧪 " + SYNTHETIC
+    job = {**JOB, "steps": [{**JOB["steps"][0], "name": step_name, "env": ["never-export"]}], "message": "never-export"}
+    job2 = {**job, "id": "job-b", "status": "COMPLETED", "steps": []}
+    third = {**job, "id": "job-c", "status": "NATIVE_UNKNOWN"}
+    stages = [_stage("stage-z", [job]), _stage("stage-a", [job2, third])]
+    for _ in range(2):
+        expect("runs/111", {**DETAIL, "stages": stages, "title": "never-export"})
+    args = ("view", "111", "--with-steps", "--commit", SHA.upper(), "--attempt", "2", "--limit", "2")
+    result = invoke(actions.run, *args)
+    assert result.exit_code == 0
+    assert not any(s in result.output for s in ("never-export", "must-not-surface", SYNTHETIC, "\x1b", "conclusion"))
+    assert json.loads(result.output) == {
+        "run": {"workflow_run_id": "111", "attempt": 2, "head_sha": SHA},
+        "jobs": [
+            {
+                "id": "job-a",
+                "name": "compile",
+                "status": "FAILED",
+                "stage": {"id": "stage-z", "name": "pipeline", "status": "RUNNING"},
+                "steps": [{"id": "step-a", "name": "编译 🧪 [REDACTED]", "status": "FAILED"}],
+            },
+            {
+                "id": "job-b",
+                "name": "compile",
+                "status": "COMPLETED",
+                "stage": {"id": "stage-a", "name": "pipeline", "status": "RUNNING"},
+                "steps": [],
+            },
+        ],
+        "total_count": 3,
+        "next_offset": 2,
+    }
+    second = json.loads(invoke(actions.run, *args, "--offset", "2").output)
+    assert second["next_offset"] is None and second["total_count"] == 3
+    assert [job["status"] for job in second["jobs"]] == ["NATIVE_UNKNOWN"]
+    assert calls == [("GET", "runs/111")] * 2
+
+
+@pytest.mark.parametrize("stages", [[], [_stage("stage-a", [])]])
+def test_view_with_steps_valid_empty_hierarchy(api, stages):
+    expect, invoke, _, _ = api
+    expect("runs/111", {**DETAIL, "stages": stages})
+    data = json.loads(invoke(actions.run, "view", "111", "--with-steps").output)
+    assert data["total_count"] == 0 and data["jobs"] == [] and data["next_offset"] is None
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"workflow_run_id": "wrong"},
+        {"attempt": True},
+        {"attempt": 3},
+        {"head_sha": OTHER},
+        {"head_sha": SHA[:7]},
+        {"stages": None},
+        {"stages": [None]},
+        {"stages": [{"jobs": {}}]},
+        {"stages": [_stage("s", [None])]},
+        {"stages": [_stage("s", [{"id": "j"}])]},
+        {"stages": [_stage("s", [{**JOB, "steps": [1]}])]},
+        {"stages": [_stage("s", [{**JOB, "status": {"log": "never-export"}}])]},
+        {"stages": [_stage("s", [{**JOB, "steps": [{"name": "no id", "status": "RUNNING"}]}])]},
+        {"stages": [_stage("s", [{**JOB, "name": "X" * 513}])]},
+    ],
+)
+def test_view_with_steps_refuses_invalid_hierarchy_or_identity_without_output(api, patch):
+    expect, invoke, _, calls = api
+    expect("runs/111", {**DETAIL, **patch})
+    result = invoke(actions.run, "view", "111", "--with-steps", "--attempt", "2", "--commit", SHA)
+    assert result.exit_code != 0 and isinstance(result.exception, APIError) and result.stdout == ""
+    assert calls == [("GET", "runs/111")]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--job", "j"],
+        ["--log"],
+        ["--step", "s"],
+        ["--sort", "desc"],
+        ["--sort", "asc"],
+        ["--limit", "101"],
+        ["--commit", "a" * 39],
+        ["--commit", "z" * 40],
+    ],
+)
+def test_view_with_steps_conflicts_before_network(api, args):
+    _, invoke, _, calls = api
+    assert invoke(actions.run, "view", "111", "--with-steps", *args).exit_code == 2
+    assert not calls
+
+
+def test_view_with_steps_budget_counts_steps_across_selected_jobs(api):
+    expect, invoke, _, _ = api
+    long_job = {**JOB, "steps": [{**JOB["steps"][0], "id": f"step-{i}"} for i in range(100)]}
+    data = {**DETAIL, "stages": [_stage("s", [long_job, {**JOB, "id": "job-b"}])]}
+    expect("runs/111", data)
+    rejected = invoke(actions.run, "view", "111", "--with-steps")
+    assert isinstance(rejected.exception, APIError) and "100 steps" in str(rejected.exception)
+    assert not rejected.output
+    expect("runs/111", data)
+    limited = json.loads(invoke(actions.run, "view", "111", "--with-steps", "--limit", "1").output)
+    assert len(limited["jobs"][0]["steps"]) == 100 and limited["next_offset"] == 1
+
+
+@pytest.mark.parametrize(
+    ("stages", "diagnostic"),
+    [
+        ([_stage("s", [JOB]), _stage("s", [])], "Duplicate Actions snapshot stage ID"),
+        ([_stage("s1", [JOB]), _stage("s2", [JOB])], "Duplicate Actions snapshot job ID"),
+        (
+            [_stage("s", [JOB, {**JOB, "id": "offline", "steps": JOB["steps"] * 2}])],
+            "Duplicate Actions snapshot step ID",
+        ),
+        ([_stage("s", [{**JOB, "steps": JOB["steps"] * 2}])], "Duplicate Actions snapshot step ID"),
+        ([_stage("s", [JOB, {**JOB, "id": "bad/id"}])], "Invalid Actions resource identifier"),
+        ([_stage("s", [JOB, {**JOB, "id": "off-page", "steps": None}])], "Invalid Actions collection: steps"),
+        ([_stage("s", [JOB]), _stage("ambiguous%2F", [])], "Invalid Actions resource identifier"),
+    ],
+)
+def test_view_with_steps_validates_full_hierarchy_before_emitting_window(api, stages, diagnostic):
+    expect, invoke, _, calls = api
+    expect("runs/111", {**DETAIL, "stages": stages})
+    result = invoke(
+        main,
+        "--token",
+        SYNTHETIC,
+        "-R",
+        "o/r",
+        "run",
+        "view",
+        "111",
+        "--with-steps",
+        "--limit",
+        "1",
+        runner=_separate_stderr_runner(),
+    )
+    assert result.exit_code == 1 and diagnostic in result.stderr and result.stdout == ""
+    assert calls == [("GET", "runs/111")]
+
+
+@pytest.mark.parametrize(
+    ("field", "text"),
+    [
+        ("id", "\ud800"),
+        ("id", "unsafe\u009b"),
+        ("name", "bad \udc00"),
+        ("name", "compile\x1b[31m"),
+        ("name", "a\u202e"),
+        ("status", "RUNNING\ud800"),
+        ("status", "FAILED\nCOMPLETED"),
+    ],
+)
+def test_view_with_steps_rejects_non_scalar_or_control_text(api, field, text):
+    expect, invoke, _, _ = api
+    job = {**JOB, "steps": [{**JOB["steps"][0], field: text}]}
+    # JSON escape sequences for lone surrogates can arrive over valid ASCII transport.
+    expect(
+        "runs/111", httpx.Response(200, content=json.dumps({**DETAIL, "stages": [_stage("s", [job])]}).encode("ascii"))
+    )
+    result = invoke(actions.run, "view", "111", "--with-steps")
+    assert isinstance(result.exception, APIError) and result.stdout == ""
+
+
+@pytest.mark.parametrize(("field", "text"), [("id", SYNTHETIC), ("id", "access_token=hidden"), ("status", SYNTHETIC)])
+def test_view_with_steps_never_rewrites_identity_or_status_to_redaction_placeholder(api, field, text):
+    expect, invoke, _, _ = api
+    expect("runs/111", {**DETAIL, "stages": [_stage("s", [{**JOB, field: text}])]})
+    result = invoke(
+        main,
+        "--token",
+        SYNTHETIC,
+        "-R",
+        "o/r",
+        "run",
+        "view",
+        "111",
+        "--with-steps",
+        runner=_separate_stderr_runner(),
+    )
+    assert result.exit_code == 1 and result.stdout == ""
+    assert "Cannot safely display Actions snapshot identity or status" in result.stderr
+    assert text not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -490,9 +688,7 @@ def test_cancel_stops_only_matching_attempt_once(api, answer, opt):
     expect("runs/111", RUNNING)
     expect("runs/111/stop", {"success": True}, method="POST")
     expect("runs/111", {**RUNNING, "status": "CANCELED"})
-    # Click 8.1 mixes stderr into stdout by default; Click 8.2+ always captures them separately.
-    runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
-    result = invoke(actions.run, *CANCEL, *opt, input=answer, runner=runner)
+    result = invoke(actions.run, *CANCEL, *opt, input=answer, runner=_separate_stderr_runner())
     assert result.exit_code == 0, result.output
     stdout = result.stdout
     if answer is not None:

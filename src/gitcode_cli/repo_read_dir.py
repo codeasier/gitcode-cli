@@ -2,18 +2,46 @@
 
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import dataclass
 from urllib.parse import quote
 
 from ._redact import redact
 from .errors import APIError, GCError
 from .repo_read import bounded_json, validate_path, validate_target
 
+JSON_FIELDS = ("name", "path", "gitSHA", "gitType")
 MAX_PAGE = 2**31 - 1
 _MODES = {"040000": "tree", "100644": "blob", "100755": "blob", "120000": "blob", "160000": "commit"}
 
 
-def _entry(row: object, directory: str | None, token: str) -> tuple[str, str]:
+@dataclass(frozen=True)
+class TreeEntry:
+    name: str
+    path: str
+    mode: str
+    kind: str
+    sha: str
+
+    def line(self) -> str:
+        return f"{self.mode} {self.kind} {self.sha}\t{self.path}"
+
+    def project(self, fields: tuple[str, ...]) -> dict[str, str]:
+        values = {"name": self.name, "path": self.path, "gitSHA": self.sha, "gitType": self.kind}
+        return {field: values[field] for field in fields}
+
+
+def encode_page(entries: list[TreeEntry], fields: tuple[str, ...] | None, token: str) -> bytes:
+    if fields is None:
+        return "".join(f"{entry.line()}\n" for entry in entries).encode("utf-8")
+    text = json.dumps([entry.project(fields) for entry in entries], ensure_ascii=False) + "\n"
+    if redact(text, token) != text:
+        raise APIError("Refusing to display the active GitCode token.")
+    return text.encode("utf-8")
+
+
+def _entry(row: object, directory: str | None, token: str) -> TreeEntry:
     if not isinstance(row, dict):
         raise APIError("Invalid Tree entry.")
     name, path = row.get("name"), row.get("path")
@@ -33,18 +61,22 @@ def _entry(row: object, directory: str | None, token: str) -> tuple[str, str]:
     if (
         not isinstance(mode, str)
         or mode not in _MODES
+        or not isinstance(kind, str)
         or kind != _MODES[mode]
         or not isinstance(sha, str)
         or not re.fullmatch(r"[a-fA-F0-9]{40}", sha)
     ):
         raise APIError("Tree entry did not confirm a Git object type, mode and SHA.")
-    line = f"{mode} {kind} {sha}\t{path}"
+    entry = TreeEntry(name, path, mode, kind, sha)
+    line = entry.line()
     if redact(line, token) != line:
         raise APIError("Refusing to display the active GitCode token.")
-    return name, line
+    return entry
 
 
-def fetch_page(owner: str, repo: str, path: str | None, ref: str, page: int, per_page: int, token: str) -> list[str]:
+def fetch_page(
+    owner: str, repo: str, path: str | None, ref: str, page: int, per_page: int, token: str
+) -> list[TreeEntry]:
     if type(page) is not int or not 1 <= page <= MAX_PAGE or type(per_page) is not int or not 1 <= per_page <= 100:
         raise GCError("Use a positive 32-bit page number and a page size from 1 through 100.")
     validate_target(owner, repo, ref)
@@ -58,10 +90,10 @@ def fetch_page(owner: str, repo: str, path: str | None, ref: str, page: int, per
         raise APIError("Expected a Tree response containing a list.")
     if result.get("truncated", False) is not False or len(result["tree"]) > per_page:
         raise APIError("Tree response was truncated or exceeded the requested page size.")
-    entries: dict[str, str] = {}
+    entries: dict[str, TreeEntry] = {}
     for row in result["tree"]:
-        name, line = _entry(row, path, token)
-        if name in entries:
+        entry = _entry(row, path, token)
+        if entry.name in entries:
             raise APIError("Tree response contains a duplicate directory entry.")
-        entries[name] = line
+        entries[entry.name] = entry
     return list(entries.values())

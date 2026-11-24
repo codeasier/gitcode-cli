@@ -66,6 +66,16 @@ gc pr checkout 42 --force
 
 PR checkout 从已验证的源仓库拉取，不再假定源分支位于 `origin`。`--detach` 检出已核实的不可变 head SHA，不创建或重置本地分支。`--force` 只重置 upstream 对应同一源仓库及分支的已有本地分支，会丢弃该分支的本地提交与受跟踪文件的工作区修改。缺失、不相关或不明确的 upstream 均拒绝，remote 名称不必是 `origin`。不使用 `--force` 时，已有分支必须已指向核实的 SHA。新分支从该 SHA 创建；若现存 remote 中恰有一个使用规范 HTTPS/SSH 源 URL 及标准分支 fetch 映射，则保留对应 upstream。缺少 tracking ref 时，以 compare-and-swap 保护创建，绝不覆盖已有 ref。否则不擅自建立 upstream，之后使用 `--force` 前须明确配置源 remote/upstream。自定义端口、HTTPS URL 内嵌凭据和 remote helper 不作为 upstream 身份证明，不保存临时路由 remote。所有模式均要求 API 提供完整 head SHA；API 查询到拉取之间 head 已变化时，在改变本地检出状态前报错。URL 固定针对 Git 配置重写，不会禁用原生 HTTPS 重定向或替代 Git 认证。
 
+### 按路径排除变更文件名
+
+```bash
+gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
+```
+
+直接调用 `gc` 会按原有顺序过滤文件列表，只匹配本来要显示的路径（重命名时不同时匹配新旧两个名字）。匹配完整路径或文件名，区分大小写，因此不含 `/` 的模式可以匹配任意层级的文件。`*` 可匹配单个路径分段内的零个或多个字符：`generated/*` 排除 `generated/a.py`，但保留 `generated/sub/a.py`。`**` 不递归。
+
+每个选项只接受一个非空模式，最多重复指定 32 个模式，每个模式最多 512 个 UTF-8 字节。这是 [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go) 的子集：查询前拒绝 `?`、方括号字符类、反斜杠转义、逗号、双引号和 不可打印字符。面向 GitCode 的 `gh` 代理不转发此选项。普通 diff 和邮件格式补丁正文不支持过滤。
+
 ### PR 评论历史与补丁
 
 ```bash
@@ -81,12 +91,34 @@ gc pr diff 42 --patch > review.patch
 
 评论修改与删除使用 GitCode 官方文档中的[编辑](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id)和[删除](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id)接口。`--patch` 使用 `GET /repos/{owner}/{repo}/pulls/{number}/patch`，已于 2026-10-30 对公开仓库 `GitCode-official-team/GitCode-Docs` 的 PR #1 做只读探测，确认返回邮件格式补丁。该端点未列入公开 v5 文档；CLI 拒绝非补丁响应，不会用聚合 diff 替代。`--patch` 与 `--name-only` 互斥。请将 `--patch` 输出重定向到文件或管道：返回文本以 UTF-8 字节写出，不剥除 ANSI 序列、不转换或追加换行。直接输出到终端会在写出任何补丁字节前被拒绝，避免执行不可信终端控制序列；普通 `pr diff` 仍用于可读查看。
 
+### 克隆时不添加 fork 父仓库
+
+`gc repo clone --no-upstream owner/project work -- --depth 1` 显式选择直接调用 gc 时已有的行为：gc 调用原生 `git clone`，不查询 fork 父仓库、不从父仓库抓取，也不注册父仓库 remote。省略 `work` 时使用 Git 的默认目录。原生 Git 的传输、URL 重写、分支跟踪和退出码仍然生效；该选项不保证用户配置下的 Git 会连接哪个地址。
+
+此模式下，原生 Git 参数必须放在 `--` 后。例如 `-- -u PROGRAM` 指定的是 Git 的 **upload-pack**，不是 remote 名称。不带新选项的直接克隆仍按原方式透传 Git 参数。gc 不支持用 gh 的 `-u/--upstream-remote-name` 注册父仓库，GitCode 目标的 gh 代理仍拒绝两个 upstream 选项。
+
+## 设置检出目录的默认 GitCode 仓库
+
+```sh
+gc repo set-default upstream             # 已存在的 GitCode 远端名
+gc repo set-default owner/repo            # 必须与唯一 GitCode 远端中的仓库名完全相同
+gc repo set-default --view
+gc repo set-default --unset
+```
+
+这是对 `gh repo set-default` 的**部分兼容，仅影响读取**。设置、查看或取消默认仓库只操作本地 Git 配置，链接的 worktree 共享该设置。无需认证或联网，不修改远端的获取/推送 URL 或原生 `gh` 配置。只能选择在该仓库本地配置中直接声明、且只有一个受支持 GitCode **fetch** URL 的远端；仅在 include 文件或其他配置作用域声明的远端不能固定。若有多个远端对应相同仓库，请指定远端名。不提供交互式选单或 fork 父仓库查询。
+
+**只有直接调用 `gc repo view`、`gc repo read-file` 和 `gc repo read-dir` 时才使用此默认仓库。** 显式仓库参数或 `-R` 优先；显式空值报错。未设置时仍使用 origin。配置损坏、远端被删除或改指其他仓库、URL 有歧义或被重写时，命令会停止，不回退到 origin。可重新设置、取消设置或显式指定目标。
+
+**刚查看的仓库不一定是后续写操作的目标。** Issue、PR（含创建、分支推断和 checkout）、Release、Actions、标签、讨论、原始 API 和所有仓库管理命令均不采用此设置，目标选择与原来相同。要写入刚查看的仓库，请在支持的命令上显式指定 `-R`。`gh` 代理不读取此设置，不转发目标为 GitCode 的 `repo set-default` 命令。
+
 ## GitCode 差异与限制
 
 | 范围 | `gc` 中的差异 |
 | --- | --- |
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`。更新还要求 `title`；close/reopen 和部分字段编辑保留读取到的当前标题，无法取得标题时拒绝写入。 |
+| 个人 Issue 状态 | 直调 `gc issue status -R OWNER/REPO` 只读取当前账号在[指定仓库](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/)负责及创建的打开 Issue，核对仓库路径、用户登录名和两者的 ID。不请求账号的全局 Issue。官方没有提及用户的过滤契约：文本注明不可用，`--json mentioned` 返回 `null` 而非空数组，`issue list --mention` 被拒绝。GitCode 代理拒绝 `gh issue status`。 |
 | PR 状态 | `gc pr status -R OWNER/REPO -c`（`--conflict-status`）查看仓库第一页的打开 PR，最多 20 个。它为每条记录读取一次 [PR 详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)，只报告 `mergeable_state.conflict_passed`：通过、未通过，缺失或非布尔值显示未知；这不代表 PR 可以合入。详情读取失败或身份不一致时整个报告失败；不加 `-c` 不读取详情。仓库视图没有实现 [gh 个人状态](https://cli.github.com/manual/gh_pr_status)、当前分支分组及其 JSON 结构，指向 GitCode 的代理会拒绝 `gh pr status`。脚本可用 `gc pr list -s open -A @me --json number,title` 查询自己创建的打开 PR。 |
 | PR squash | `--squash` 按当前 GitCode 契约发送 `merge_method=merge` 和独立布尔字段 `squash=true`。 |
 | PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
@@ -106,3 +138,23 @@ gc pr diff 42 --patch > review.patch
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 
 squash/title 契约已于 2026-10-30 对照[合并 PR](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge)和[更新 Issue](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number)文档核实；离线契约测试不代表已验证真实 sandbox 兼容性。
+
+### 仓库内的个人 Issue 状态
+
+脚本可用 `gc issue status -R owner/repo --json assigned,createdBy` 或 `--jq '.assigned[].title'`。
+两组都只输出编号、ID、状态、标题、创建时间和标签名，不返回原始正文或 URL。每组最多 10 个数据页，每页 50 条，
+再读至空页；身份不明、畸形或重复数据、限流、分页超界均整次失败，不输出部分结果。这是依次读取，不保证事务快照。
+离线契约测试不等于真实账号验收。
+
+[列表接口文档](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/)将 `assignee` 称为指派人 ID。
+在 GitCode 的只读对照中，传登录名能返回预期条目，传用户对象 ID 则返回 404。命令以当前账号的登录名查询
+`assignee` 和 `creator`，再用登录名和 ID 核对每条结果中的对应身份，不会更换筛选值重试。
+
+如果响应提供首页、上一页、下一页或末页等分页提示，提示必须与请求的页码、仓库、过滤条件和实际收到的分页一致。
+命令不会跟随响应链接。不传 `-R` 时，只接受可无歧义定位的 GitCode origin。
+
+SDK 的 `IssueAdapter.status` 使用相同的核验队列，仍返回 `AdapterActionResult`。
+标准 `GitCodeClient` 复用自身 HTTP 传输，执行仅使用 Bearer 头的有界读取；
+自定义客户端须显式实现 `read_issue_status_page(endpoint, params)`，返回有界 JSON、响应头和准确的规范请求 URL，
+不得重试或跟随重定向。标准客户端不接受账号或仓库元数据请求携带查询参数；仓库 Issue 队列只允许
+打开状态、有界分页以及创建人或指派人中的一种过滤条件。不支持的客户端在读取 token 前即拒绝。

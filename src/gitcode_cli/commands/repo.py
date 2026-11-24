@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -417,7 +418,12 @@ set_gc_help(repo_read_dir, gc_json_fields=READ_DIR_JSON_FIELDS)
     "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
 )
 @click.option("--ref", help="Read this branch, tag, or commit (default: the repository default branch).")
-@click.option("-o", "--output", type=click.Path(path_type=Path), help="Create a new file with the exact bytes (POSIX).")
+@click.option("-o", "--output", type=click.Path(), help="Write the exact bytes to a local file (POSIX).")
+@click.option(
+    "--clobber",
+    is_flag=True,
+    help="With --output, atomically replace a regular file. Do not concurrently change the destination or its path.",
+)
 @click.option(
     "--json",
     "json_options",
@@ -433,13 +439,18 @@ def repo_read_file(
     path: str,
     repo_name: str | None,
     ref: str | None,
-    output: Path | None,
+    output: str | None,
+    clobber: bool,
     json_options: tuple[str, ...],
 ) -> None:
     """Read one file (up to 1 MiB) without cloning. Default stdout accepts safe UTF-8 text only."""
     fields = _read_fields(json_options, READ_FILE_JSON_FIELDS)
     if fields is not None and output is not None:
         raise click.UsageError("Specify only one of --json and --output.")
+    # Path() normalizes a trailing slash or /. away. Do not turn an explicit
+    # directory spelling into permission to replace a file of the same name.
+    if clobber and (output is None or os.path.basename(output) in {"", ".", ".."}):
+        raise click.UsageError("--clobber requires --output FILE (an explicit filename).")
     owner, name = _read_target(ctx, repo_name)
     token = ctx.obj["app"].token
     content = fetch_file(owner, name, path, ref, token)
@@ -448,7 +459,7 @@ def repo_read_file(
     elif output is None:
         write_stdout(content)
     else:
-        write_file(output, content)
+        write_file(Path(output), content, clobber=clobber)
 
 
 set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)

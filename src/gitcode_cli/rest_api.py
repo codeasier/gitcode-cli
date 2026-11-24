@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, quote, unquote, unquote_plus
@@ -390,6 +391,19 @@ def _page_number(params: dict[str, str]) -> int:
     return int(raw)
 
 
+def validate_bearer_target(url: str, query: Iterable[tuple[str, str]], token: str) -> None:
+    """Validate the actual URL fields before sending credentials in a header."""
+    if token and (not token.isascii() or not token.isprintable() or any(c.isspace() for c in token)):
+        raise APIError("Invalid GitCode authentication token.")
+    _check_token(url, token)
+    for key, value in query:
+        validate_field(key)
+        if _control(value):
+            raise APIError("Invalid request query value.")
+        _check_token(key, token)
+        _check_token(value, token)
+
+
 def _request_target(
     endpoint: str,
     version: str | None,
@@ -399,17 +413,8 @@ def _request_target(
     url, params = endpoint_url(endpoint, version)
     if params.keys() & query.keys():
         raise APIError("A query parameter was supplied twice.")
-    for key, value in query.items():
-        validate_field(key)
-        if _control(value):
-            raise APIError("Invalid request query value.")
     params.update(query)
-    if token and (not token.isascii() or not token.isprintable() or any(c.isspace() for c in token)):
-        raise APIError("Invalid GitCode authentication token.")
-    _check_token(url, token)
-    for key, value in params.items():
-        _check_token(key, token)
-        _check_token(value, token)
+    validate_bearer_target(url, params.items(), token)
     return url, params
 
 

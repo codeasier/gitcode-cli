@@ -483,6 +483,11 @@
             "category": "extension",
             "reason": "gc provides GitCode-specific R1–R4 merge-readiness auditing.",
             "value": "Audit pull requests against merge-readiness rules"
+          },
+          "update-plan": {
+            "category": "extension",
+            "reason": "gc compares immutable same-repository PR snapshot commits without updating either branch.",
+            "value": "Compare the recorded SHAs of a same-repository open PR (read-only)"
           }
         },
         "changed_commands": {

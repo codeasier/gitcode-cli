@@ -86,6 +86,14 @@ ENTRIES: list[CompatEntry] = [
     _e("discussion create", None, CompatStatus.IMPLEMENTED, "Create in an existing category.", proxy_allowed=False),
     _e("discussion edit", None, CompatStatus.IMPLEMENTED, "GitCode v5 full update.", proxy_allowed=False),
     _e("discussion comment", None, CompatStatus.IMPLEMENTED, "Add a top-level comment.", proxy_allowed=False),
+    _e(
+        "discussion replies",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: one reply page for an explicit GitCode repository discussion comment.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
     _e(
         "run view",

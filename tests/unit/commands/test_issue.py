@@ -75,8 +75,6 @@ class TestIssueList:
                 "search",
                 "--milestone",
                 "v1",
-                "--mention",
-                "octocat",
                 "-L",
                 "1",
             ],
@@ -91,7 +89,7 @@ class TestIssueList:
                 "assignee": "assignee",
                 "search": "search",
                 "milestone": "v1",
-                "mention": "octocat",
+                "mention": None,
                 "page": 1,
                 "per_page": 1,
             },
@@ -1028,75 +1026,3 @@ class TestIssueDevelop:
         assert result.exit_code != 0
         assert "--base and --name are not supported" in result.output
         mock_browser.assert_not_called()
-
-
-class TestIssueStatus:
-    def test_default(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            {"login": "alice"},
-            [
-                {
-                    "number": "1",
-                    "state": "open",
-                    "title": "Assigned",
-                    "labels": [{"name": "bug"}],
-                    "created_at": "2026-05-10T14:40:59Z",
-                }
-            ],
-            [],
-            [],
-        ]
-        result = runner.invoke(main, ["issue", "status"])
-        assert result.exit_code == 0
-        assert "Relevant issues in owner/repo" in result.output
-        assert "GitCode-limited approximation" in result.output
-        assert "Issues assigned to you" in result.output
-        assert "#1  OPEN  Assigned  bug  2026-05-10T14:40:59Z" in result.output
-        assert mock_client.get.call_args_list == [
-            call("/user"),
-            call("/user/issues", params={"filter": "assigned", "state": "open"}),
-            call("/user/issues", params={"filter": "created", "state": "open"}),
-            call("/repos/owner/repo/issues", params={"state": "open", "mention": "alice"}),
-        ]
-
-    def test_json_outputs_grouped_status(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            {"login": "alice"},
-            [{"number": "1", "state": "open", "title": "Assigned"}],
-            [{"number": "2", "state": "open", "title": "Created"}],
-            [{"number": "3", "state": "open", "title": "Mentioned"}],
-        ]
-        result = runner.invoke(main, ["issue", "status", "--json", "assigned,createdBy"])
-        assert result.exit_code == 0
-        assert '"assigned"' in result.output
-        assert '"createdBy"' in result.output
-        assert '"mentioned"' not in result.output
-
-    def test_jq_outputs_grouped_status(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            {"login": "alice"},
-            [{"number": "1", "state": "open", "title": "Assigned"}],
-            [],
-            [],
-        ]
-        result = runner.invoke(main, ["issue", "status", "--jq", ".assigned[].title"])
-        assert result.exit_code == 0
-        assert result.output == '"Assigned"\n'
-
-    def test_template_outputs_grouped_status(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            {"login": "alice"},
-            [{"number": "1", "state": "open", "title": "Assigned"}],
-            [],
-            [],
-        ]
-        result = runner.invoke(main, ["issue", "status", "--template", "{{.assigned}}"])
-        assert result.exit_code == 0
-        assert "Assigned" in result.output
-        assert "number" in result.output
-
-    def test_status_fails_when_current_user_has_no_login(self, runner, mock_client, mock_repo):
-        mock_client.get.return_value = {}
-        result = runner.invoke(main, ["issue", "status"])
-        assert result.exit_code != 0
-        assert "current user has no login" in result.output

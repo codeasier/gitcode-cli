@@ -118,6 +118,7 @@ gc repo set-default --unset
 | --- | --- |
 | 认证方式 | GitCode 使用 `access_token` 查询参数，不同于 GitHub API 的认证模型。 |
 | Issue 创建/更新 API | GitCode 创建/更新 issue 时会在请求体中传入 `repo`。更新还要求 `title`；close/reopen 和部分字段编辑保留读取到的当前标题，无法取得标题时拒绝写入。 |
+| 个人 Issue 状态 | 直调 `gc issue status -R OWNER/REPO` 只读取当前账号在[指定仓库](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/)负责及创建的打开 Issue，核对仓库路径、用户登录名和两者的 ID。不请求账号的全局 Issue。官方没有提及用户的过滤契约：文本注明不可用，`--json mentioned` 返回 `null` 而非空数组，`issue list --mention` 被拒绝。GitCode 代理拒绝 `gh issue status`。 |
 | PR 状态 | `gc pr status -R OWNER/REPO -c`（`--conflict-status`）查看仓库第一页的打开 PR，最多 20 个。它为每条记录读取一次 [PR 详情](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/)，只报告 `mergeable_state.conflict_passed`：通过、未通过，缺失或非布尔值显示未知；这不代表 PR 可以合入。详情读取失败或身份不一致时整个报告失败；不加 `-c` 不读取详情。仓库视图没有实现 [gh 个人状态](https://cli.github.com/manual/gh_pr_status)、当前分支分组及其 JSON 结构，指向 GitCode 的代理会拒绝 `gh pr status`。脚本可用 `gc pr list -s open -A @me --json number,title` 查询自己创建的打开 PR。 |
 | PR squash | `--squash` 按当前 GitCode 契约发送 `merge_method=merge` 和独立布尔字段 `squash=true`。 |
 | PR checkout 与分支删除 | 要求完整源仓库身份和完整 head SHA。fetch 使用源仓库规范 HTTPS URL 并校验提交；删除使用显式 SHA lease，保护并发推送。源元数据缺失或冲突时拒绝操作，仅仓库短名称或 `head.ref` 不足以定位。执行环境需具备原生 Git HTTPS 凭据。改变实际 fetch/push URL 的 Git 重写规则会被拒绝；通过核验的操作使用仅当前命令生效的固定目标，不修改持久 Git 配置。 |
@@ -137,3 +138,23 @@ gc repo set-default --unset
 POSIX 下 token 配置使用私有目录（`0700`）、原子替换文件（`0600`），并拒绝链接存储。HTTP 传输日志及抛出的错误会脱敏当前 token。Windows 文件隐私依赖用户 profile 的 ACL。
 
 squash/title 契约已于 2026-10-30 对照[合并 PR](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge)和[更新 Issue](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number)文档核实；离线契约测试不代表已验证真实 sandbox 兼容性。
+
+### 仓库内的个人 Issue 状态
+
+脚本可用 `gc issue status -R owner/repo --json assigned,createdBy` 或 `--jq '.assigned[].title'`。
+两组都只输出编号、ID、状态、标题、创建时间和标签名，不返回原始正文或 URL。每组最多 10 个数据页，每页 50 条，
+再读至空页；身份不明、畸形或重复数据、限流、分页超界均整次失败，不输出部分结果。这是依次读取，不保证事务快照。
+离线契约测试不等于真实账号验收。
+
+[列表接口文档](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/)将 `assignee` 称为指派人 ID。
+在 GitCode 的只读对照中，传登录名能返回预期条目，传用户对象 ID 则返回 404。命令以当前账号的登录名查询
+`assignee` 和 `creator`，再用登录名和 ID 核对每条结果中的对应身份，不会更换筛选值重试。
+
+如果响应提供首页、上一页、下一页或末页等分页提示，提示必须与请求的页码、仓库、过滤条件和实际收到的分页一致。
+命令不会跟随响应链接。不传 `-R` 时，只接受可无歧义定位的 GitCode origin。
+
+SDK 的 `IssueAdapter.status` 使用相同的核验队列，仍返回 `AdapterActionResult`。
+标准 `GitCodeClient` 复用自身 HTTP 传输，执行仅使用 Bearer 头的有界读取；
+自定义客户端须显式实现 `read_issue_status_page(endpoint, params)`，返回有界 JSON、响应头和准确的规范请求 URL，
+不得重试或跟随重定向。标准客户端不接受账号或仓库元数据请求携带查询参数；仓库 Issue 队列只允许
+打开状态、有界分页以及创建人或指派人中的一种过滤条件。不支持的客户端在读取 token 前即拒绝。

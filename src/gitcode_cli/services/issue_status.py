@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 import httpx
 
 from .._redact import redact
-from ..client import ISSUE_STATUS_MAX_PAGE, ISSUE_STATUS_PAGE_SIZE
+from ..client import ISSUE_STATUS_LOGIN, ISSUE_STATUS_MAX_PAGE, ISSUE_STATUS_PAGE_SIZE
 from ..errors import APIError, GCError
 from ..repo_read import bounded_json_response, bounded_read_url, validate_target
 
@@ -38,7 +38,7 @@ def _actor(value: Any) -> tuple[str, str]:
         uid = str(uid)
     if (
         not isinstance(login, str)
-        or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}", login)
+        or not ISSUE_STATUS_LOGIN.fullmatch(login)
         or not isinstance(uid, str)
         or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", uid)
     ):
@@ -351,13 +351,15 @@ def status(owner: str, name: str, token: str, *, read_page: StatusPageReader | N
     result: dict[str, Any] = {"mentioned": None}
     numbers: dict[int, int] = {}
     ids: dict[int, int] = {}
-    for group, param, value in (("assigned", "assignee", actor[1]), ("createdBy", "creator", actor[0])):
+    # The repository issue route accepts the account login for both selectors.
+    # The opaque ID is still required to verify row identity; never retry with it.
+    for group, param in (("assigned", "assignee"), ("createdBy", "creator")):
         seen: set[int] = set()
         rows = []
         pagination = _Pagination()
         path = f"/repos/{identity[0]}/issues"
         for page in range(1, MAX_DATA_PAGES + 2):
-            params = {param: value, "state": "open", "page": str(page), "per_page": str(PAGE_SIZE)}
+            params = {param: actor[0], "state": "open", "page": str(page), "per_page": str(PAGE_SIZE)}
             items, headers, url = read(path, params)
             pagination.validate(items, headers, url)
             if not items:

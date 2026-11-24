@@ -16,6 +16,7 @@ _STATUS_ROUTE = re.compile(
     r"/user|/repos/[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}(?P<queue>/issues)?"
 )
 _STATUS_PAGE_FIELDS = frozenset({"state", "page", "per_page"})
+ISSUE_STATUS_LOGIN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}")
 
 
 def _valid_status_query(params: dict[str, str]) -> bool:
@@ -23,11 +24,7 @@ def _valid_status_query(params: dict[str, str]) -> bool:
     if len(filters) != 1 or not _STATUS_PAGE_FIELDS.issubset(params):
         return False
     actor = filters.pop()
-    if actor == "creator":
-        actor_pattern = r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}"
-    elif actor == "assignee":
-        actor_pattern = r"[A-Za-z0-9_-]{1,128}"
-    else:
+    if actor not in {"assignee", "creator"}:
         return False
     page = params["page"]
     return (
@@ -35,7 +32,7 @@ def _valid_status_query(params: dict[str, str]) -> bool:
         and params["per_page"] == str(ISSUE_STATUS_PAGE_SIZE)
         and re.fullmatch(r"[1-9][0-9]?", page) is not None
         and int(page) <= ISSUE_STATUS_MAX_PAGE
-        and re.fullmatch(actor_pattern, params[actor]) is not None
+        and ISSUE_STATUS_LOGIN.fullmatch(params[actor]) is not None
     )
 
 

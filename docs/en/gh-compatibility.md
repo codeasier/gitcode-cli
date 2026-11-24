@@ -131,6 +131,11 @@ Each queue is limited to ten pages of 50 issues and must reach an empty terminal
 an unconfirmed identity, a rate limit, or an unexhausted scan gives an error, without a partial report. These are
 sequential reads of open issues, not a transaction. Offline contracts are not live provider acceptance.
 
+The [list endpoint](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-issues/) describes
+`assignee` as an ID. In a read-only GitCode comparison the login returned the expected issues, while the
+opaque user ID returned 404. The command sends the authenticated login for both `assignee` and `creator`,
+then checks each returned actor against both login and ID. It does not retry with another selector.
+
 Provider pagination hints, including first, previous, next, and last links, must agree with
 the requested page, repository, and filters and with the pages actually
 received. The command never follows response links. Without `-R`, only an

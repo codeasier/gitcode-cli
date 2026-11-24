@@ -44,7 +44,7 @@ def page(kind, n, payload):
     return (
         URI,
         {
-            kind: ME["id"] if kind == "assignee" else ME["login"],
+            kind: ME["login"],
             "state": "open",
             "per_page": str(issue_status.PAGE_SIZE),
             "page": str(n),
@@ -116,6 +116,49 @@ def test_verified_queues_native_formats_and_null_mentions(run, args):
         assert "Assigned" in result.output and "number" in result.output
 
 
+def test_assignee_login_not_opaque_id_and_both_roles_still_verified(run):
+    # The provider accepts a single login selector. Keep the stable ID for
+    # checking returned rows, including a secondary assignment.
+    me = {"login": "alice.test", "id": "1" * 24}
+    query = {"state": "open", "per_page": "50", "page": "1"}
+    assigned = {**ROW, "user": OTHER, "assignee": OTHER, "assignees": [OTHER, me]}
+    both = {
+        **ROW,
+        "id": 101,
+        "number": "8",
+        "user": me,
+        "assignee": me,
+        "html_url": "https://gitcode.com/Owner/Repo/issues/8",
+    }
+    created = {
+        **ROW,
+        "id": 102,
+        "number": "9",
+        "user": me,
+        "assignee": OTHER,
+        "html_url": "https://gitcode.com/Owner/Repo/issues/9",
+    }
+    result = run(
+        ["issue", "status", "--json", "assigned,createdBy,mentioned"],
+        METADATA,
+        ("/user", {}, me),
+        (URI, {**query, "assignee": "alice.test"}, [assigned, both]),
+        (URI, {**query, "assignee": "alice.test", "page": "2"}, []),
+        (URI, {**query, "creator": "alice.test"}, [both, created]),
+        (URI, {**query, "creator": "alice.test", "page": "2"}, []),
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [i["number"] for i in data["assigned"]] == ["7", "8"]
+    assert [i["number"] for i in data["createdBy"]] == ["8", "9"]
+    assert data["mentioned"] is None
+
+
+def test_assignee_filter_failure_does_not_retry_with_the_object_id(run):
+    result = run(["issue", "status"], METADATA, USER, page("assignee", 1, httpx.Response(404)))
+    assert result.exit_code == 1 and "Assigned" not in result.output
+
+
 def test_observed_public_row_shape_with_canonical_metadata_and_no_assignee(run):
     # Minimal synthetic values model the public GitCode list schema: the
     # nested repository has no namespace, the creator has an opaque object ID
@@ -138,7 +181,7 @@ def test_observed_public_row_shape_with_canonical_metadata_and_no_assignee(run):
         ["issue", "status", "--json", "createdBy,mentioned"],
         (METADATA[0], {}, metadata),
         ("/user", {}, {"id": PUBLIC_ACTOR["id"], "login": PUBLIC_ACTOR["login"]}),
-        (URI, {**page("assignee", 1, [])[1], "assignee": PUBLIC_ACTOR["id"]}, []),
+        (URI, {**page("assignee", 1, [])[1], "assignee": PUBLIC_ACTOR["login"]}, []),
         (URI, {**page("creator", 1, [])[1], "creator": PUBLIC_ACTOR["login"]}, [item]),
         (URI, {**page("creator", 2, [])[1], "creator": PUBLIC_ACTOR["login"]}, []),
     )
@@ -244,44 +287,44 @@ def test_bad_continuation_no_partial_output_or_retry(run, next_result):
         {"X-Truncated": "true"},
         {"X-Incomplete-Results": "true"},
         {"Content-Range": "items 0-0/2"},
-        {"X-Next-Page": "", "Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="next"'},
+        {"X-Next-Page": "", "Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="next"'},
         {
             "Link": "<https://other.invalid/api/v5/repos/Owner/Repo/issues?"
-            'assignee=u123&state=open&page=2&per_page=50>; rel="next"'
+            'assignee=alice&state=open&page=2&per_page=50>; rel="next"'
         },
-        {"Link": '</api/v5/repos/Other/Repo/issues?assignee=u123&state=open&page=2&per_page=50>; rel="next"'},
+        {"Link": '</api/v5/repos/Other/Repo/issues?assignee=alice&state=open&page=2&per_page=50>; rel="next"'},
         {"Link": '<?assignee=other&state=open&page=2&per_page=50>; rel="next"'},
-        {"Link": '<?assignee=u123&state=all&page=2&per_page=50>; rel="next"'},
-        {"Link": '<?assignee=u123&state=open&page=3&per_page=50>; rel="next"'},
+        {"Link": '<?assignee=alice&state=all&page=2&per_page=50>; rel="next"'},
+        {"Link": '<?assignee=alice&state=open&page=3&per_page=50>; rel="next"'},
         {"Link": '<?state=open&page=2&per_page=50>; rel="next"'},
-        {"Link": '<?assignee=u123&state=open&page=2&page=2&per_page=50>; rel="next"'},
-        {"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="next"; rel="prev"'},
-        {"Link": '<?assignee=u123&state=open&page=1&per_page=50>; rel="prev"'},
-        {"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="first"'},
+        {"Link": '<?assignee=alice&state=open&page=2&page=2&per_page=50>; rel="next"'},
+        {"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="next"; rel="prev"'},
+        {"Link": '<?assignee=alice&state=open&page=1&per_page=50>; rel="prev"'},
+        {"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="first"'},
         {"Link": '<?assignee=other&state=open&page=1&per_page=50>; rel="first"'},
-        {"Link": '<?assignee=u123&state=open&page=1&per_page=50>; rel="first"; anchor=""'},
-        {"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="next"; anchor="https://foreign.invalid"'},
-        {"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="last"; anchor=""'},
+        {"Link": '<?assignee=alice&state=open&page=1&per_page=50>; rel="first"; anchor=""'},
+        {"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="next"; anchor="https://foreign.invalid"'},
+        {"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="last"; anchor=""'},
         {"Link": '<?creator=alice&state=open&page=2&per_page=50>; rel="last"'},
-        {"Link": '</api/v5/repos/Other/Repo/issues?assignee=u123&state=open&page=2&per_page=50>; rel="last"'},
+        {"Link": '</api/v5/repos/Other/Repo/issues?assignee=alice&state=open&page=2&per_page=50>; rel="last"'},
         {
             "X-Total": "1",
-            "Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="last"',
+            "Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="last"',
         },
         {
             "X-Total-Pages": "3",
-            "Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="last"',
+            "Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="last"',
         },
         {
             "Link": (
-                '<?assignee=u123&state=open&page=2&per_page=50>; rel="next", '
-                '<?assignee=u123&state=open&page=1&per_page=50>; rel="last"'
+                '<?assignee=alice&state=open&page=2&per_page=50>; rel="next", '
+                '<?assignee=alice&state=open&page=1&per_page=50>; rel="last"'
             )
         },
         [("X-Next-Page", "2"), ("X-Next-Page", "3")],
         [
-            ("Link", '<?assignee=u123&state=open&page=2&per_page=50>; rel="next"'),
-            ("Link", '<?assignee=u123&state=open&page=2&per_page=50>; rel="next"'),
+            ("Link", '<?assignee=alice&state=open&page=2&per_page=50>; rel="next"'),
+            ("Link", '<?assignee=alice&state=open&page=2&per_page=50>; rel="next"'),
         ],
     ],
 )
@@ -298,7 +341,7 @@ def test_contradictory_nonempty_pages_never_print_or_continue(run, headers):
 def test_consistent_continuation_metadata_is_validated_against_local_requests(run):
     second = {**ROW, "id": 101, "number": 8, "html_url": "https://gitcode.com/Owner/Repo/issues/8"}
     headers = {
-        "Link": '<?per_page=50&page=2&state=open&assignee=u123>; rel="next last"; title="valid, optional"',
+        "Link": '<?per_page=50&page=2&state=open&assignee=alice>; rel="next last"; title="valid, optional"',
         "X-Next-Page": "2",
         "X-Total": "2",
         "X-Total-Pages": "2",
@@ -317,7 +360,7 @@ def test_consistent_continuation_metadata_is_validated_against_local_requests(ru
                 headers={
                     "X-Next-Page": "",
                     "X-Prev-Page": "1",
-                    "Link": '<?per_page=50&page=1&state=open&assignee=u123>; rel="first prev"',
+                    "Link": '<?per_page=50&page=1&state=open&assignee=alice>; rel="first prev"',
                 },
             ),
         ),
@@ -343,7 +386,7 @@ def test_empty_page_cannot_hide_incomplete_results(run, headers):
 @pytest.mark.parametrize("items", [[], [ROW]])
 def test_last_link_requires_reaching_last_page_without_following_link(run, items):
     first = httpx.Response(
-        200, json=items, headers={"Link": '<?assignee=u123&state=open&page=3&per_page=50>; rel="last"'}
+        200, json=items, headers={"Link": '<?assignee=alice&state=open&page=3&per_page=50>; rel="last"'}
     )
     remaining = [page("assignee", 2, [])] if items else []
     result = run(["issue", "status"], METADATA, USER, page("assignee", 1, first), *remaining)
@@ -352,12 +395,12 @@ def test_last_link_requires_reaching_last_page_without_following_link(run, items
 
 def test_last_link_cannot_change_on_a_following_page(run):
     first = httpx.Response(
-        200, json=[ROW], headers={"Link": '<?assignee=u123&state=open&page=3&per_page=50>; rel="last"'}
+        200, json=[ROW], headers={"Link": '<?assignee=alice&state=open&page=3&per_page=50>; rel="last"'}
     )
     second = httpx.Response(
         200,
         json=[{**ROW, "id": 101, "number": 8, "html_url": "https://gitcode.com/Owner/Repo/issues/8"}],
-        headers={"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="last"'},
+        headers={"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="last"'},
     )
     result = run(["issue", "status"], METADATA, USER, page("assignee", 1, first), page("assignee", 2, second))
     assert result.exit_code == 1 and "Assigned" not in result.output
@@ -368,14 +411,14 @@ def test_last_link_cannot_change_on_a_following_page(run):
     [
         {"X-Prev-Page": ""},
         {"X-Prev-Page": "2"},
-        {"Link": '<?assignee=u123&state=open&page=2&per_page=50>; rel="prev"'},
+        {"Link": '<?assignee=alice&state=open&page=2&per_page=50>; rel="prev"'},
         {"Link": '<?creator=alice&state=open&page=1&per_page=50>; rel="prev"'},
         {
-            "Link": '<?assignee=u123&state=open&page=1&per_page=50>; rel="prev"; anchor=""',
+            "Link": '<?assignee=alice&state=open&page=1&per_page=50>; rel="prev"; anchor=""',
             "X-Prev-Page": "1",
         },
         {
-            "Link": '<?assignee=u123&state=open&page=1&per_page=50>; rel="prev"',
+            "Link": '<?assignee=alice&state=open&page=1&per_page=50>; rel="prev"',
             "X-Prev-Page": "2",
         },
         [("X-Prev-Page", "1"), ("X-Prev-Page", "2")],
@@ -564,7 +607,7 @@ def test_sdk_rejects_custom_scope_change():
         client.close()
 
 
-_SDK_QUERY = {"state": "open", "page": "1", "per_page": "50", "assignee": "u123"}
+_SDK_QUERY = {"state": "open", "page": "1", "per_page": "50", "assignee": "alice.test"}
 
 
 @pytest.mark.parametrize(

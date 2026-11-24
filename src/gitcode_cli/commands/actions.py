@@ -24,6 +24,13 @@ repo_option = click.option("-R", "--repo", "repo_name", help="[HOST/]OWNER/REPO 
 page_option = click.option("--page", type=click.IntRange(1), default=1, show_default=True)
 limit_option = click.option("-L", "--limit", type=click.IntRange(1, 100), default=20, show_default=True)
 offset_option = click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+_RUN_LIST_FIELDS = {
+    "databaseId": "workflow_run_id",
+    "workflowName": "workflow_name",
+    "event": "event",
+    "headSha": "head_sha",
+    "status": "status",
+}
 
 
 @contextmanager
@@ -69,16 +76,34 @@ def run():
 @click.option("-e", "--event", type=click.Choice(["MR", "Push", "Manual"]))
 @click.option("-s", "--status", help="GitCode status, e.g. FAILED.")
 @click.option("--pr", type=click.IntRange(1), help="PR number, not database ID.")
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select fields from this page of runs.")
 @click.pass_context
-def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr):
+def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr, selections):
     """List one page of runs, with a continuation page when available."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(key not in _RUN_LIST_FIELDS for key in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(_RUN_LIST_FIELDS))
     with _service(ctx, repo_name) as svc:
-        _show(
-            ctx,
-            svc.page(
-                "runs", page, limit, branch=branch, workflow_id=workflow, event=event, status=status, pull_request_id=pr
-            ),
+        result = svc.page(
+            "runs", page, limit, branch=branch, workflow_id=workflow, event=event, status=status, pull_request_id=pr
         )
+    if not fields:
+        _show(ctx, result)
+        return
+    rows = []
+    for run_entry in result["workflow_runs"]:
+        values = {field: run_entry.get(_RUN_LIST_FIELDS[field]) for field in fields}
+        rows.append({key: value if isinstance(value, str) and value else None for key, value in values.items()})
+    _show(ctx, rows)
+
+
+set_gc_help(run_list, gc_json_fields=list(_RUN_LIST_FIELDS))
 
 
 @run.command("view")

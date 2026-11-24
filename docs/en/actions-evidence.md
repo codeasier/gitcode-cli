@@ -2,7 +2,7 @@
 
 Definitions and executions have different identities: `gc workflow list` lists workflow
 definitions, `gc run list` lists runs, and `gc run view` lists the jobs or steps within one
-run. Output is JSON using GitCode field names. These commands do not translate the GitHub
+run. Default output is JSON using GitCode field names. These commands do not translate the GitHub
 Actions model, enable/disable workflows, or export complete job environments.
 
 ```console
@@ -48,6 +48,19 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   `ci_state_passed` is **not** a v8 result. Exit 0 does not establish required-check
   coverage, permission to merge, or merge readiness. This is a bounded observation,
   not an atomic server snapshot.
+
+## Select fields from one run-list page
+
+`gc run list -R owner/repo --page 2 --json databaseId,workflowName,event,headSha,status`
+prints a JSON array with the selected fields from that single
+[GitCode runs page](https://docs.gitcode.com/en/docs/apis/get-api-v-8-repos-owner-repo-actions-runs/).
+The GitCode run ID (`databaseId`) stays a string, and `event` and `status` keep their
+native values, for example `MR` and `COMPLETED`. A completed run alone does not imply
+success. Missing, empty or non-string fields become `null`; an empty page prints
+`[]`, while a rejected or inconsistent page emits no data. Select each field at most
+once. This mode does not follow later pages, fetch run details, or verify PR head
+identity. Omit `--json` for the full page envelope and its `next_page`. This is direct
+`gc`, not the `gh` proxy.
 
 ## Select PR check fields
 

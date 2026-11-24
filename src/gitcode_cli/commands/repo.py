@@ -742,7 +742,10 @@ def repo_delete(ctx: click.Context, repo_name: str | None, repository: str | Non
 @click.option("-b", "--branch", required=True, multiple=True, help="One explicit fork branch to query.")
 @click.pass_context
 def repo_sync_status(ctx: click.Context, repository: str, branch: tuple[str, ...]) -> None:
-    """Read the provider's status as JSON. Use a positional OWNER/FORK without -R; no branch is updated."""
+    """Read the provider's status as JSON. Use a positional OWNER/FORK without -R; no branch is updated.
+
+    Output includes a boolean repo_sync_result and a repo_sync_message string or null.
+    """
     app = ctx.obj["app"]
     if app.repo is not None or len(branch) != 1:
         raise click.UsageError("Specify one positional OWNER/FORK and one --branch; do not use -R.")

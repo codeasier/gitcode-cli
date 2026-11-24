@@ -27,9 +27,11 @@ with **one GET**. Sign in first. Supply the literal owner/fork and one short
 branch name, not a URL, `-R`, or `refs/heads/…`. There is no origin or default
 branch lookup, redirect, retry, or fallback to the PUT above.
 
-The JSON result preserves GitCode's boolean `repo_sync_result` and string
-`repo_sync_message`. Either boolean is a successful *read*: neither proves
-commit ancestry or an ahead/behind count. Control characters, long messages,
-and messages resembling credentials or links are withheld. Malformed data
-fails without partial output. This is a native `gc` command, not a `gh`
-or MCP interface. The request contract is tested offline, not against a live fork.
+The JSON output always has a boolean `repo_sync_result` and a
+`repo_sync_message` key. If GitCode omits the message or returns `null`,
+the CLI outputs `null` for that key. Either boolean is a successful *read*:
+neither proves commit ancestry or an ahead/behind count. Messages with
+control characters, excessive length, or content resembling credentials or
+links are replaced with `[message withheld]`. Other message types and
+malformed data fail without partial output. This is a native `gc` command,
+not a `gh` or MCP interface.

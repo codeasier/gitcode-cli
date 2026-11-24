@@ -65,6 +65,23 @@ def test_one_get_with_only_explicit_branch(router, value, message):
     assert TOKEN not in result.stdout and TOKEN not in result.stderr and len(router.calls) == 1
 
 
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize("message_fields", [{}, {"repo_sync_message": None}], ids=["omitted", "null"])
+def test_optional_provider_message_preserves_result_and_output_shape(router, value, message_fields):
+    def handle(req):
+        assert req.url.params.multi_items() == [("branch", BRANCH)]
+        assert req.headers["Authorization"] == f"Bearer {TOKEN}"
+        assert "private-token" not in req.headers and TOKEN not in str(req.url)
+        assert not req.content
+        return httpx.Response(200, json={"repo_sync_result": value, **message_fields})
+
+    router.get(URL).mock(side_effect=handle)
+    result = run(*ARGS)
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == {"repo_sync_result": value, "repo_sync_message": None}
+    assert not result.stderr and len(router.calls) == 1
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -163,11 +180,15 @@ def test_no_ambient_or_anonymous_fallback(router, monkeypatch):
         b"[]",
         b"{}",
         b'{"events":[],"has_next_page":false}',
-        b'{"repo_sync_result":true}',
-        b'{"repo_sync_result":false,"repo_sync_message":null}',
+        b'{"repo_sync_result":null}',
+        b'{"repo_sync_result":true,"repo_sync_message":false}',
+        b'{"repo_sync_result":true,"repo_sync_message":0}',
+        b'{"repo_sync_result":true,"repo_sync_message":[]}',
+        b'{"repo_sync_result":true,"repo_sync_message":{}}',
         b'{"repo_sync_result":1,"repo_sync_message":"ok"}',
         b'{"repo_sync_result":"true","repo_sync_message":"ok"}',
         b'{"repo_sync_result":true,"repo_sync_result":false,"repo_sync_message":"ok"}',
+        b'{"repo_sync_result":true,"repo_sync_message":null,"repo_sync_message":"ok"}',
     ],
 )
 def test_invalid_shape_or_duplicate_fields_fail_without_a_second_request(router, body):
@@ -218,7 +239,9 @@ def test_oversize_body_fails_without_partial_output(router):
 
 def test_native_only_visible_command(router):
     assert "sync-status" in run("repo", "--help").stdout
-    assert "without -R" in run("repo", "sync-status", "--help").stdout
+    help_text = run("repo", "sync-status", "--help").stdout
+    assert "without -R" in help_text
+    assert "repo_sync_message string or null" in help_text
     with pytest.raises(ProxyError, match="refusing to fall back"):
         validate_gitcode_command(ARGS)
     assert not router.calls

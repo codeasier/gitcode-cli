@@ -20,7 +20,9 @@ gc 仅发起一次同步，只有收到布尔值 `repo_sync_result=true` 才报�
 先登录，再显式传入仓库和一个短分支名，不接受 URL、`-R` 或 `refs/heads/…`。
 不读取本地 origin 或默认分支，不跟随重定向、不重试，也不会回退到上述 PUT。
 
-输出 JSON 保留服务端布尔值 `repo_sync_result` 和字符串 `repo_sync_message`。
+输出 JSON 始终包含布尔值 `repo_sync_result` 和 `repo_sync_message` 字段。
+如果 GitCode 省略消息或返回 `null`，该字段输出 `null`。
 无论布尔值是真还是假，都只是读取成功，不能据此判断提交祖先或领先、落后数。
-含控制字符、超长、疑似凭据或链接的消息不展示；响应格式不符则报错且无部分输出。
-该命令仅属于原生 `gc`，不通过 `gh` 或 MCP 提供。请求契约仅经离线验证，未实测真实 fork。
+含控制字符、超长、疑似凭据或链接的消息替换为 `[message withheld]`。
+消息字段不是字符串或 `null`，或者响应格式不符时，命令报错且无部分输出。
+该命令仅属于原生 `gc`，不通过 `gh` 或 MCP 提供。

@@ -31,15 +31,16 @@ def read_sync_status(repository: str, branch: str, token: str) -> str:
     if not isinstance(result, dict) or type(result.get("repo_sync_result")) is not bool:
         raise APIError("Invalid GitCode fork sync status: expected a boolean repo_sync_result.")
     message = result.get("repo_sync_message")
-    if not isinstance(message, str):
-        raise APIError("Invalid GitCode fork sync status: expected a string repo_sync_message.")
-    if (
-        len(message) > 512
-        or not message.isprintable()
-        or redact(message, token) != message
-        or _SENSITIVE.search(message)
-    ):
-        message = "[message withheld]"
+    if message is not None:
+        if not isinstance(message, str):
+            raise APIError("Invalid GitCode fork sync status: expected a string or null repo_sync_message.")
+        if (
+            len(message) > 512
+            or not message.isprintable()
+            or redact(message, token) != message
+            or _SENSITIVE.search(message)
+        ):
+            message = "[message withheld]"
     return json.dumps(
         {"repo_sync_result": result["repo_sync_result"], "repo_sync_message": message}, ensure_ascii=False
     )

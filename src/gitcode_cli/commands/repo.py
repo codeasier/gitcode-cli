@@ -18,7 +18,7 @@ from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gi
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
 from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
-from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
+from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page, fetch_verified_tree
 from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
 from ..repo_read_file import METADATA_FIELDS, encode_file, fetch_file, write_file, write_stdout
 from ..repo_sync_status import read_sync_status
@@ -366,12 +366,13 @@ def _read_fields(options: tuple[str, ...], allowed: tuple[str, ...]) -> tuple[st
     return fields
 
 
-@repo_group.command("read-dir", short_help="List one page of a GitCode directory")
+@repo_group.command("read-dir", short_help="List a GitCode directory")
 @click.argument("path", required=False)
 @click.option(
     "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
 )
 @click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
+@click.option("--all", "read_all", is_flag=True, help="Read a complete tree by its tree SHA; omit PATH and --page.")
 @click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
 @click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
 @click.option(
@@ -389,14 +390,21 @@ def repo_read_dir(
     path: str | None,
     repo_name: str | None,
     ref: str,
+    read_all: bool,
     page: int,
     per_page: int,
     json_options: tuple[str, ...],
 ) -> None:
     """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
     fields = _read_fields(json_options, READ_DIR_JSON_FIELDS)
+    if read_all and (path is not None or ctx.get_parameter_source("page") is not click.core.ParameterSource.DEFAULT):
+        raise click.UsageError("--all takes a tree SHA via --ref. Omit PATH and --page.")
     owner, name = _read_target(ctx, repo_name)
     token = ctx.obj["app"].token
+    if read_all:
+        entries = fetch_verified_tree(owner, name, ref, per_page, token)
+        click.open_file("-", "wb").write(encode_page(entries, fields, token))
+        return
     entries = fetch_page(owner, name, path, ref, page, per_page, token)
     if not entries:
         message = "No entries on this page; the Tree API does not confirm the path is an existing directory."

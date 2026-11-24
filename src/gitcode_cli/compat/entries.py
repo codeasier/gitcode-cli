@@ -95,6 +95,19 @@ ENTRIES: list[CompatEntry] = [
         proxy_allowed=False,
     ),
     _e(
+        "run watch",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: bounded, run-level observation of the current GitCode attempt; no PR gate evidence.",
+        proxy_allowed=False,
+    ),
+    *[
+        _e("run watch", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-R/--repo", "-i/--interval", "--exit-status")
+    ],
+    _e("run watch", "--timeout", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
+    _e("run watch", "--compact", CompatStatus.NOT_IN_CLI, "No step-level watch.", proxy_allowed=False),
+    _e(
         "run rerun",
         None,
         CompatStatus.IMPLEMENTED,

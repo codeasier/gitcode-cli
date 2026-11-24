@@ -14,11 +14,12 @@ import click
 
 from .. import release_assets as binary
 from .. import release_files as local
+from .. import repo_read
 from ..errors import GCError
 from ..formatters import output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
-from ..services.releases import ReleaseService
+from ..services.releases import ReleaseService, release_record, tag_segment
 from ..utils import open_in_browser, safe_echo
 
 repo_option = click.option("-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO.")
@@ -101,6 +102,30 @@ def _check_fields(fields):
 @click.group("release", cls=GCSectionGroup, help="Manage GitCode releases and release attachments.")
 def release_group() -> None:
     pass
+
+
+@release_group.command(
+    "check-digest", help="Compare a local file to an uploaded attachment’s SHA-256 (not a signature)."
+)
+@click.argument("tag")
+@click.argument("file", type=click.Path(path_type=Path))
+@repo_option
+@click.pass_context
+def release_check_digest(ctx, tag: str, file: Path, repo_name: str | None) -> None:
+    app = ctx.obj["app"]
+    explicit = repo_name if repo_name is not None else app.repo
+    if not explicit:
+        raise click.UsageError("Use -R OWNER/REPO to select the repository explicitly.")
+    owner, repo = resolve_repo(explicit)
+    if repo_name is not None and app.repo is not None and (not app.repo or resolve_repo(app.repo) != (owner, repo)):
+        raise click.UsageError("The command and global --repo values disagree.")
+    repo_read.validate_target(owner, repo, tag)
+    name = binary.safe_name(file.name)
+    endpoint = f"/repos/{owner}/{repo}/releases/tags/{tag_segment(tag)}"
+    data = repo_read.bounded_json("Release metadata", endpoint, {}, app.token, (owner, repo, tag))
+    size, digest = binary.named_checksum(release_record(data, tag), name)
+    local.check_local_digest(file, size, digest)
+    safe_echo("SHA-256 matches GitCode attachment metadata. This is not a publisher signature.")
 
 
 @release_group.command("list", help="List releases in API order (descending by default).")
@@ -384,7 +409,7 @@ set_gc_help(
     gc_usage="gc release <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["create", "list"]),
-        ("TARGETED COMMANDS", ["delete-asset", "download", "edit", "upload", "view"]),
+        ("TARGETED COMMANDS", ["check-digest", "delete-asset", "download", "edit", "upload", "view"]),
     ],
     gc_examples=[
         "gc release view -R owner/repo",

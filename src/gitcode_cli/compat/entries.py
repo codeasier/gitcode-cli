@@ -921,6 +921,15 @@ ENTRIES: list[CompatEntry] = [
     _e("repo sync", "--force", CompatStatus.NOT_IN_CLI, "GitCode fork sync has no force mode"),
     _e("repo sync", "-s/--source", CompatStatus.NOT_IN_CLI, "GitCode fork sync always uses the upstream parent"),
     # --- release subcommands and flags (GitCode semantics are direct-only) ---
+    _e(
+        "release check-digest",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode-only local byte comparison; not a signed publisher attestation.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
+    _e("release check-digest", "-R/--repo", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
     _e("release list", None, CompatStatus.IMPLEMENTED, "Ordered paginated list; aliases: ls.", proxy_allowed=False),
     _e(
         "release view",

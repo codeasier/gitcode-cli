@@ -191,6 +191,19 @@ def _expected_integrity(asset: dict) -> tuple[int | None, str | None]:
     return size, digest
 
 
+def named_checksum(release: dict, name: str) -> tuple[int | None, str]:
+    assets = asset_map(release)
+    asset = assets.get(name)
+    if asset is None or asset.get("type") != "ATTACH_FILE" or type(asset.get("id")) is not int or asset["id"] <= 0:
+        raise GCError("No identified uploaded attachment matches the exact filename.")
+    if any(row is not asset and row.get("id") == asset["id"] for row in assets.values()):
+        raise GCError("Ambiguous release attachment ID.")
+    size, digest = _expected_integrity(asset)
+    if digest is None:
+        raise GCError("GitCode did not supply a SHA-256 for this attachment.")
+    return size, digest
+
+
 class _Writer(Protocol):
     def write(self, data: bytes, /) -> int: ...
 

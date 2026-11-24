@@ -62,14 +62,14 @@ def _read_side(side: object, owner: str, repo: str) -> _PRRef:
     target = f"{owner}/{repo}"
     if not isinstance(source, dict) or source.get("full_name") != target:
         raise APIError("PR update plan requires both sides to identify the exact same selected repository.")
+    # GitCode can report the canonical HTTPS clone URL as repo.html_url.
+    # Match it against the independently verified path without following it.
+    web_url = f"https://gitcode.com/{target}"
     if (
         source.get("path", repo) != repo
         or any(source.get(key, target) != target for key in ("full_path", "path_with_namespace"))
         or ("url" in source and source["url"] not in _api_urls(f"/repos/{target}"))
-        or (
-            "html_url" in source
-            and source["html_url"] not in (f"https://gitcode.com/{target}", f"https://gitcode.com/{target}/")
-        )
+        or ("html_url" in source and source["html_url"] not in (web_url, f"{web_url}/", f"{web_url}.git"))
     ):
         raise APIError("PR update plan received contradictory repository identity.")
     namespace_id = None

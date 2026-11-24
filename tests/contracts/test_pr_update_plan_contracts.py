@@ -110,6 +110,35 @@ def test_compare_exact_shas_in_both_orders_and_read_back_pr(invoke, merge_base, 
     ]
 
 
+@pytest.mark.parametrize("suffix", ["", "/", ".git"])
+def test_accepts_canonical_repository_web_and_clone_urls(invoke, suffix):
+    snapshot = copy.deepcopy(PR)
+    for side in ("head", "base"):
+        # GitCode PR detail can use its HTTPS clone URL as repo.html_url.
+        snapshot[side]["repo"] = {
+            "full_name": "o/r",
+            "path": "r",
+            "namespace": {"path": "o"},
+            "html_url": f"https://gitcode.com/o/r{suffix}",
+        }
+    result = invoke(
+        (DETAIL, snapshot),
+        (FORWARD, compare(BASE, COMMON)),
+        (REVERSE, compare(HEAD, COMMON)),
+        (DETAIL, snapshot),
+    )
+    assert result.exit_code == 0, result.output
+    assert f"Merge base SHA: {COMMON}\nRelationship: diverged" in result.output
+
+
+def test_clone_url_does_not_override_a_fork_identity(invoke):
+    snapshot = copy.deepcopy(PR)
+    snapshot["head"]["repo"] = {"full_name": "fork/r", "html_url": "https://gitcode.com/o/r.git"}
+    result = invoke((DETAIL, snapshot))
+    assert result.exit_code != 0 and "exact same selected repository" in result.output
+    assert "Relationship:" not in result.output
+
+
 def test_same_commit_uses_only_two_pr_identity_reads(invoke):
     snapshot = {**PR, "head": {**PR["head"], "sha": BASE.upper()}}
     result = invoke(
@@ -172,6 +201,17 @@ def test_scope_is_explicit_and_never_guesses(invoke, args):
         (("base", "repo", "id"), True),
         (("base", "repo", "id"), None),
         (("base", "repo", "html_url"), "https://gitcode.com/o/other"),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/other.git"),
+        (("base", "repo", "html_url"), "https://gitcode.com/fork/r.git"),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/r.git.git"),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/r.git/"),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/r%2egit"),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/r.git?access_token=" + TOKEN),
+        (("base", "repo", "html_url"), "https://gitcode.com/o/r.git#refs"),
+        (("base", "repo", "html_url"), f"https://{TOKEN}@gitcode.com/o/r.git"),
+        (("base", "repo", "html_url"), "https://gitcode.com:443/o/r.git"),
+        (("base", "repo", "html_url"), "https://gitcode.com.invalid/o/r.git"),
+        (("base", "repo", "html_url"), "http://gitcode.com/o/r.git"),
         (("head", "sha"), HEAD[:12]),
         (("head", "sha"), "0" * 40),
         (("head", "ref"), "-bad"),

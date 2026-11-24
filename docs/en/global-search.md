@@ -6,6 +6,26 @@ listed by each command's `--help`. Search does not interpret GitHub's raw
 qualifier syntax.
 
 ```bash
+gc search repos parser --include-forks false --sort stars --order desc --json fullName,watchersCount
+```
+
+By default, `gc search repos` uses the [repository search endpoint][gitcode-repos]
+without a fork filter. To request only original repositories, pass
+`--include-forks false`. This sends `fork=false` on each page and fails without
+printing results if a returned row is a fork or lacks a definite non-fork
+marker. It does not guarantee that every matching repository is indexed.
+
+Two modes are unavailable: including forks alongside originals (or selecting
+only forks), and sorting by watch count. The [AtomGit reference][repos]
+describes both inclusion and watch sorting, but in [live GitCode verification][live]
+the inclusion request omitted known matches, and the watch sort returned the
+same non-monotonic counts in both orders. The [GitCode reference][gitcode-repos]
+also restricts fork inclusion and does not list a watch sort. The CLI rejects
+these modes before searching rather than printing incomplete or misordered
+results. `watchersCount` remains available as a JSON output field. Repository
+search is direct-only, not available through the gh proxy.
+
+```bash
 gc search prs "improve telemetry" --sort updated --limit 25 --json number,title,state,repository,url
 ```
 
@@ -29,3 +49,7 @@ search operations. Their `gh search` equivalents are not implemented by `gc`.
 [typed]: https://atomgit-api-doc.atomgit.com/en/4.search/461.search_by_type.html
 [hosts]: https://atomgit-api-doc.atomgit.com/en/guide/1.quick-start.html
 [index]: https://atomgit-api-doc.atomgit.com/llms.txt
+
+[repos]: https://atomgit-api-doc.atomgit.com/en/4.search/82.search_repositories.html
+[gitcode-repos]: https://docs.gitcode.com/docs/apis/get-api-v-5-search-repositories/
+[live]: https://github.com/codeasier/gitcode-cli/pull/214#issuecomment-7126159859

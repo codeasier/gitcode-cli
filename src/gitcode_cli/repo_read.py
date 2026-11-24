@@ -79,7 +79,7 @@ def _unique_fields(pairs: list[tuple[str, Any]]) -> dict:
 
 
 def bounded_json(
-    resource: Literal["Contents", "Tree", "Issue status"],
+    resource: Literal["Contents", "Tree", "Issue status", "fork sync status", "PR detail", "Commit comparison"],
     endpoint: str,
     params: dict[str, str],
     token: str,
@@ -93,7 +93,7 @@ def bounded_read_url(endpoint: str, params: dict[str, str]) -> httpx.URL:
 
 
 def bounded_json_response(
-    resource: Literal["Contents", "Tree", "Issue status"],
+    resource: Literal["Contents", "Tree", "Issue status", "fork sync status", "PR detail", "Commit comparison"],
     endpoint: str,
     params: dict[str, str],
     token: str,

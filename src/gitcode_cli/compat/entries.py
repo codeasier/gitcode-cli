@@ -45,6 +45,20 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "search repos", None, CompatStatus.IMPLEMENTED, "GitCode global repository keyword search.", proxy_allowed=False
     ),
+    _e(
+        "search repos",
+        "--include-forks",
+        CompatStatus.IMPLEMENTED,
+        "Partial: false only (verified non-forks). Including forks or selecting only forks is unsupported.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "search repos",
+        "--sort",
+        CompatStatus.IMPLEMENTED,
+        "Best match, updated, stars, and forks only; no watch-count or help-wanted-issues sort.",
+        proxy_allowed=False,
+    ),
     _e("search issues", None, CompatStatus.IMPLEMENTED, "GitCode global issue keyword search.", proxy_allowed=False),
     _e(
         "search prs",
@@ -86,6 +100,14 @@ ENTRIES: list[CompatEntry] = [
     _e("discussion create", None, CompatStatus.IMPLEMENTED, "Create in an existing category.", proxy_allowed=False),
     _e("discussion edit", None, CompatStatus.IMPLEMENTED, "GitCode v5 full update.", proxy_allowed=False),
     _e("discussion comment", None, CompatStatus.IMPLEMENTED, "Add a top-level comment.", proxy_allowed=False),
+    _e(
+        "discussion replies",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: one reply page for an explicit GitCode repository discussion comment.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
     _e(
         "run view",
@@ -155,7 +177,7 @@ ENTRIES: list[CompatEntry] = [
         "run download",
         None,
         CompatStatus.IMPLEMENTED,
-        "First attempt, explicit asset ID, verified ZIP to safe POSIX path.",
+        "First attempt, one exact artifact ID or unique name, verified ZIP to safe POSIX path; no gh routing.",
         proxy_allowed=False,
     ),
     # --- auth subcommands ---

@@ -167,15 +167,30 @@ def search_group():
 @click.option("--owner", multiple=True, help="Restrict to one owner or organization path.")
 @click.option("--language", help="Restrict to repositories in a language.")
 @click.option(
-    "--sort", type=click.Choice(["best-match", "updated", "stars", "forks"]), help="Sort matching repositories."
+    "--include-forks",
+    type=click.Choice(["false"]),
+    help="Request non-forks and verify the returned rows. Including or selecting only forks is not supported.",
+)
+@click.option(
+    "--sort",
+    type=click.Choice(["best-match", "updated", "stars", "forks"]),
+    help="Sort matching repositories. Watch counts are available with --json watchersCount, not as a sort key.",
 )
 @click.pass_context
-def search_repos(ctx, owner, language, sort, **options):
+def search_repos(ctx, owner, language, include_forks, sort, **options):
     """Find repositories across GitCode."""
     if len(owner) > 1:
         raise click.UsageError("GitCode search supports a single --owner.")
     order_by = {"updated": "last_push_at", "stars": "stars_count", "forks": "forks_count"}.get(sort)
-    _run(ctx, "repositories", owner=owner[0] if owner else None, language=language, sort=order_by, **options)
+    _run(
+        ctx,
+        "repositories",
+        owner=owner[0] if owner else None,
+        language=language,
+        fork=include_forks,
+        sort=order_by,
+        **options,
+    )
 
 
 @search_group.command("issues")

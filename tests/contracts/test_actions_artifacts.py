@@ -10,7 +10,7 @@ import socket
 import zipfile
 from contextlib import nullcontext
 from email.message import Message
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 from urllib.error import HTTPError
 
 import httpx
@@ -394,6 +394,100 @@ def test_validated_ip_is_used_without_second_dns(monkeypatch):
     result = binary._connect_public(("gitcode.com", 443))
     resolve.assert_called_once_with("gitcode.com", 443, type=socket.SOCK_STREAM)
     result.connect.assert_called_once_with(("1.1.1.1", 443))
+
+
+def _dns_rows(count):
+    # Synthetic public addresses only; the resolver and sockets are mocked.
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (f"1.1.1.{i}", 443)) for i in range(1, count + 1)]
+
+
+def test_download_through_large_cdn_answer_set(harness, tmp_path, monkeypatch):
+    invoke, _, routes = harness
+    routes[BASE + "/artifacts/artifact-77/zip"] = lambda: httpx.Response(
+        302, headers={"Location": f"https://{CDN}/zip"}
+    )
+    rows = _dns_rows(12)
+    resolve = MagicMock(return_value=rows)
+    monkeypatch.setattr(binary.socket, "getaddrinfo", resolve)
+    first, second = MagicMock(), MagicMock()
+    first.connect.side_effect = OSError
+    second.makefile.return_value = io.BytesIO(b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(DATA) + DATA)
+    monkeypatch.setattr(binary.socket, "socket", MagicMock(side_effect=[first, second]))
+
+    def wrap(context, sock, *, server_hostname):
+        assert context.check_hostname and context.verify_mode == binary.ssl.CERT_REQUIRED
+        assert sock is second and server_hostname == CDN
+        return sock
+
+    monkeypatch.setattr(binary.ssl.SSLContext, "wrap_socket", wrap)
+    output = tmp_path / "cdn.zip"
+    result = name_fetch(invoke, output, "--name", ARTIFACT["name"])
+    assert result.exit_code == 0, result.exception
+    assert output.read_bytes() == DATA and json.loads(result.output)["sha256"] == SHA
+    resolve.assert_called_once_with(CDN, 443, type=socket.SOCK_STREAM)
+    first.connect.assert_called_once_with(rows[0][-1])
+    first.close.assert_called_once()
+    second.connect.assert_called_once_with(rows[1][-1])
+    request = b"".join(args.args[0] for args in second.sendall.call_args_list).lower()
+    assert f"host: {CDN}\r\n".encode() in request
+    assert all(value not in request for value in (TOKEN.encode(), b"cookie:", b"authorization:", b"private-token:"))
+
+
+@pytest.mark.parametrize("mode", ["empty", "private-tail", "too-many", "too-many-duplicates"])
+def test_invalid_full_dns_set_never_dials(monkeypatch, mode):
+    rows = _dns_rows(12)
+    if mode == "empty":
+        rows = []
+    elif mode == "private-tail":
+        rows[-1] = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3", 443))
+    elif mode == "too-many":
+        rows = _dns_rows(33)
+    else:
+        rows = rows[:1] * 33
+    monkeypatch.setattr(binary.socket, "getaddrinfo", lambda *_args, **_kwargs: rows)
+    opened = MagicMock()
+    monkeypatch.setattr(binary.socket, "socket", opened)
+    with pytest.raises(OSError):
+        binary._connect_public((CDN, 443))
+    opened.assert_not_called()
+
+
+def test_large_dns_set_attempts_at_most_eight_distinct_endpoints(monkeypatch):
+    rows = _dns_rows(31)
+    resolve = MagicMock(return_value=[rows[0], *rows])  # exactly 32 raw results
+    monkeypatch.setattr(binary.socket, "getaddrinfo", resolve)
+    sock = MagicMock()
+    sock.connect.side_effect = OSError
+    monkeypatch.setattr(binary.socket, "socket", MagicMock(return_value=sock))
+    with pytest.raises(OSError, match="Cannot connect"):
+        binary._connect_public((CDN, 443))
+    resolve.assert_called_once()
+    assert sock.connect.call_args_list == [call(row[-1]) for row in rows[:8]]
+    assert sock.close.call_count == 8
+
+
+def test_dns_and_failed_dials_share_one_deadline(monkeypatch):
+    clock = MagicMock(return_value=0)
+    monkeypatch.setattr(binary.time, "monotonic", clock)
+
+    def resolve(*_args, **_kwargs):
+        clock.return_value = 7
+        return _dns_rows(12)
+
+    sock = MagicMock()
+
+    def timeout(_target):
+        clock.return_value = 30
+        raise OSError
+
+    sock.connect.side_effect = timeout
+    monkeypatch.setattr(binary.socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(binary.socket, "socket", MagicMock(return_value=sock))
+    with pytest.raises(OSError, match="Cannot connect"):
+        binary._connect_public((CDN, 443), timeout=30)
+    sock.settimeout.assert_called_once_with(23)
+    sock.connect.assert_called_once()
+    sock.close.assert_called_once()
 
 
 def test_bounded_pages_never_mix_artifacts(monkeypatch):

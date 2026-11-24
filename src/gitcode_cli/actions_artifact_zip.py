@@ -25,6 +25,8 @@ from .errors import APIError
 MAX_ZIP_BYTES = 512 * 1024 * 1024
 MAX_REDIRECTS = 4
 MAX_TRANSFER_SECONDS = 300
+_MAX_DNS_RESULTS = 32
+_MAX_CONNECT_ATTEMPTS = 8
 
 # The GitCode Actions ZIP endpoint was observed returning this exact CDN host
 # (PR #208 provider acceptance). Do not trust domain suffixes or generic storage.
@@ -72,17 +74,23 @@ class _NoRedirect(HTTPRedirectHandler):
 def _connect_public(address, timeout=30, source_address=None):
     # Resolve once and use the vetted addresses directly. The parent HTTPS
     # connection still verifies TLS and sends SNI for the original hostname.
+    end = time.monotonic() + timeout
     targets = socket.getaddrinfo(*address, type=socket.SOCK_STREAM)
-    if not targets or len(targets) > 8:
+    if not targets or len(targets) > _MAX_DNS_RESULTS:
         raise OSError("No bounded artifact storage address set.")
-    for _family, _kind, _proto, _canonname, target in targets:
+    # A CDN may return more addresses than we can try. Validate every raw
+    # result before dialing, even duplicates and those beyond the dial budget.
+    candidates = []
+    for family, kind, proto, _canonname, target in targets:
         ip = ipaddress.ip_address(target[0])
         if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
             ip = ip.ipv4_mapped
         if not ip.is_global or ip.is_multicast or ip.is_reserved:
             raise OSError("Artifact storage resolved to a non-public address.")
-    end = time.monotonic() + timeout
-    for family, kind, proto, _, target in targets:
+        candidate = (family, kind, proto, target)
+        if len(candidates) < _MAX_CONNECT_ATTEMPTS and candidate not in candidates:
+            candidates.append(candidate)
+    for family, kind, proto, target in candidates:
         remaining = end - time.monotonic()
         if remaining <= 0:
             break

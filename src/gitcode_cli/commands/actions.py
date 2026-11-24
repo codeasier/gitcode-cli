@@ -13,10 +13,10 @@ import click
 from .._redact import redact
 from ..actions_client import ActionsClient
 from ..actions_watch import MAX_INTERVAL, MAX_TIMEOUT, watch_run
-from ..adapters.action_checks import pr_evidence
+from ..adapters.action_checks import CHECK_ROW_FIELDS, check_rows, pr_evidence
 from ..context import AppContext
 from ..errors import APIError
-from ..helptext import GCSectionCommand, GCSectionGroup
+from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services.actions import MAX_WORKFLOW_SCAN, SHA_RE, ActionsService
 
@@ -37,7 +37,7 @@ def _service(ctx: click.Context, repo_name: str | None):
     return _open_service(*resolve_repo(repo_name or app.repo), app.token)
 
 
-def _show(ctx: click.Context, value: dict, *, exact_fields: tuple[str, ...] = ()):
+def _show(ctx: click.Context, value: dict | list, *, exact_fields: tuple[str, ...] = ()):
     # Escaped JSON (including log lines) is intentional: never interpret terminal controls or
     # emit the request credential if a workflow or an upstream error reflects it in output.
     def scrub(item: Any, field: str | None = None) -> Any:
@@ -258,17 +258,37 @@ def workflow_run(ctx, repo_name, workflow_id, ref, raw_field):
 @click.argument("number", type=click.IntRange(1))
 @repo_option
 @click.option("--scan-limit", type=click.IntRange(1, 100), default=100, show_default=True)
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select fields for observed workflow runs.")
 @click.pass_context
-def pr_checks(ctx, number, repo_name, scan_limit):
+def pr_checks(ctx, number, repo_name, scan_limit, selections):
     """Report v5 gates separately from observed exact-head v8 runs (not a merge decision)."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(key not in CHECK_ROW_FIELDS for key in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(CHECK_ROW_FIELDS))
+    if fields and repo_name and ctx.obj["app"].repo and resolve_repo(repo_name) != resolve_repo(ctx.obj["app"].repo):
+        raise click.UsageError("Conflicting global and PR checks repository targets.")
     with _service(ctx, repo_name) as svc:
         result = pr_evidence(svc, number, scan_limit)
-    _show(ctx, result)
-    ctx.exit(
-        {"observed_completed": 0, "failed_or_canceled": 1, "ci_gate_not_passed": 1, "pending": 8}.get(
-            result["outcome"], 3
-        )
-    )
+    outcome = result["outcome"]
+    code = {"observed_completed": 0, "failed_or_canceled": 1, "ci_gate_not_passed": 1, "pending": 8}.get(outcome, 3)
+    if not fields:
+        _show(ctx, result)
+    else:
+        rows = check_rows(result, fields)
+        if rows is not None:
+            _show(ctx, rows)
+        if code:
+            click.echo(f"PR checks: {outcome}. Omit --json for the full evidence report.", err=True)
+    ctx.exit(code)
+
+
+set_gc_help(pr_checks, gc_json_fields=list(CHECK_ROW_FIELDS))
 
 
 @run.command("artifacts")

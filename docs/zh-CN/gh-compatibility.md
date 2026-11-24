@@ -32,6 +32,12 @@ GitCode 路由采用失败关闭策略：已知不支持的命令和参数会直
 
 ## 已对齐能力
 
+`gc pr checks 42 -R owner/repo --json workflow,state,event` 可从同一份证据中按字段列出当前 PR
+提交的各条流水线，不逐个列出作业，也不判断哪些检查为必需。`state` 为原生运行状态，没有
+`bucket`；`COMPLETED` 不等于门禁通过。字段缺失或类型不符时返回 null。
+退出码不变，非零原因写入 stderr。确认没有运行时输出 `[]`（退出 3）；扫描不完整、证据
+不可获取或已过期时 stdout 无输出。去掉 `--json` 可查看完整的 v5 门禁及 v8 运行证据。
+
 | 能力 | `gc` 支持情况 |
 | --- | --- |
 | Issue 和 PR 的 list/view/create/comment/edit/close 流程 | 支持 |

@@ -45,6 +45,20 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "search repos", None, CompatStatus.IMPLEMENTED, "GitCode global repository keyword search.", proxy_allowed=False
     ),
+    _e(
+        "search repos",
+        "--include-forks",
+        CompatStatus.IMPLEMENTED,
+        "Partial: false only (verified non-forks). Including forks or selecting only forks is unsupported.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "search repos",
+        "--sort",
+        CompatStatus.IMPLEMENTED,
+        "Best match, updated, stars, and forks only; no watch-count or help-wanted-issues sort.",
+        proxy_allowed=False,
+    ),
     _e("search issues", None, CompatStatus.IMPLEMENTED, "GitCode global issue keyword search.", proxy_allowed=False),
     _e(
         "search prs",

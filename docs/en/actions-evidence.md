@@ -11,6 +11,7 @@ gc workflow view ci.yml -R owner/repo
 gc run list -R owner/repo --pr 42 --event MR
 gc pr checks 42 -R owner/repo --scan-limit 100
 gc run view RUN_ID -R owner/repo
+gc run view RUN_ID -R owner/repo --with-steps --limit 10 --attempt 2 --commit FULL_SHA
 gc run view RUN_ID -R owner/repo --job JOB_ID --attempt 2 --commit FULL_SHA
 gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 --commit FULL_SHA --offset 0 --limit 20
 ```
@@ -27,7 +28,8 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   metadata, not YAML. The scan defaults to 100 definitions; use `--scan-limit` up to
   500 when needed. It does not claim a transactional snapshot.
 * `--attempt` guards the **current** attempt; the documented detail endpoint has no
-  historical-attempt selector. Commit and attempt are checked before and after fetching
+  historical-attempt selector. Except for the single-response `--with-steps` snapshot below,
+  commit and attempt are checked before and after fetching
   jobs/logs. A race discards the result instead of attributing it to the old attempt.
 * PR checks read the requested v5 PR's head and merge gates, separately inspect v8
   PR-number- and MR-event-filtered runs, then re-read the head. Within the bounded scan,
@@ -46,6 +48,35 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   `ci_state_passed` is **not** a v8 result. Exit 0 does not establish required-check
   coverage, permission to merge, or merge readiness. This is a bounded observation,
   not an atomic server snapshot.
+
+## Inspect steps across jobs in one read
+
+Use `--with-steps` to see which steps GitCode reported in each job without first
+looking up every job ID. This direct `gc` mode uses only the documented
+[run detail](https://docs.gitcode.com/en/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/).
+The run ID, current attempt and full head SHA are checked against the same response
+as the jobs. No separate job, log or workflow request is made. The default view
+and the single-job `--job` view are unchanged.
+
+The result contains `run` (ID, attempt and SHA), `jobs`, `total_count` (job records
+in this response) and `next_offset`. Each job includes its enclosing `stage` and
+`steps`. At all three levels only the native `id`, `name` and `status` strings are
+shown. This is not GitHub's `--json jobs`: there is no inferred conclusion,
+execution ID, retry selector, execution order or merge decision. For example,
+`COMPLETED` is reported as-is, not as success. Stage-level pre/post hooks are not job steps.
+
+`--offset` and `--limit` count jobs in returned array order across stages.
+Use the returned offset with the same commit and attempt; the contents can still
+change between reads. The entire response must fit the existing 2 MiB transport
+cap. At most 100 steps **in total** may be shown on one page; an oversized page
+fails without partial results. Lower the job limit, or use `--job JOB_ID` to page
+through a single large job. The entire response hierarchy is validated, including
+off-page rows. Stage IDs must be unique across stages, job IDs across the run,
+and step IDs within each job. IDs use the native Actions resource ID grammar.
+Missing/invalid metadata, including lone surrogates or terminal/format controls
+in names, IDs or states, fails without emitting a partial result. Identity and
+status are not rewritten to placeholders if they cannot be safely shown. Input,
+environment, messages, logs and execution configuration are not exported.
 
 ## Watch one run without changing it
 

@@ -235,8 +235,12 @@ def reply(identity="child", **overrides):
     }
 
 
+def parent_row(identity="p", **fields):
+    return {"id": identity, "is_hide": 0, "is_deleted": 0, **fields}
+
+
 def test_replies_reads_one_exact_page_in_server_order(run, client):
-    client.get.return_value = [reply("z", parent_id="parent", type=2), reply("a")]
+    client.get.side_effect = [[parent_row("parent")], [reply("z", parent_id="parent", type=2), reply("a")]]
     result = run(
         "-R",
         "gitcode.com/Owner/Repo",
@@ -257,20 +261,24 @@ def test_replies_reads_one_exact_page_in_server_order(run, client):
         for identity in ("z", "a")
     ]
     assert client.mock_calls == [
-        call.get("/repos/Owner/Repo/discuss/8/comment/parent/reply", params={"page": 3, "per_page": 2})
+        call.get("/repos/Owner/Repo/discuss/8/comment", params={"page": 1, "per_page": 100, "order": "time_asc"}),
+        call.get("/repos/Owner/Repo/discuss/8/comment/parent/reply", params={"page": 3, "per_page": 2}),
     ]
 
 
-def test_replies_empty_is_one_page_not_a_parent_check(run, client):
-    client.get.return_value = []
+def test_verified_parent_can_have_an_empty_reply_page(run, client):
+    client.get.side_effect = [[parent_row("parent")], []]
     result = run("discussion", "replies", "8", "parent", "-R", "O/R", "--json", "id")
     assert result.exit_code == 0 and json.loads(result.output) == []
-    client.get.assert_called_once_with("/repos/O/R/discuss/8/comment/parent/reply", params={"page": 1, "per_page": 20})
+    assert client.get.call_args_list == [
+        call("/repos/O/R/discuss/8/comment", params={"page": 1, "per_page": 100, "order": "time_asc"}),
+        call("/repos/O/R/discuss/8/comment/parent/reply", params={"page": 1, "per_page": 20}),
+    ]
 
 
 @pytest.mark.parametrize("flag", ["is_hide", "is_deleted"])
 def test_reply_visibility_hides_author_and_body_in_json(run, client, flag):
-    client.get.return_value = [reply(**{flag: 1})]
+    client.get.side_effect = [[parent_row()], [reply(**{flag: 1})]]
     result = run("-R", "O/R", "discussion", "replies", "7", "p", "--json", "id,body,author,hidden,deleted")
     assert result.exit_code == 0, result.exception
     assert json.loads(result.output) == [
@@ -280,27 +288,27 @@ def test_reply_visibility_hides_author_and_body_in_json(run, client, flag):
 
 def test_reply_json_roundtrips_unicode_and_controls_without_emitting_terminal_bytes(run, client):
     body = "说\U0001f48e\nmarkdown\t\u0000\u001b\u007f\u009b\u202e"
-    client.get.return_value = [reply(md_content=body)]
+    client.get.side_effect = [[parent_row()], [reply(md_content=body)]]
     result = run("-R", "O/R", "discussion", "replies", "7", "p", "--json", "body,id")
     assert result.exit_code == 0, result.exception
     data = result.stdout_bytes
     assert all(ch == 10 or 32 <= ch < 127 for ch in data)
     assert json.loads(data) == [{"body": body, "id": "child"}]
-    client.get.assert_called_once()
+    assert client.get.call_count == 2
 
 
 @pytest.mark.parametrize("args", [(), ("--json", "body"), ("--json", "id")])
 def test_invalid_unicode_reply_fails_before_any_table_or_json_output(run, client, args):
-    client.get.return_value = [reply("ok"), reply(md_content="bad\ud800text")]
+    client.get.side_effect = [[parent_row()], [reply("ok"), reply(md_content="bad\ud800text")]]
     result = run("-R", "O/R", "discussion", "replies", "7", "p", *args)
     assert isinstance(result.exception, APIError)
     assert "Invalid Unicode" in str(result.exception)
     assert not result.stdout_bytes
-    client.get.assert_called_once()
+    assert client.get.call_count == 2
 
 
 def test_reply_table_omits_hidden_content_and_escapes_controls(run, client):
-    client.get.return_value = [reply("x", md_content="line 1\nline 2\x1b[2J"), reply("y", is_hide=1)]
+    client.get.side_effect = [[parent_row()], [reply("x", md_content="line 1\nline 2\x1b[2J"), reply("y", is_hide=1)]]
     result = run("-R", "O/R", "discussion", "replies", "7", "p")
     assert result.exit_code == 0, result.exception
     assert result.output == "x writer (2026-01-01T01:00:00Z)\n  line 1\n  line 2\\x1b[2J\ny [hidden]\n"
@@ -357,20 +365,20 @@ def test_reply_invalid_selection_does_not_access_api(run, client, args):
     ],
 )
 def test_malformed_reply_after_a_good_row_fails_without_partial_output(run, client, bad_row):
-    client.get.return_value = [reply("ok"), bad_row]
+    client.get.side_effect = [[parent_row()], [reply("ok"), bad_row]]
     result = run("-R", "O/R", "discussion", "replies", "7", "p")
     assert isinstance(result.exception, APIError)
     assert not result.output
-    client.get.assert_called_once()
+    assert client.get.call_count == 2
 
 
 @pytest.mark.parametrize("rows", [{"replies": []}, [reply("a"), reply("b")]])
 def test_replies_bad_page_shape_or_exceeds_limit(run, client, rows):
-    client.get.return_value = rows
+    client.get.side_effect = [[parent_row()], rows]
     result = run("-R", "O/R", "discussion", "replies", "7", "p", "--per-page", "1")
     assert isinstance(result.exception, APIError)
     assert not result.output
-    client.get.assert_called_once()
+    assert client.get.call_count == 2
 
 
 def test_replies_direct_command_only():

@@ -29,6 +29,11 @@ these modes before searching rather than printing incomplete or misordered
 results. `watchersCount` remains available as a JSON output field. Repository
 search is direct-only, not available through the gh proxy.
 
+Repository search sends the configured token only in the Bearer authorization
+header on each page. A 401 is an authentication failure: the command does not
+retry with a URL token or print an earlier page as a successful result.
+Anonymous access to this endpoint is not guaranteed.
+
 ```bash
 gc search prs "improve telemetry" --sort updated --limit 25 --json number,title,state,repository,url
 ```

@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from gitcode_cli.cli import main
 from gitcode_cli.client import GitCodeClient
 from gitcode_cli.context import AppContext
+from gitcode_cli.errors import APIError
 
 BASE = "https://repo-search.invalid/api/v5/"
 TOKEN = "synthetic-search-token"
@@ -62,7 +63,7 @@ def test_repository_options_on_every_wire_page(search, explicit):
 
     route.mock(
         side_effect=[
-            httpx.Response(200, json=[row(i) for i in range(20)]),
+            httpx.Response(200, headers={"set-cookie": "session=synthetic; Path=/"}, json=[row(i) for i in range(20)]),
             httpx.Response(200, json=[row(20), row(21)]),
         ]
     )
@@ -78,11 +79,53 @@ def test_repository_options_on_every_wire_page(search, explicit):
             "page": str(page),
             "sort": "stars_count",
             "order": "desc",
-            "access_token": TOKEN,
             **({"fork": "false"} if explicit else {}),
         }
         assert not request.content
-        assert "authorization" not in request.headers and "private-token" not in request.headers
+        assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        assert "private-token" not in request.headers and "cookie" not in request.headers
+
+
+@pytest.mark.parametrize("token", [TOKEN, ""])
+@pytest.mark.parametrize("status", [401, 403, 302])
+def test_repo_search_denial_never_retries_or_emits_partial_rows(token, status, monkeypatch, tmp_config_dir):
+    monkeypatch.setenv("GC_TOKEN", token)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, json=[{"id": n, "full_name": f"owner/r{n}"} for n in range(20)])
+        return httpx.Response(status, headers={"location": "https://other.invalid/"}, json={"message": "denied"})
+
+    client = GitCodeClient(token, transport=httpx.MockTransport(respond))
+    monkeypatch.setattr(AppContext, "client", lambda _: client)
+    try:
+        result = CliRunner().invoke(main, ["search", "repos", "msinsight", "-L", "21", "--json", "fullName"])
+    finally:
+        client.close()
+    assert result.exit_code == 1 and "denied" in result.output
+    assert "owner/r" not in result.output and TOKEN not in result.output
+    assert len(requests) == 2
+    for page, request in enumerate(requests, 1):
+        assert request.url.host == "api.gitcode.com" and request.url.path == "/api/v5/search/repositories"
+        assert dict(request.url.params) == {"q": "msinsight", "page": str(page), "per_page": "20"}
+        assert request.headers.get("authorization") == (f"Bearer {token}" if token else None)
+        assert "private-token" not in request.headers and "cookie" not in request.headers
+
+
+@pytest.mark.parametrize("field", ["q", "language", "Authorization", "access_token", "private-token"])
+def test_repo_search_never_sends_credential_query(field):
+    def unexpected(_request):
+        pytest.fail("request sent with credential fields")
+
+    client = GitCodeClient(TOKEN, transport=httpx.MockTransport(unexpected))
+    try:
+        with pytest.raises(APIError) as error:
+            client.get("/search/repositories", params={field: TOKEN if field in ("language", "q") else "other"})
+        assert TOKEN not in str(error.value)
+    finally:
+        client.close()
 
 
 @pytest.mark.parametrize(

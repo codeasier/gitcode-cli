@@ -123,7 +123,7 @@ def release_check_digest(ctx, tag: str, file: Path, repo_name: str | None) -> No
     name = binary.safe_name(file.name)
     endpoint = f"/repos/{owner}/{repo}/releases/tags/{tag_segment(tag)}"
     data = repo_read.bounded_json("Release metadata", endpoint, {}, app.token, (owner, repo, tag))
-    size, digest = binary.named_checksum(release_record(data, tag), name)
+    size, digest = binary.named_checksum(release_record(data, tag), name, owner=owner, repo=repo, tag=tag)
     local.check_local_digest(file, size, digest)
     safe_echo("SHA-256 matches GitCode attachment metadata. This is not a publisher signature.")
 

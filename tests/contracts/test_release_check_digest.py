@@ -216,3 +216,68 @@ def test_directory_input_fails_without_leaking_the_open_fd(invoke, monkeypatch):
     assert len(opened) == 1
     with pytest.raises(OSError):
         os.fstat(opened[0])
+
+
+ATTACH_ROUTE = f"https://gitcode.com/owner/repo/releases/download/{TAG}/{NAME}"
+
+
+def test_live_attach_shape_matches_without_url_use(invoke, monkeypatch):
+    run, calls, path = invoke
+
+    def no_transfer(*args, **kwargs):
+        pytest.fail("The attachment URL is identity metadata only")
+
+    monkeypatch.setattr("gitcode_cli.release_assets._open", no_transfer)
+    monkeypatch.setattr("gitcode_cli.commands.release.open_in_browser", no_transfer)
+    before = path.stat()
+    result = run(rows=[dict(ROW, type="attach", browser_download_url=ATTACH_ROUTE, digest="sha256:" + SHA)])
+    assert result.exit_code == 0 and "SHA-256 matches" in result.stdout and not result.stderr
+    assert len(calls) == 1
+    assert before.st_mtime_ns == path.stat().st_mtime_ns and path.read_bytes() == DATA
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"browser_download_url": None},
+        {"browser_download_url": ATTACH_ROUTE.replace("gitcode.com", "untrusted.invalid")},
+        {"browser_download_url": ATTACH_ROUTE.replace("gitcode.com", "gitcode.com@untrusted.invalid")},
+        {"browser_download_url": ATTACH_ROUTE.replace("gitcode.com", "userinfo@gitcode.com")},
+        {"browser_download_url": ATTACH_ROUTE.replace("gitcode.com", "gitcode.com:444")},
+        {"browser_download_url": ATTACH_ROUTE.replace("https://", "http://")},
+        {"browser_download_url": ATTACH_ROUTE + "?ticket=private"},
+        {"browser_download_url": ATTACH_ROUTE + "#anchor"},
+        {"browser_download_url": ATTACH_ROUTE.replace("/owner/", "/other/")},
+        {"browser_download_url": ATTACH_ROUTE.replace("/repo/", "/other/")},
+        {"browser_download_url": ATTACH_ROUTE.replace(f"/{TAG}/", "/other/")},
+        {"browser_download_url": ATTACH_ROUTE.replace(NAME, "other.zip")},
+        {"browser_download_url": ATTACH_ROUTE.replace("/releases/download/", "/-/archive/")},
+        {"browser_download_url": ATTACH_ROUTE.replace(f"/{TAG}/", f"/{TAG}/%2e%2e/{TAG}/")},
+        {"browser_download_url": ATTACH_ROUTE.replace(f"/{TAG}/", f"/{TAG}%2F/")},
+        {"browser_download_url": ATTACH_ROUTE.replace("/repo/releases/", "/repo%2Freleases/")},
+        {"type": "source"},
+        {"type": "ATTACH"},
+        {"id": False},
+        {"id": "16"},
+        {"id": 0},
+        {"digest": None},
+        {"digest": "sha256:X" * 8},
+        {"digest": "sha256:" + "0" * 64},
+        {"size": len(DATA) + 1},
+    ],
+)
+def test_live_attach_rejects_mismatched_identity_or_integrity(invoke, fields):
+    run, calls, path = invoke
+    row = {**ROW, "type": "attach", "browser_download_url": ATTACH_ROUTE, **fields}
+    result = run(rows=[row])
+    assert result.exit_code != 0 and not result.stdout and len(calls) == 1
+    assert result.stderr.startswith("error: ") and "https://" not in result.stderr
+    assert path.read_bytes() == DATA
+
+
+def test_live_attach_still_rejects_duplicate_id(invoke):
+    run, calls, _ = invoke
+    row = dict(ROW, type="attach", browser_download_url=ATTACH_ROUTE)
+    result = run(rows=[row, dict(row, name="other.zip")])
+    assert result.exit_code != 0 and not result.stdout and len(calls) == 1
+    assert "Ambiguous release attachment ID" in result.stderr

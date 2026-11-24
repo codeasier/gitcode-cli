@@ -10,7 +10,7 @@ from http.client import HTTPException
 from pathlib import PureWindowsPath
 from typing import Any, BinaryIO, Protocol
 from urllib.error import HTTPError
-from urllib.parse import parse_qsl, unquote, unquote_plus, urljoin, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, unquote_plus, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .errors import GCError
@@ -191,11 +191,32 @@ def _expected_integrity(asset: dict) -> tuple[int | None, str | None]:
     return size, digest
 
 
-def named_checksum(release: dict, name: str) -> tuple[int | None, str]:
+def _matches_gitcode_attachment_route(url: Any, *, owner: str, repo: str, tag: str, name: str) -> bool:
+    # Use the observed GitCode web route as identity metadata, not a transfer URL.
+    # Exact comparison with locally quoted components excludes URL aliases,
+    # credentials, query/fragment data and ambiguous path normalization.
+    base = f"https://gitcode.com/{owner}/{repo}/releases/download/"
+    filename = quote(name, safe="")
+    return isinstance(url, str) and url in (
+        f"{base}{quote(tag, safe='/')}/{filename}",
+        f"{base}{quote(tag, safe='')}/{filename}",
+    )
+
+
+def named_checksum(release: dict, name: str, *, owner: str, repo: str, tag: str) -> tuple[int | None, str]:
     assets = asset_map(release)
     asset = assets.get(name)
-    if asset is None or asset.get("type") != "ATTACH_FILE" or type(asset.get("id")) is not int or asset["id"] <= 0:
-        raise GCError("No identified uploaded attachment matches the exact filename.")
+    error = "No identified uploaded attachment matches the exact filename."
+    if asset is None or type(asset.get("id")) is not int or asset["id"] <= 0:
+        raise GCError(error)
+    kind = asset.get("type")
+    if kind != "ATTACH_FILE" and not (
+        kind == "attach"
+        and _matches_gitcode_attachment_route(
+            asset.get("browser_download_url"), owner=owner, repo=repo, tag=tag, name=name
+        )
+    ):
+        raise GCError(error)
     if any(row is not asset and row.get("id") == asset["id"] for row in assets.values()):
         raise GCError("Ambiguous release attachment ID.")
     size, digest = _expected_integrity(asset)

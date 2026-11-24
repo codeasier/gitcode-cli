@@ -102,19 +102,21 @@ def write_stdout(raw: bytes) -> None:
     click.open_file("-", "wb").write(raw)
 
 
-def write_file(path: Path, raw: bytes) -> None:
+def write_file(path: Path, raw: bytes, *, clobber: bool = False) -> None:
     def write(stream: BinaryIO) -> None:
         if stream.write(raw) != len(raw):
             raise OSError("Incomplete local write.")
         stream.flush()
         os.fsync(stream.fileno())
 
-    # Use no-follow parents and publish a complete file atomically via link.
-    # An existing destination, including one that races publication, is untouched.
+    # Publish only the verified staged file: create-if-absent by default,
+    # or replace the named entry (never write through a link) on explicit opt-in.
     try:
         with directory(path.parent, writable=True) as parent:
-            save_verified(path.parent, parent, path.name, write)
+            save_verified(path.parent, parent, path.name, write, clobber=clobber)
     except FileExistsError:
-        raise GCError("Output already exists; choose a new file.") from None
+        raise GCError("Output already exists; choose a new file or use --clobber.") from None
     except (OSError, GCError):
-        raise GCError("Cannot save output; use a new file in a trusted POSIX directory without symlinks.") from None
+        raise GCError(
+            "Cannot save output; use a regular file path in a trusted POSIX directory without symlinks."
+        ) from None

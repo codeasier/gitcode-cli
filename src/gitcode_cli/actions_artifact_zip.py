@@ -26,10 +26,15 @@ MAX_ZIP_BYTES = 512 * 1024 * 1024
 MAX_REDIRECTS = 4
 MAX_TRANSFER_SECONDS = 300
 
-# No provider contract names third-party CI artifact stores. Unlike a release
-# attachment, this URL may not name OBS. Only provider-controlled hosts are
-# implicitly trusted; never broaden to all of a cloud's customer-owned buckets.
-_APPROVED_HOSTS = {"api.gitcode.com", "gitcode.com", "api.atomgit.com", "atomgit.com"}
+# The GitCode Actions ZIP endpoint was observed returning this exact CDN host
+# (PR #208 provider acceptance). Do not trust domain suffixes or generic storage.
+_APPROVED_HOSTS = {
+    "api.gitcode.com",
+    "gitcode.com",
+    "api.atomgit.com",
+    "atomgit.com",
+    "actions-artifacts-cdn.atomgit.com",
+}
 _REDIRECTS = {301, 302, 303, 307, 308}
 _AUTH_KEYS = {"access_token", "authorization", "private-token", "private_token"}
 

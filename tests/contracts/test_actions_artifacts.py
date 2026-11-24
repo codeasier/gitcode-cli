@@ -30,6 +30,8 @@ COMMIT = "a" * 40
 TOKEN = "synthetic-artifact-credential"
 SIGNATURE = "synthetic-download-signature"
 SIGNED = f"https://gitcode.com/signed-archive?Signature={SIGNATURE}"
+CDN = "actions-artifacts-cdn.atomgit.com"
+CDN_PATH = f"/signed/archive%20file.zip?Signature={SIGNATURE}%2Btest"
 RUN = {"workflow_run_id": "run-1", "workflow_id": "workflow-1", "head_sha": COMMIT, "attempt": 1}
 FILE = io.BytesIO()
 with zipfile.ZipFile(FILE, "w") as archive:
@@ -154,6 +156,49 @@ def test_download_has_no_redirect_credentials_or_extract(harness, tmp_path, monk
     ]
 
 
+@pytest.mark.parametrize("port", ["", ":443"])
+def test_download_by_exact_name_accepts_provider_artifact_cdn(harness, tmp_path, monkeypatch, caplog, port):
+    invoke, requests, routes = harness
+    location = f"https://{CDN}{port}{CDN_PATH}"
+    routes[BASE + "/artifacts/artifact-77/zip"] = lambda: httpx.Response(302, headers={"Location": location})
+    transfers = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            transfers.append(request)
+            assert timeout == 30
+            return Blob()
+
+    def make_opener(proxy, redirect, _https):
+        assert proxy.proxies == {}
+        assert isinstance(redirect, binary._NoRedirect)
+        return Opener()
+
+    monkeypatch.setattr(binary, "build_opener", make_opener)
+    target = tmp_path / "provider.zip"
+    with caplog.at_level("INFO", logger="httpx"):
+        result = name_fetch(invoke, target, "--name", ARTIFACT["name"])
+
+    assert result.exit_code == 0, result.exception
+    result_data = json.loads(result.output)
+    assert result_data["artifact_id"] == ARTIFACT["id"] and result_data["artifact_attempt"] == 1
+    assert result_data["size_bytes"] == len(DATA) and result_data["sha256"] == SHA
+    assert target.read_bytes() == DATA and tuple(tmp_path.iterdir()) == (target,)
+    assert [request.full_url for request in transfers] == [location]
+    assert dict(transfers[0].header_items()) == {"Accept": "application/zip", "Accept-encoding": "identity"}
+    assert [request.url.path[len(BASE) :] for request in requests] == [
+        "/runs/run-1",
+        "/runs/run-1/artifacts",
+        "/artifacts/artifact-77",
+        "/runs/run-1",
+        "/artifacts/artifact-77/zip",
+        "/runs/run-1/artifacts",
+        "/artifacts/artifact-77",
+        "/runs/run-1",
+    ]
+    assert all(secret not in result.output + caplog.text for secret in (TOKEN, SIGNATURE))
+
+
 @pytest.mark.parametrize(
     "changed",
     [
@@ -188,6 +233,17 @@ def test_malformed_artifact_detail_prevents_download(harness, tmp_path, monkeypa
         "https://storage.example.invalid/a",
         "https://gitcode.com/a?%61ccess_token=dont-echo",
         f"https://gitcode.com/a?q={TOKEN}",
+        f"http://{CDN}/a",
+        f"https://{CDN}:444/a",
+        f"https://{CDN}./a",
+        f"https://user@{CDN}/a",
+        f"https://mirror.{CDN}/a",
+        "https://actions-artifacts-backup.atomgit.com/a",
+        f"https://{CDN}.example.invalid/a",
+        f"https://{CDN}/a#fragment",
+        f"https://{CDN}/a?%61ccess_token=dont-echo",
+        f"https://{CDN}/a?private-token=dont-echo",
+        f"https://{CDN}/a?state={TOKEN}",
     ],
 )
 def test_unapproved_target_fails_without_request(harness, tmp_path, monkeypatch, location):
@@ -218,6 +274,28 @@ def test_follow_only_validated_hops(monkeypatch):
     binary.stream_zip("https://api.gitcode.com", SIGNED, stage, len(DATA), SHA, token=TOKEN)
     assert stage.getvalue() == DATA
     assert opened == [SIGNED, "https://gitcode.com/next-location?Signature=not-for-output"]
+
+
+@pytest.mark.parametrize("loop", [False, True])
+def test_provider_artifact_cdn_revalidates_and_bounds_redirects(harness, tmp_path, monkeypatch, loop):
+    invoke, _, routes = harness
+    location = f"https://{CDN}{CDN_PATH}"
+    routes[BASE + "/artifacts/artifact-77/zip"] = lambda: httpx.Response(302, headers={"Location": location})
+    opened = []
+
+    def opener(url):
+        opened.append(url)
+        headers = Message()
+        headers["Location"] = CDN_PATH if loop else f"https://mirror.{CDN}{CDN_PATH}"
+        raise HTTPError(url, 302, "redirect", headers, io.BytesIO())
+
+    monkeypatch.setattr(binary, "_open", opener)
+    result = name_fetch(invoke, tmp_path / "provider.zip", "--name", ARTIFACT["name"])
+    error = "redirect or time limit" if loop else "untrusted"
+    assert isinstance(result.exception, APIError) and error in str(result.exception)
+    assert opened == [location] * (binary.MAX_REDIRECTS + 1 if loop else 1)
+    assert not tuple(tmp_path.iterdir())
+    assert SIGNATURE not in result.output and SIGNATURE not in str(result.exception)
 
 
 @pytest.mark.parametrize(

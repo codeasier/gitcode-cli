@@ -111,3 +111,26 @@ def test_rejected_option_does_not_retry_with_broader_search(search, status):
     assert not result.stdout
     assert TOKEN not in result.stdout and TOKEN not in result.stderr
     assert route.call_count == 1
+
+
+def test_fork_projection_preserves_unknown_and_never_changes_search(search):
+    route, invoke = search
+    flags = [True, False, 1, 0, None, "false", "true", "0", 0.0, 1.0, 2, -1, [], {}]
+    rows = [{"id": i, "fork": flag} for i, flag in enumerate(flags)]
+    rows.append({"id": len(flags), "isFork": True})  # Not the documented wire key.
+    route.respond(200, json=rows)
+    result = invoke("--json", "id,isFork")
+    assert result.exit_code == 0, result.output
+    expected = [True, False, True, False] + [None] * (len(rows) - 4)
+    assert json.loads(result.stdout) == [{"id": i, "isFork": value} for i, value in enumerate(expected)]
+    assert route.call_count == 1
+    assert "fork" not in route.calls[0].request.url.params
+
+
+def test_fork_projection_does_not_weaken_exclusion(search):
+    route, invoke = search
+    route.respond(200, json=[{"id": 1, "fork": False}, {"id": 2, "fork": "false"}])
+    result = invoke("--include-forks", "false", "--json", "id,isFork")
+    assert result.exit_code == 1 and "non-fork" in result.stderr
+    assert result.stdout == ""
+    assert route.call_count == 1 and route.calls[0].request.url.params["fork"] == "false"

@@ -6,7 +6,7 @@ listed by each command's `--help`. Search does not interpret GitHub's raw
 qualifier syntax.
 
 ```bash
-gc search repos parser --include-forks false --sort stars --order desc --json fullName,watchersCount
+gc search repos parser --include-forks false --sort stars --order desc --json fullName,isFork,watchersCount
 ```
 
 By default, `gc search repos` uses the [repository search endpoint][gitcode-repos]
@@ -14,6 +14,10 @@ without a fork filter. To request only original repositories, pass
 `--include-forks false`. This sends `fork=false` on each page and fails without
 printing results if a returned row is a fork or lacks a definite non-fork
 marker. It does not guarantee that every matching repository is indexed.
+
+`--json isFork` reports the fork marker on each returned row, not whether forks
+were included in the index. A boolean or integer 0/1 becomes a JSON boolean;
+a missing or unrecognized marker becomes `null` in an unfiltered search.
 
 Two modes are unavailable: including forks alongside originals (or selecting
 only forks), and sorting by watch count. The [AtomGit reference][repos]

@@ -15,6 +15,7 @@ from gitcode_cli.gh_proxy import ProxyError, validate_gitcode_command
 COMMANDS = [
     ("run", "list"),
     ("run", "view"),
+    ("run", "watch"),
     ("run", "rerun"),
     ("run", "cancel"),
     ("workflow", "list"),

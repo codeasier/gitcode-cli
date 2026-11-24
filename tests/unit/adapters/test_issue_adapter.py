@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
+import click
 import pytest
 
 from gitcode_cli.adapters.issues import IssueAdapter
+from gitcode_cli.client import GitCodeClient
+from gitcode_cli.errors import APIError
 
 
 @pytest.fixture
@@ -34,7 +37,7 @@ class TestIssueAdapter:
             author="alice",
             assignee="bob",
             milestone="v1",
-            mention="carol",
+            mention=None,
             search="query",
             limit=1,
         )
@@ -47,7 +50,7 @@ class TestIssueAdapter:
             creator="alice",
             assignee="bob",
             milestone="v1",
-            mention="carol",
+            mention=None,
             search="query",
             page=1,
             per_page=1,
@@ -567,28 +570,45 @@ class TestIssueAdapter:
         assert result.message == "Opening issue #42 in the browser instead."
         assert result.warning == "Note: 'issue develop' does not create a local branch on GitCode."
 
-    def test_status_returns_grouped_user_context(self, adapter, service, user_service):
-        user_service.current.return_value = {"login": "alice"}
-        service.list_user_issues.side_effect = [
-            [{"number": "1", "state": "open", "title": "Assigned"}],
-            [{"number": "2", "state": "open", "title": "Created"}],
-        ]
-        service.list.return_value = [{"number": "3", "state": "open", "title": "Mentioned"}]
+    def test_mentions_rejected_before_identity_or_issue_requests(self, adapter, service, user_service):
+        with pytest.raises(click.ClickException, match="no verified repository issue mention filter"):
+            adapter.list_issues(
+                "o",
+                "r",
+                state="open",
+                labels=None,
+                author="@me",
+                assignee=None,
+                milestone=None,
+                mention="bob",
+                search=None,
+                limit=5,
+            )
+        assert not service.mock_calls and not user_service.mock_calls
 
-        result = adapter.status("owner", "repo")
+    @pytest.mark.parametrize("base_url", ["https://api.gitcode.com/api/v5/", "https://other.invalid/"])
+    def test_legacy_status_never_reads_the_injected_client_or_credential(
+        self, adapter, service, user_service, base_url
+    ):
+        class NoNetworkClient:
+            @property
+            def token(self):
+                raise AssertionError("SDK status must not read this client's token")
 
-        assert result.approximated is True
-        assert result.message == (
-            "GitCode-limited approximation of gh issue status: assigned and opened issues use user-level "
-            "GitCode results; mentioned issues use repository mention filtering."
-        )
-        assert result.item == {
-            "assigned": [{"number": "1", "state": "open", "title": "Assigned"}],
-            "mentioned": [{"number": "3", "state": "open", "title": "Mentioned"}],
-            "createdBy": [{"number": "2", "state": "open", "title": "Created"}],
-        }
-        assert service.list_user_issues.call_args_list == [
-            call(filter="assigned", state="open"),
-            call(filter="created", state="open"),
-        ]
-        service.list.assert_called_once_with("owner", "repo", state="open", mention="alice")
+        service.client = NoNetworkClient()
+        service.client.base_url = base_url
+        with pytest.raises(APIError, match="injected client"):
+            adapter.status("o", "r")
+        assert not service.mock_calls and not user_service.mock_calls
+
+    def test_subclass_must_explicitly_opt_in_to_bounded_pages(self, adapter, service):
+        class PolicyClient(GitCodeClient):
+            def __init__(self):
+                pass
+
+            def get(self, *args, **kwargs):
+                raise AssertionError("SDK status must not invoke the general request method")
+
+        service.client = PolicyClient()
+        with pytest.raises(APIError, match="injected client"):
+            adapter.status("o", "r")

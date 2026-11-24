@@ -389,3 +389,101 @@ def test_json_fields_discoverable_without_proxy_mapping():
     assert "--json" in help_text and "JSON FIELDS" in help_text and "gitSHA" in help_text
     with pytest.raises(ProxyError, match="refusing to fall back"):
         validate_gitcode_command(["repo", "read-file", "f", "-R", "gitcode.com/o/r", "--json", "size"])
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--clobber"],
+        ["--json", "path", "--clobber"],
+        ["--json", "path", "-o", "out", "--clobber"],
+        ["--clobber", "-o", "snapshot/"],
+        ["--clobber", "-o", "snapshot/."],
+        ["--clobber", "-o", ".."],
+    ],
+)
+def test_clobber_requires_explicit_file_before_fetch(options, provider, monkeypatch):
+    target = Mock(side_effect=AssertionError("invalid options should not resolve target"))
+    monkeypatch.setattr("gitcode_cli.commands.repo._read_target", target)
+    req = provider(lambda _: pytest.fail("unexpected request"))
+    result = _runner().invoke(main, [*ARGS, "f", *options])
+    assert result.exit_code == 2 and not result.stdout_bytes and "--" in result.stderr
+    target.assert_not_called()
+    req.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="strict local output is POSIX only")
+@pytest.mark.parametrize("existing", [False, True])
+def test_clobber_installs_exact_bytes_as_a_private_new_file(provider, tmp_path, existing):
+    dest, alias = tmp_path / "snapshot", tmp_path / "original-hardlink"
+    if existing:
+        dest.write_bytes(b"original")
+        dest.chmod(0o644)
+        os.link(dest, alias)
+
+    raw = b"\0\xff\n\x1b"
+    req = provider(lambda _: httpx.Response(200, json=record("f", raw)))
+    result = _runner().invoke(main, [*ARGS, "f", "--ref", "main", "--clobber", "-o", str(dest)])
+    assert result.exit_code == 0, result.stderr
+    assert not result.stdout_bytes and dest.read_bytes() == raw and dest.stat().st_mode & 0o077 == 0
+    if existing:
+        assert alias.read_bytes() == b"original" and not dest.samefile(alias)
+    req.assert_called_once()
+    request = req.call_args.args[0]
+    assert request.method == "GET" and request.url.path == "/api/v5/repos/team/project/contents/f"
+    assert dict(request.url.params) == {"ref": "main"}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="strict local output is POSIX only")
+@pytest.mark.parametrize("kind", ["directory", "symlink", "dangling", "linked-parent", "fifo"])
+def test_clobber_refuses_nonregular_or_linked_destination(provider, tmp_path, kind):
+    dest, original = tmp_path / "dest", tmp_path / "original"
+    original.write_bytes(b"keep")
+    if kind == "directory":
+        dest.mkdir()
+    elif kind == "symlink":
+        dest.symlink_to(original)
+    elif kind == "dangling":
+        dest.symlink_to(tmp_path / "absent")
+    elif kind == "linked-parent":
+        dest.symlink_to(tmp_path, target_is_directory=True)
+    else:
+        os.mkfifo(dest)
+
+    req = provider(lambda _: httpx.Response(200, json=record("f", b"replacement")))
+    path = dest / original.name if kind == "linked-parent" else dest
+    result = _runner().invoke(main, [*ARGS, "f", "-o", str(path), "--clobber"])
+    assert result.exit_code != 0 and not result.stdout_bytes
+    assert original.read_bytes() == b"keep" and not (tmp_path / "absent").exists()
+    if kind in ("symlink", "dangling", "linked-parent"):
+        assert dest.is_symlink()
+    elif kind == "directory":
+        assert dest.is_dir() and not list(dest.iterdir())
+    else:
+        assert dest.is_fifo()
+    assert not list(tmp_path.glob(".gc-release-*"))
+    req.assert_called_once()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="strict local output is POSIX only")
+@pytest.mark.parametrize("failure", ["http", "integrity", "fsync", "replace"])
+def test_clobber_failure_does_not_truncate_or_unlink_existing_file(provider, tmp_path, monkeypatch, failure):
+    dest = tmp_path / "snapshot"
+    dest.write_bytes(b"keep")
+    identity = dest.stat().st_ino
+    row = record("f", b"replacement")
+    if failure == "integrity":
+        row["sha"] = "0" * 40
+    if failure in {"fsync", "replace"}:
+
+        def fail(*_args, **_kwargs):
+            assert dest.read_bytes() == b"keep" and dest.stat().st_ino == identity
+            raise OSError(errno.EIO, "simulated filesystem failure")
+
+        monkeypatch.setattr(os, failure, fail)
+    req = provider(lambda _: httpx.Response(403 if failure == "http" else 200, json=row))
+    result = _runner().invoke(main, [*ARGS, "f", "--clobber", "-o", str(dest)])
+    assert result.exit_code == 1 and not result.stdout_bytes
+    assert dest.read_bytes() == b"keep" and dest.stat().st_ino == identity
+    assert not list(tmp_path.glob(".gc-release-*"))
+    req.assert_called_once()

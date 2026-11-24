@@ -35,7 +35,7 @@ def call(monkeypatch, tmp_config_dir):
 
         requests.clear()
         monkeypatch.setattr(rest_api, "open_client", lambda: httpx.Client(transport=httpx.MockTransport(handler)))
-        root = ["-R", repo] if repo else []
+        root = ["-R", repo] if repo is not None else []
         # Click 8.1 merges stderr into Result.stdout unless explicitly separated;
         # Click 8.2+ always captures the individual streams.
         opts = {"mix_stderr": False} if separate_stderr and "mix_stderr" in signature(CliRunner).parameters else {}
@@ -390,3 +390,360 @@ def test_empty_query_does_not_invoke_strict_parser(monkeypatch):
     assert rest_api.endpoint_url("user", None)[1] == {}
     assert rest_api.endpoint_url("user?", None)[1] == {}
     assert rest_api.endpoint_url("user?page=1", None)[1] == {"page": "1"}
+
+
+RUNS_PATH = "/api/v8/repos/o/r/actions/runs"
+
+
+def _runs_envelope(total, *ids, **other):
+    return {"total_count": total, "workflow_runs": [{"workflow_run_id": run_id} for run_id in ids], **other}
+
+
+def test_v8_runs_page_objects_are_redacted_and_requests_remain_pinned(call):
+    invoke, requests = call
+    first = _runs_envelope(3, "run-1", "run-2", record={"token": "do-not-print", "message": TOKEN})
+    second = _runs_envelope(3, "run-3", extra={"retain": "upstream JSON"})
+    result = invoke(
+        [
+            "/api/v8/repos/{owner}/{repo}/actions/runs?branch=release%2Fv1&per_page=2",
+            "-X",
+            "GET",
+            "-f",
+            "event=Push",
+            "--paginate",
+            "--slurp",
+        ],
+        [
+            httpx.Response(
+                200,
+                headers={
+                    "X-Page": str(page),
+                    "X-Per-Page": "2",
+                    "X-Next-Page": "2" if page == 1 else "",
+                    "X-Prev-Page": "1" if page == 2 else "",
+                    "X-Total": "3",
+                    "X-Total-Pages": "2",
+                    "Set-Cookie": "sid=private",
+                },
+                json=data,
+            )
+            for page, data in enumerate((first, second), 1)
+        ],
+        repo="gitcode.com/o/r",
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [{**first, "record": {"token": "[REDACTED]", "message": "[REDACTED]"}}, second]
+    assert all(x not in result.output for x in ("foreign.invalid", "do-not-print", TOKEN))
+    assert [r.url.params["page"] for r in requests] == ["1", "2"]
+    for r in requests:
+        assert r.method == "GET" and r.url.host == "api.gitcode.com" and r.url.path == RUNS_PATH and not r.content
+        assert dict(r.url.params) == {
+            "branch": "release/v1",
+            "per_page": "2",
+            "page": r.url.params["page"],
+            "event": "Push",
+        }
+        assert r.headers["authorization"] == f"Bearer {TOKEN}"
+        assert r.headers["Accept-Encoding"] == "identity"
+        assert not {"cookie", "private-token"}.intersection(r.headers)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [[RUNS_PATH, "--paginate"], [RUNS_PATH.removeprefix("/api/v8/"), "--api-version", "v8", "--paginate", "-i"]],
+)
+def test_v8_runs_empty_envelope_and_explicit_default_page_size(call, args):
+    invoke, requests = call
+    empty = _runs_envelope(0)
+    result = invoke(args, [httpx.Response(200, json=empty)], token="")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output.split("\n\n", 1)[-1]) == empty
+    (req,) = requests
+    assert req.url.path == RUNS_PATH and dict(req.url.params) == {"page": "1", "per_page": "20"}
+    assert "authorization" not in req.headers
+
+
+def test_v8_runs_non_slurped_pages_are_raw_root_objects(call):
+    invoke, requests = call
+    pages = [_runs_envelope(2, "A", custom="first"), _runs_envelope(2, "B", custom="second")]
+    result = invoke(
+        [f"{RUNS_PATH}?page=1&per_page=1", "--paginate"], [httpx.Response(200, json=page) for page in pages]
+    )
+    assert result.exit_code == 0, result.output
+    first, end = json.JSONDecoder().raw_decode(result.output)
+    assert first == pages[0] and json.loads(result.output[end:]) == pages[1]
+    assert [r.url.params["page"] for r in requests] == ["1", "2"]
+
+
+@pytest.mark.parametrize(
+    ("path", "other", "repo"),
+    [
+        (RUNS_PATH, [], "o/other"),
+        (RUNS_PATH, [], ""),
+        (RUNS_PATH, [], "gitcode.com:8443/o/r"),
+        (RUNS_PATH, [], "ssh.gitcode.com/o/r"),
+        (RUNS_PATH.replace("/o/r/", "/o/{repo}/"), [], "other/r"),
+        (RUNS_PATH.replace("/o/r/", "/{owner}/r/"), [], "o/other"),
+        (RUNS_PATH.replace("/o/r/", "/%E5%AE%9D/r/"), [], None),
+        (RUNS_PATH + "?page=2", [], None),
+        (RUNS_PATH + "?page=01", [], None),
+        (RUNS_PATH + "?per_page=0", [], None),
+        (RUNS_PATH + "?per_page=101", [], None),
+        (RUNS_PATH + "?per_page=1.0", [], None),
+        (RUNS_PATH + "?per_page=010", [], None),
+        (RUNS_PATH + "?page=1&Page=2", [], None),
+        (RUNS_PATH + "?per_page=2", ["-X", "GET", "-F", "per_page=3"], None),
+        (RUNS_PATH + "?start_time=1", [], None),
+        (RUNS_PATH + "?branch=", [], None),
+        (RUNS_PATH + "?branch=" + "a" * 1025, [], None),
+        (RUNS_PATH, ["-H", "If-None-Match: example"], None),
+        (RUNS_PATH, ["-H", "Accept: text/plain"], None),
+        (RUNS_PATH, ["-X", "HEAD"], None),
+        (RUNS_PATH, ["-X", "PUT"], None),
+    ],
+)
+def test_v8_runs_refuses_unclear_scope_or_options_before_connecting(call, path, other, repo):
+    invoke, requests = call
+    result = invoke([path, "--paginate", *other], repo=repo, separate_stderr=True)
+    assert result.exit_code != 0 and requests == [] and not result.stdout
+    assert ("error:" in result.stderr.lower() or "usage:" in result.stderr.lower()) and TOKEN not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        _runs_envelope(4, "C", "D"),
+        _runs_envelope(3),
+        _runs_envelope(3, "C", "D"),
+        _runs_envelope(3, "A", details="distinct data cannot bypass duplicate ID detection"),
+        _runs_envelope(3, ""),
+        _runs_envelope(3, 42),
+        _runs_envelope(3, " padded"),
+        _runs_envelope(3, "C\u0000"),
+        {"total_count": 3, "workflow_runs": [None]},
+        {"total_count": 3, "workflow_runs": [{"id": "C"}]},
+        {"total_count": True, "workflow_runs": []},
+        {"total_count": "3", "workflow_runs": []},
+        {"total_count": -1, "workflow_runs": []},
+        {"total_count": 3, "runs": [{"workflow_run_id": "C"}]},
+        _runs_envelope(3, "C", next_page=3),
+        _runs_envelope(3, "C", page=1),
+        _runs_envelope(3, "C", per_page=1),
+        [{"workflow_run_id": "C"}],
+    ],
+)
+def test_v8_runs_incomplete_or_overlapping_pages_never_emit_partial_data(call, other):
+    invoke, requests = call
+    result = invoke(
+        [f"{RUNS_PATH}?per_page=2", "--paginate", "-i"],
+        [
+            httpx.Response(200, json=_runs_envelope(3, "A", "B", exposed="no-sample-text")),
+            httpx.Response(200, json=other),
+        ],
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and len(requests) == 2 and result.stdout == ""
+    assert "no-sample-text" not in result.stderr and "HTTP 200" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"total_count": 1, "total_count": 0, "workflow_runs": []}',
+        b'{"total_count": 1, "workflow_runs": [{"workflow_run_id":"x", "workflow_run_id":"y"}]}',
+        b'{"total_count": 0, "workflow_runs": [], "extra": NaN}',
+        b'{"total_count": 0, "workflow_runs": [], "extra": 1e999}',
+    ],
+)
+def test_v8_runs_refuses_duplicate_keys_and_nonfinite_numbers(call, raw):
+    invoke, _ = call
+    result = invoke([RUNS_PATH, "--paginate", "--silent"], [httpx.Response(200, content=raw)], separate_stderr=True)
+    assert result.exit_code != 0 and not result.stdout
+
+
+class _UnreadStream(httpx.SyncByteStream):
+    def __iter__(self):
+        pytest.fail("The refused body must not be consumed")
+        yield b""
+
+
+@pytest.mark.parametrize(
+    "status,headers",
+    [
+        (200, {"Content-Encoding": "gzip"}),
+        (200, {"Content-Range": "items 0-0/2"}),
+        (200, {"Link": '<https://foreign.invalid/api/v8/repos/o/r/actions/runs?page=2>; rel="next"'}),
+        (200, {"Link": '<https://api.gitcode.com/api/v8/repos/o/r/actions/runs?page=2>; rel="next"'}),
+        (200, {"X-Page": "9"}),
+        (200, {"X-Per-Page": "999"}),
+        (206, {}),
+        (204, {}),
+        (304, {}),
+        (302, {"Location": "https://foreign.invalid"}),
+    ],
+)
+def test_v8_runs_requires_uncompressed_http_200_and_does_not_follow_links(call, status, headers):
+    invoke, requests = call
+    result = invoke(
+        [RUNS_PATH, "--paginate"],
+        [httpx.Response(status, headers=headers, stream=_UnreadStream())],
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and len(requests) == 1 and not result.stdout
+    assert "foreign.invalid" not in result.stderr
+
+
+def test_v8_runs_total_limit_stops_on_first_response(call, monkeypatch):
+    invoke, requests = call
+    monkeypatch.setattr(rest_api, "MAX_PAGES", 2)
+    result = invoke(
+        [RUNS_PATH + "?per_page=1", "--paginate"],
+        [httpx.Response(200, json=_runs_envelope(3, "A"))],
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and len(requests) == 1 and not result.stdout
+    assert "pagination limit" in result.stderr
+
+
+def test_v8_runs_byte_cap_is_aggregate_and_fails_before_any_output(call, monkeypatch):
+    invoke, requests = call
+    first = httpx.Response(200, json=_runs_envelope(2, "A", additional="A" * 100))
+    second = httpx.Response(200, json=_runs_envelope(2, "B", additional="B" * 100))
+    monkeypatch.setattr(rest_api, "MAX_BYTES", len(first.content) + len(second.content) - 1)
+    result = invoke([RUNS_PATH + "?per_page=1", "--paginate"], [first, second], separate_stderr=True)
+    assert result.exit_code != 0 and len(requests) == 2 and not result.stdout
+    assert "size limit" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "path", [RUNS_PATH.replace("/v8/", "/v5/"), RUNS_PATH + "/1", RUNS_PATH.replace("/runs", "/artifacts")]
+)
+def test_v8_runs_policy_does_not_extend_to_other_envelopes(call, path):
+    invoke, requests = call
+    result = invoke([path, "--paginate"], [httpx.Response(200, json=_runs_envelope(0))], separate_stderr=True)
+    assert result.exit_code != 0 and len(requests) == 1 and not result.stdout
+    assert "requires a JSON array" in result.stderr
+
+
+@pytest.mark.parametrize("path", [RUNS_PATH, RUNS_PATH.replace("/o/r/", "/{owner}/{repo}/")])
+def test_v8_runs_never_infers_origin_for_explicit_routes_or_placeholders(call, monkeypatch, path):
+    invoke, requests = call
+
+    def refuse_origin(_repo):
+        pytest.fail("v8 run pagination must not resolve a local origin")
+
+    monkeypatch.setattr(api, "resolve_repo", refuse_origin)
+    if "{owner}" in path:
+        result = invoke([path, "--paginate"], separate_stderr=True)
+        assert result.exit_code != 0 and not result.stdout and not requests
+        assert "explicit -R" in result.stderr and TOKEN not in result.stderr
+    else:
+        result = invoke([path, "--paginate"], [httpx.Response(200, json=_runs_envelope(0))])
+        assert result.exit_code == 0 and len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("token", "path", "sent"),
+    [
+        ("20", RUNS_PATH, 0),
+        ("2", RUNS_PATH + "?per_page=1", 1),
+        ("page=2", RUNS_PATH + "?per_page=1", 1),
+    ],
+)
+def test_v8_runs_rechecks_token_after_generating_pagination_params(call, token, path, sent):
+    invoke, requests = call
+    result = invoke(
+        [path, "--paginate", "-i"],
+        [httpx.Response(200, json=_runs_envelope(2, "A", tag="never-printed"))][:sent],
+        token=token,
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and not result.stdout and len(requests) == sent
+    assert "outside the authorization header" in result.stderr
+    assert "never-printed" not in result.stderr and token not in result.stderr
+    assert all(token not in str(request.url) for request in requests)
+
+
+@pytest.mark.parametrize(
+    ("total", "run_page", "headers"),
+    [
+        (0, _runs_envelope(0), {"X-Next-Page": "2"}),
+        (0, _runs_envelope(0), {"X-Total": "2"}),
+        (0, _runs_envelope(0), {"X-Total-Pages": "2"}),
+        (0, _runs_envelope(0), {"X-Prev-Page": "1"}),
+        (2, _runs_envelope(2, "A"), {"X-Next-Page": ""}),
+        (2, _runs_envelope(2, "A"), {"X-Next-Page": "3"}),
+        (2, _runs_envelope(2, "A"), {"X-Next-Page": "2, 2"}),
+    ],
+)
+def test_v8_runs_rejects_continuation_headers_conflicting_with_the_body(call, total, run_page, headers):
+    invoke, requests = call
+    assert run_page["total_count"] == total
+    result = invoke(
+        [RUNS_PATH + "?per_page=1", "--paginate", "-i"],
+        [httpx.Response(200, json=run_page, headers=headers)],
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and len(requests) == 1 and result.stdout == ""
+    assert "Contradictory" in result.stderr and "HTTP 200" not in result.stderr and TOKEN not in result.stderr
+
+
+def test_v8_runs_cannot_substitute_the_fixed_actions_runs_suffix(call):
+    invoke, requests = call
+    result = invoke(["/api/v8/repos/o/r/{owner}/{repo}", "--paginate"], repo="actions/runs", separate_stderr=True)
+    assert result.exit_code != 0 and not result.stdout and not requests
+    assert "literal actions/runs" in result.stderr and TOKEN not in result.stderr
+
+
+@pytest.mark.parametrize("later_page", [False, True])
+@pytest.mark.parametrize(
+    ("header", "body"),
+    [
+        ([("X-Truncated", "true")], {}),
+        ([("X-Truncated", "1")], {}),
+        ([("X-Incomplete-Results", "True")], {}),
+        ([("X-Incomplete-Results", "unknown")], {}),
+        ([("X-Truncated", "")], {}),
+        ([("X-Truncated", "false"), ("x-truncated", "true")], {}),
+        ([("X-INCOMPLETE-RESULTS", "0"), ("X-Incomplete-Results", "1")], {}),
+        ([], {"truncated": True}),
+        ([], {"truncated": 1}),
+        ([], {"truncated": None}),
+        ([], {"truncated": 0.0}),
+        ([], {"incomplete_results": True}),
+        ([], {"incomplete_results": "false"}),
+        ([("X-Truncated", "false")], {"truncated": True}),
+        ([("X-Incomplete-Results", "1")], {"incomplete_results": False}),
+    ],
+)
+def test_v8_runs_rejects_partial_indicators_without_emitting_pages(call, later_page, header, body):
+    invoke, requests = call
+    responses = [httpx.Response(200, json=_runs_envelope(2, "A", marker="first-page-private"))] if later_page else []
+    final = _runs_envelope(2, "B", **body) if later_page else _runs_envelope(0, **body)
+    responses.append(httpx.Response(200, json=final, headers=header))
+    result = invoke([RUNS_PATH + "?per_page=1", "--paginate", "-i"], responses, separate_stderr=True)
+    assert result.exit_code != 0 and not result.stdout and len(requests) == len(responses)
+    assert "truncation" in result.stderr
+    assert all(value not in result.stderr for value in (TOKEN, "first-page-private", "HTTP 200"))
+
+
+def test_v8_runs_accepts_unambiguous_false_indicators(call):
+    invoke, requests = call
+    envelope = _runs_envelope(0, truncated=False, incomplete_results=0)
+    result = invoke(
+        [RUNS_PATH, "--paginate", "--slurp"],
+        [httpx.Response(200, json=envelope, headers={"X-Truncated": "False", "X-Incomplete-Results": "0"})],
+    )
+    assert result.exit_code == 0 and len(requests) == 1
+    assert json.loads(result.output) == [envelope]
+
+
+def test_v8_runs_rejects_duplicate_body_indicators_even_with_final_false(call):
+    invoke, requests = call
+    result = invoke(
+        [RUNS_PATH, "--paginate", "--slurp"],
+        [httpx.Response(200, content=b'{"total_count":0,"workflow_runs":[],"truncated":true,"truncated":false}')],
+        separate_stderr=True,
+    )
+    assert result.exit_code != 0 and len(requests) == 1 and not result.stdout
+    assert "valid JSON" in result.stderr and TOKEN not in result.stderr

@@ -18,3 +18,20 @@ This is the provider's remote fork-sync operation, not a local Git update.
 Arbitrary sources, forced resets and guarantees of GitHub-identical behavior
 on divergence are not supported. Offline tests use synthetic fork metadata
 and exercise the exact branch body; they do not establish live acceptance.
+
+## Read status without synchronizing
+
+`gc repo sync-status OWNER/FORK -b release/1` reads GitCode's
+[fork synchronization status](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-sync-repo/)
+with **one GET**. Sign in first. Supply the literal owner/fork and one short
+branch name, not a URL, `-R`, or `refs/heads/…`. There is no origin or default
+branch lookup, redirect, retry, or fallback to the PUT above.
+
+The JSON output always has a boolean `repo_sync_result` and a
+`repo_sync_message` key. If GitCode omits the message or returns `null`,
+the CLI outputs `null` for that key. Either boolean is a successful *read*:
+neither proves commit ancestry or an ahead/behind count. Messages with
+control characters, excessive length, or content resembling credentials or
+links are replaced with `[message withheld]`. Other message types and
+malformed data fail without partial output. This is a native `gc` command,
+not a `gh` or MCP interface.

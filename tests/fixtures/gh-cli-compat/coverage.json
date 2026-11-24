@@ -111,7 +111,6 @@
       ],
       "diff": [
         {"name": "--color", "reason": "diff color rendering is outside the selected #86 placeholder set"},
-        {"name": "-e", "reason": "diff exclude filtering is outside the selected #86 placeholder set"},
         {"name": "--web", "reason": "opening PR diff in browser is outside the selected #86 placeholder set"}
       ],
       "list": [
@@ -124,7 +123,6 @@
     },
     "repo": {
       "clone": [
-        {"name": "--no-upstream", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "-u", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "--upstream-remote-name", "reason": "upstream remote management is not implemented by gc repo clone"}
       ],
@@ -485,6 +483,11 @@
             "category": "extension",
             "reason": "gc provides GitCode-specific R1–R4 merge-readiness auditing.",
             "value": "Audit pull requests against merge-readiness rules"
+          },
+          "update-plan": {
+            "category": "extension",
+            "reason": "gc compares immutable same-repository PR snapshot commits without updating either branch.",
+            "value": "Compare the recorded SHAs of a same-repository open PR (read-only)"
           }
         },
         "changed_commands": {

@@ -9,7 +9,9 @@ from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import project_issue
 from ..repo import resolve_repo
+from ..repo_read import resolve_origin_target
 from ..services import IssueService, UserService
+from ..services.issue_status import status as repository_issue_status
 from ..utils import (
     open_in_browser,
     prompt_if_missing,
@@ -46,7 +48,6 @@ def _issue_status_labels(item: dict) -> str:
 def _echo_issue_status(data: dict[str, list[dict]]) -> None:
     sections = [
         ("Issues assigned to you", data.get("assigned") or []),
-        ("Issues mentioning you", data.get("mentioned") or []),
         ("Issues opened by you", data.get("createdBy") or []),
     ]
     for title, items in sections:
@@ -204,7 +205,7 @@ def issue_group() -> None:
 @click.option("-A", "--author")
 @click.option("-a", "--assignee")
 @click.option("--milestone")
-@click.option("--mention")
+@click.option("--mention", help="Unsupported: no verified repository issue mention filter.")
 @click.option("--app", help="Filter by app author. Unsupported on GitCode.")
 @click.option("-S", "--search")
 @click.option("-L", "--limit", type=int, default=30, show_default=True, help="Maximum number of items to fetch.")
@@ -237,6 +238,8 @@ def issue_list(
     jq_query: str | None,
     template: str | None,
 ) -> None:
+    if mention is not None:
+        raise unsupported("ISSUE_LIST_MENTION")
     app_ctx = ctx.obj["app"]
     owner, repo = resolve_repo(repo_name or app_ctx.repo)
     if limit is not None and limit < 1:
@@ -629,20 +632,28 @@ def issue_status(
     template: str | None,
 ) -> None:
     app = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    service = IssueService(app.client())
-    adapter = IssueAdapter(service, UserService(app.client()))
-    result = adapter.status(owner, repo)
-    data = result.item or {"assigned": [], "mentioned": [], "createdBy": []}
+    target = repo_name if repo_name is not None else app.repo
+    if target is None:
+        target = resolve_origin_target()
+    if not target:
+        raise click.UsageError("Use -R OWNER/REPO to select a repository.")
+    owner, repo = resolve_repo(target)
+    if repo_name and app.repo and (owner, repo) != resolve_repo(app.repo):
+        raise click.UsageError("Conflicting global and issue status repository targets.")
+    if json_fields is not None and any(
+        key.strip() not in {"assigned", "createdBy", "mentioned"} for key in json_fields.split(",")
+    ):
+        raise click.UsageError("Issue status fields: assigned, createdBy, mentioned (unavailable/null).")
+    data = repository_issue_status(owner, repo, app.token)
     if json_fields or jq_query or template:
         output_result(data, json_fields, jq_query, template, default_formatter=_echo_issue_status)
         return
     safe_echo(f"Relevant issues in {owner}/{repo}")
-    safe_echo("")
-    if result.message:
-        safe_echo(result.message)
-        safe_echo("")
+    safe_echo(capability_message("ISSUE_STATUS_GH_SEMANTICS"))
     _echo_issue_status(data)
+
+
+set_gc_help(issue_status, gc_json_fields=["assigned", "createdBy", "mentioned (unavailable/null)"])
 
 
 @issue_group.command("develop")
@@ -766,6 +777,6 @@ issue_delete.short_help = "Delete issue"
 issue_delete.help = "Delete issue."
 set_gc_help(issue_delete, gc_usage="gc issue delete {<number> | <url>} [flags]")
 issue_status.short_help = "Show status of relevant issues"
-issue_status.help = "Show status of relevant issues."
+issue_status.help = "Show open issues assigned to or created by you in one repository. Mentions are unavailable."
 issue_develop.short_help = "Manage linked branches for an issue"
 issue_develop.help = "Manage linked branches for an issue."

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,13 +12,16 @@ from ..adapters import RepoAdapter
 from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
-from ..helptext import GCSectionGroup, set_gc_help
+from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
 from ..json_projection import repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
-from ..repo_read_dir import MAX_PAGE, fetch_page
-from ..repo_read_file import fetch_file, write_file, write_stdout
+from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
+from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
+from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
+from ..repo_read_file import METADATA_FIELDS, encode_file, fetch_file, write_file, write_stdout
+from ..repo_sync_status import read_sync_status
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -353,6 +357,15 @@ def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
     return validate_gitcode_repo(*parse_repo_with_host(target))
 
 
+def _read_fields(options: tuple[str, ...], allowed: tuple[str, ...]) -> tuple[str, ...] | None:
+    if not options:
+        return None
+    fields = tuple(field.strip() for field in options[0].split(","))
+    if len(options) != 1 or len(set(fields)) != len(fields) or any(field not in allowed for field in fields):
+        raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(allowed))
+    return fields
+
+
 @repo_group.command("read-dir", short_help="List one page of a GitCode directory")
 @click.argument("path", required=False)
 @click.option(
@@ -361,22 +374,43 @@ def _read_target(ctx: click.Context, repo_name: str | None) -> tuple[str, str]:
 @click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
 @click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
 @click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
+@click.option(
+    "--json",
+    "json_options",
+    is_flag=False,
+    multiple=True,
+    flag_value=",".join(READ_DIR_JSON_FIELDS),
+    metavar="[FIELDS]",
+    help="Output one JSON array. Optionally select comma-separated fields.",
+)
 @click.pass_context
-def repo_read_dir(ctx: click.Context, path: str | None, repo_name: str | None, ref: str, page: int, per_page: int):
+def repo_read_dir(
+    ctx: click.Context,
+    path: str | None,
+    repo_name: str | None,
+    ref: str,
+    page: int,
+    per_page: int,
+    json_options: tuple[str, ...],
+) -> None:
     """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
+    fields = _read_fields(json_options, READ_DIR_JSON_FIELDS)
     owner, name = _read_target(ctx, repo_name)
-    lines = fetch_page(owner, name, path, ref, page, per_page, ctx.obj["app"].token)
-    if not lines:
+    token = ctx.obj["app"].token
+    entries = fetch_page(owner, name, path, ref, page, per_page, token)
+    if not entries:
         message = "No entries on this page; the Tree API does not confirm the path is an existing directory."
         if page == 1 and path is not None:
             raise click.ClickException(message + " Inspect its parent at the same commit to check the path.")
         safe_echo(message, err=True)
-        return
-    click.open_file("-", "wb").write(("\n".join(lines) + "\n").encode("utf-8"))
-    if len(lines) == per_page and page == MAX_PAGE:
+    click.open_file("-", "wb").write(encode_page(entries, fields, token))
+    if len(entries) == per_page and page == MAX_PAGE:
         safe_echo("Full page at the maximum page number; remaining entries are unknown.", err=True)
-    elif len(lines) == per_page:
+    elif len(entries) == per_page:
         safe_echo(f"Full page; try --page {page + 1} with the same --ref and --per-page (it may be empty).", err=True)
+
+
+set_gc_help(repo_read_dir, gc_json_fields=READ_DIR_JSON_FIELDS)
 
 
 @repo_group.command("read-file", short_help="Read a file from a GitCode repository")
@@ -385,16 +419,51 @@ def repo_read_dir(ctx: click.Context, path: str | None, repo_name: str | None, r
     "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
 )
 @click.option("--ref", help="Read this branch, tag, or commit (default: the repository default branch).")
-@click.option("-o", "--output", type=click.Path(path_type=Path), help="Create a new file with the exact bytes (POSIX).")
+@click.option("-o", "--output", type=click.Path(), help="Write the exact bytes to a local file (POSIX).")
+@click.option(
+    "--clobber",
+    is_flag=True,
+    help="With --output, atomically replace a regular file. Do not concurrently change the destination or its path.",
+)
+@click.option(
+    "--json",
+    "json_options",
+    is_flag=False,
+    multiple=True,
+    flag_value=",".join(METADATA_FIELDS),
+    metavar="[FIELDS]",
+    help="Print verified metadata as JSON. Select content explicitly for canonical Base64.",
+)
 @click.pass_context
-def repo_read_file(ctx: click.Context, path: str, repo_name: str | None, ref: str | None, output: Path | None) -> None:
-    """Read one file (up to 1 MiB) without cloning. Stdout accepts safe UTF-8 text only."""
+def repo_read_file(
+    ctx: click.Context,
+    path: str,
+    repo_name: str | None,
+    ref: str | None,
+    output: str | None,
+    clobber: bool,
+    json_options: tuple[str, ...],
+) -> None:
+    """Read one file (up to 1 MiB) without cloning. Default stdout accepts safe UTF-8 text only."""
+    fields = _read_fields(json_options, READ_FILE_JSON_FIELDS)
+    if fields is not None and output is not None:
+        raise click.UsageError("Specify only one of --json and --output.")
+    # Path() normalizes a trailing slash or /. away. Do not turn an explicit
+    # directory spelling into permission to replace a file of the same name.
+    if clobber and (output is None or os.path.basename(output) in {"", ".", ".."}):
+        raise click.UsageError("--clobber requires --output FILE (an explicit filename).")
     owner, name = _read_target(ctx, repo_name)
-    content = fetch_file(owner, name, path, ref, ctx.obj["app"].token)
-    if output is None:
+    token = ctx.obj["app"].token
+    content = fetch_file(owner, name, path, ref, token)
+    if fields is not None:
+        click.open_file("-", "wb").write(encode_file(path, content, fields, token))
+    elif output is None:
         write_stdout(content)
     else:
-        write_file(output, content)
+        write_file(Path(output), content, clobber=clobber)
+
+
+set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)
 
 
 @repo_group.command("list")
@@ -545,17 +614,35 @@ def repo_create(
         )
 
 
-@repo_group.command("clone", context_settings={"ignore_unknown_options": True})
+class _RepoCloneCommand(GCSectionCommand):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click removes the first "--" before the callback. Check this new mode
+        # here so gh's -u NAME cannot accidentally select Git's upload-pack.
+        prefix = args[: args.index("--")] if "--" in args else args
+        if "--no-upstream" in prefix and any(
+            arg.startswith("-") and arg not in {"--no-upstream", "--help"} for arg in prefix
+        ):
+            raise click.UsageError(
+                "With --no-upstream, put native git clone options after --. Named fork remotes are not supported.",
+                ctx,
+            )
+        return super().parse_args(ctx, args)
+
+
+@repo_group.command("clone", cls=_RepoCloneCommand, context_settings={"ignore_unknown_options": True})
+@click.option("--no-upstream", is_flag=True, help="Do not discover or add a fork parent (the default).")
 @click.argument("repository")
 @click.argument("directory", required=False)
 @click.argument("gitflags", nargs=-1, type=click.UNPROCESSED)
-def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...]) -> None:
+def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...], no_upstream: bool) -> None:
     owner, repo = _parse_repository_arg(repository)
     # With ignore_unknown_options, click may stuff a passthrough flag into the
     # optional `directory` positional; prepending whatever landed there keeps
     # the original argument order for `git clone`.
     clone_args: list[str] = [directory] if directory else []
-    clone_args.extend(arg for arg in gitflags if arg != "--")
+    # An additional "--" in the explicit mode belongs to Git. Keep the
+    # historical passthrough behavior for invocations without the new flag.
+    clone_args.extend(gitflags if no_upstream else (arg for arg in gitflags if arg != "--"))
     _git_clone(f"https://gitcode.com/{owner}/{repo}.git", *clone_args)
 
 
@@ -679,6 +766,21 @@ def repo_delete(ctx: click.Context, repo_name: str | None, repository: str | Non
     safe_echo(f"Deleted repository {target}")
 
 
+@repo_group.command("sync-status", short_help="Query GitCode fork synchronization status without syncing")
+@click.argument("repository", metavar="OWNER/FORK")
+@click.option("-b", "--branch", required=True, multiple=True, help="One explicit fork branch to query.")
+@click.pass_context
+def repo_sync_status(ctx: click.Context, repository: str, branch: tuple[str, ...]) -> None:
+    """Read the provider's status as JSON. Use a positional OWNER/FORK without -R; no branch is updated.
+
+    Output includes a boolean repo_sync_result and a repo_sync_message string or null.
+    """
+    app = ctx.obj["app"]
+    if app.repo is not None or len(branch) != 1:
+        raise click.UsageError("Specify one positional OWNER/FORK and one --branch; do not use -R.")
+    safe_echo(read_sync_status(repository, branch[0], app.token))
+
+
 @repo_group.command("sync")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("repository", required=False)
@@ -698,7 +800,7 @@ set_gc_help(
     gc_usage="gc repo <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["clone", "create", "fork", "list", "set-default"]),
-        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "view"]),
+        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "sync-status", "view"]),
     ],
     gc_examples=[
         "gc repo list",
@@ -753,7 +855,8 @@ repo_clone.short_help = "Clone a repository locally"
 repo_clone.help = "Clone a gitcode.com repository locally, passing extra flags to git clone after --."
 set_gc_help(
     repo_clone,
-    gc_usage="gc repo clone <repository> [<directory>] [-- <gitflags>...] [flags]",
+    gc_usage="gc repo clone [--no-upstream] <repository> [<directory>] [-- <gitflags>...]",
+    gc_examples=["gc repo clone --no-upstream owner/project work -- --depth 1"],
 )
 repo_fork.short_help = "Create a fork of a repository"
 repo_fork.help = "Create a fork of a repository. With no argument, the repository is taken from the git origin remote."

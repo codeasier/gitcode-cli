@@ -6,6 +6,7 @@ import sys
 
 import click
 
+from .._redact import redact
 from ..adapters import PullRequestAdapter
 from ..adapters.capabilities import unsupported
 from ..audit import AUDIT_JSON_FIELDS, AuditThresholds, audit_error_result, audit_pull_request, is_fatal_audit_error
@@ -20,6 +21,7 @@ from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list,
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import project_pr
 from ..pr_git import checkout_head, delete_head
+from ..pr_update_plan import MAX_PR_NUMBER, build_update_plan
 from ..repo import resolve_repo
 from ..services import IssueService, PullRequestService, UserService
 from ..utils import (
@@ -34,6 +36,7 @@ from ..utils import (
     safe_number,
 )
 from ._created_output import PR_FIELDS, created_output
+from ._pr_diff_names import exclude_patterns, excluded
 
 
 def _resolve_pr_repo(explicit: str | None, identifier: str | None) -> tuple[str, str]:
@@ -925,11 +928,29 @@ def pr_close(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("--name-only", is_flag=True, help="Display only names of changed files.")
+@click.option(
+    "-e",
+    "--exclude",
+    multiple=True,
+    metavar="PATTERN",
+    help="With --name-only, omit matching paths or basenames. Use literal text and * within a component; "
+    "up to 32 patterns, each at most 512 UTF-8 bytes.",
+)
 @click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")
 @click.pass_context
-def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
+def pr_diff(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    name_only: bool,
+    patch: bool,
+    exclude: tuple[str, ...],
+) -> None:
     if name_only and patch:
         raise click.UsageError("--name-only cannot be used with --patch.")
+    if exclude and not name_only:
+        raise click.UsageError("--exclude requires --name-only; diff and patch bodies cannot be filtered.")
+    patterns = exclude_patterns(exclude)
     app = ctx.obj["app"]
     owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
@@ -956,7 +977,8 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
             )
             if not isinstance(path, str) or not path:
                 raise APIError("Changed file response has no filename.")
-            paths.append(path)
+            if not patterns or not excluded(path, patterns):
+                paths.append(path)
         if paths:
             safe_echo("\n".join(paths))
         return
@@ -1027,6 +1049,34 @@ def pr_ready(ctx: click.Context, repo_name: str | None, identifier: str | None, 
         safe_echo(f"Converted pull request #{safe_number(item, number)} to draft")
     else:
         safe_echo(f"Marked pull request #{safe_number(item, number)} as ready for review")
+
+
+@pr_group.command("update-plan")
+@click.option("-R", "--repo", "repo_name", help="Explicit GitCode repository in OWNER/REPO format.")
+@click.argument("number", type=click.IntRange(min=1, max=MAX_PR_NUMBER))
+@click.pass_context
+def pr_update_plan(ctx: click.Context, repo_name: str | None, number: int) -> None:
+    """Compare the recorded SHAs of a same-repository open PR (read-only)."""
+    app = ctx.obj["app"]
+    explicit = repo_name if repo_name is not None else app.repo
+    if not explicit:
+        raise click.UsageError("Use -R OWNER/REPO to select the repository explicitly.")
+    owner, repo = resolve_repo(explicit)
+    if repo_name is not None and app.repo is not None and (not app.repo or resolve_repo(app.repo) != (owner, repo)):
+        raise click.UsageError("The command and global --repo values disagree.")
+    plan = build_update_plan(owner, repo, number, app.token)
+    safe_echo(
+        redact(
+            f"Read-only GitCode PR snapshot: {owner}/{repo}#{number}\n"
+            f"Head SHA: {plan.snapshot.head.oid}\n"
+            f"Base SHA: {plan.snapshot.base.oid}\n"
+            f"Merge base SHA: {plan.merge_base_oid}\n"
+            f"Relationship: {plan.relationship}\n"
+            "This compares recorded commits, not live branch tips or merge readiness. "
+            "This command did not update any branch.",
+            app.token,
+        )
+    )
 
 
 @pr_group.command("status")
@@ -1189,7 +1239,20 @@ set_gc_help(
         ("GENERAL COMMANDS", ["audit", "create", "list", "status"]),
         (
             "TARGETED COMMANDS",
-            ["checkout", "checks", "close", "comment", "diff", "edit", "merge", "ready", "reopen", "review", "view"],
+            [
+                "checkout",
+                "checks",
+                "close",
+                "comment",
+                "diff",
+                "edit",
+                "merge",
+                "ready",
+                "reopen",
+                "review",
+                "update-plan",
+                "view",
+            ],
         ),
     ],
     gc_examples=[

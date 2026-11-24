@@ -4,8 +4,10 @@ from typing import Any
 
 import click
 
+from ..client import GitCodeClient
 from ..errors import APIError, GCError
 from ..services import IssueService, UserService
+from ..services.issue_status import status as repository_issue_status
 from ._current_user import resolve_me
 from .base import AdapterActionResult
 from .capabilities import capability_message, unsupported
@@ -187,14 +189,16 @@ class IssueAdapter:
         search: str | None,
         limit: int | None,
     ) -> Any:
+        if mention is not None:
+            raise unsupported("ISSUE_LIST_MENTION")
         author, assignee = resolve_me(self.user_service, author, assignee)
         params = {
             "state": state,
             "labels": _normalize_multi_values(labels),
             "creator": author,
+            "mention": None,
             "assignee": assignee,
             "milestone": milestone,
-            "mention": mention,
             "search": search,
         }
         needs_and_filter = bool(labels) and len(labels) > 1
@@ -450,16 +454,16 @@ class IssueAdapter:
         return item
 
     def status(self, owner: str, repo: str) -> AdapterActionResult:
-        if self.user_service is None:
-            raise click.ClickException("failed to resolve current user: current user lookup is unavailable")
-        current_login = _extract_login(self.user_service.current())
-        if not current_login:
-            raise click.ClickException("failed to resolve current user: current user has no login")
-        assigned = self.service.list_user_issues(filter="assigned", state="open") or []
-        created = self.service.list_user_issues(filter="created", state="open") or []
-        mentioned = self.service.list(owner, repo, state="open", mention=current_login) or []
+        client = self.service.client
+        implementation = getattr(type(client), "read_issue_status_page", None)
+        # A subclass that overrides the general SDK policy must explicitly opt
+        # into the dedicated page contract before we can use its transport.
+        if not callable(implementation) or (
+            type(client) is not GitCodeClient and implementation is GitCodeClient.read_issue_status_page
+        ):
+            raise APIError("The injected client does not implement the bounded issue status page contract.")
         return AdapterActionResult(
-            item={"assigned": assigned, "mentioned": mentioned, "createdBy": created},
+            item=repository_issue_status(owner, repo, client.token, read_page=client.read_issue_status_page),
             message=capability_message("ISSUE_STATUS_GH_SEMANTICS"),
             approximated=True,
         )

@@ -78,6 +78,36 @@ in names, IDs or states, fails without emitting a partial result. Identity and
 status are not rewritten to placeholders if they cannot be safely shown. Input,
 environment, messages, logs and execution configuration are not exported.
 
+## Watch one run without changing it
+
+```console
+gc run watch RUN_ID -R owner/repo
+gc run watch RUN_ID -R owner/repo --interval 5 --timeout 600 --exit-status
+```
+
+Watch reads only the [run-detail GET](https://docs.gitcode.com/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/).
+The first read pins the explicit ID, full head SHA and current attempt. A rerun before that
+first read may already be the current attempt; a change during the watch stops it. Watch
+does not select a run interactively, enumerate jobs/steps, support `--compact`, or route via
+the `gh` proxy.
+
+Changes between `RUNNING`, `PAUSED` and `SUSPEND` appear on stderr. A recognized terminal
+state produces a single JSON object on stdout with `workflow_run_id`, `head_sha`, `attempt`
+and `status`. Default exit 0 means **observed** `COMPLETED`, `FAILED` or `CANCELED`, not
+that the run passed. With `--exit-status`, `FAILED` and `CANCELED` exit 1. `IGNORED` exits
+3 in both modes: a skipped run is not a passing result. Even `COMPLETED` reports only
+provider-level execution completion, **not** success of all jobs, PR required checks or
+merge readiness.
+
+`-i/--interval` waits 1–60 seconds between reads (default 3). `--timeout` is a monotonic
+local deadline of 1–900 seconds (default 300), including any in-flight read. A timeout,
+HTTP error, unknown or missing state, or unverifiable identity exits nonzero without a
+terminal result. Ctrl-C exits 130. No late response is accepted. The watcher stops
+admitting polls when it observes shutdown or expiry. A GET already admitted may still
+unwind after local exit; neither timeout nor interruption sends a remote cancel.
+Offline contracts use a synthetic transport; verification in an authorized GitCode
+environment is still pending.
+
 ## Explicit writes
 
 ```console

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing, contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ import click
 
 from .._redact import redact
 from ..actions_client import ActionsClient
+from ..actions_watch import MAX_INTERVAL, MAX_TIMEOUT, watch_run
 from ..adapters.action_checks import pr_evidence
 from ..context import AppContext
 from ..errors import APIError
@@ -25,11 +27,14 @@ offset_option = click.option("--offset", type=click.IntRange(0), default=0, show
 
 
 @contextmanager
+def _open_service(owner: str, repo: str, token: str):
+    with closing(ActionsClient(token)) as client:
+        yield ActionsService(client, owner, repo)
+
+
 def _service(ctx: click.Context, repo_name: str | None):
     app: AppContext = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    with closing(ActionsClient(app.token)) as client:
-        yield ActionsService(client, owner, repo)
+    return _open_service(*resolve_repo(repo_name or app.repo), app.token)
 
 
 def _show(ctx: click.Context, value: dict, *, exact_fields: tuple[str, ...] = ()):
@@ -119,6 +124,51 @@ def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, ste
             extra = svc.jobs(run_id, offset, limit)
         latest = svc.pin(run_id, pinned["attempt"], pinned["head_sha"])
         _show(ctx, {"run": latest, **extra})
+
+
+@run.command("watch")
+@click.argument("run_id")
+@repo_option
+@click.option(
+    "-i",
+    "--interval",
+    type=click.IntRange(1, MAX_INTERVAL),
+    default=3,
+    show_default=True,
+    help="Seconds between run-detail reads.",
+)
+@click.option(
+    "--timeout",
+    type=click.IntRange(1, MAX_TIMEOUT),
+    default=300,
+    show_default=True,
+    help="Local watch deadline in seconds; never cancels the remote run.",
+)
+@click.option("--exit-status", is_flag=True, help="Return nonzero for FAILED or CANCELED (IGNORED is always nonzero).")
+@click.pass_context
+def run_watch(ctx: click.Context, repo_name, run_id, interval, timeout, exit_status):
+    """Watch one explicit run ID. Exit 0 means a terminal state was observed, not that PR checks passed.
+
+    Use --exit-status to also return nonzero for FAILED or CANCELED.
+    """
+    app: AppContext = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    try:
+        result = watch_run(
+            partial(_open_service, owner, repo, app.token),
+            run_id,
+            interval,
+            timeout,
+            lambda status: click.echo(f"Run status: {status}", err=True),
+        )
+    except KeyboardInterrupt:
+        click.echo("Watch interrupted locally; no stop request was sent.", err=True)
+        ctx.exit(130)
+    _show(ctx, result)
+    if result["status"] == "IGNORED":
+        ctx.exit(3)
+    if exit_status and result["status"] in {"FAILED", "CANCELED"}:
+        ctx.exit(1)
 
 
 @run.command("rerun")

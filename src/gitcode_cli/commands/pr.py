@@ -34,6 +34,7 @@ from ..utils import (
     safe_number,
 )
 from ._created_output import PR_FIELDS, created_output
+from ._pr_diff_names import exclude_patterns, excluded
 
 
 def _resolve_pr_repo(explicit: str | None, identifier: str | None) -> tuple[str, str]:
@@ -925,11 +926,29 @@ def pr_close(
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("identifier", required=False)
 @click.option("--name-only", is_flag=True, help="Display only names of changed files.")
+@click.option(
+    "-e",
+    "--exclude",
+    multiple=True,
+    metavar="PATTERN",
+    help="With --name-only, omit matching paths or basenames. Use literal text and * within a component; "
+    "up to 32 patterns, each at most 512 UTF-8 bytes.",
+)
 @click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")
 @click.pass_context
-def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, name_only: bool, patch: bool) -> None:
+def pr_diff(
+    ctx: click.Context,
+    repo_name: str | None,
+    identifier: str | None,
+    name_only: bool,
+    patch: bool,
+    exclude: tuple[str, ...],
+) -> None:
     if name_only and patch:
         raise click.UsageError("--name-only cannot be used with --patch.")
+    if exclude and not name_only:
+        raise click.UsageError("--exclude requires --name-only; diff and patch bodies cannot be filtered.")
+    patterns = exclude_patterns(exclude)
     app = ctx.obj["app"]
     owner, repo = _resolve_pr_repo(repo_name or app.repo, identifier)
     service = PullRequestService(app.client())
@@ -956,7 +975,8 @@ def pr_diff(ctx: click.Context, repo_name: str | None, identifier: str | None, n
             )
             if not isinstance(path, str) or not path:
                 raise APIError("Changed file response has no filename.")
-            paths.append(path)
+            if not patterns or not excluded(path, patterns):
+                paths.append(path)
         if paths:
             safe_echo("\n".join(paths))
         return

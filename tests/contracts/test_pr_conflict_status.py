@@ -88,6 +88,47 @@ def test_detail_may_omit_or_update_display_title(invoke, title):
     assert result.output.endswith("conflict check: not passed\n")
 
 
+@pytest.mark.parametrize("url", ["https://gitcode.com/o/r", "https://gitcode.com/o/r.git"])
+def test_same_repository_web_and_clone_urls_preserve_conflict_check(invoke, url):
+    base = {"repo": {"path": "r", "namespace": {"path": "o"}, "full_name": "o/r", "html_url": url}}
+    row = {**ROW, "base": base}
+    detail = {**row, "mergeable_state": {"merge_request_id": 107, "conflict_passed": False}}
+    result = invoke(["-c", "--page", "2"], ("", {**PAGE, "page": "2"}, 200, [row]), ("/7", {}, 200, detail))
+    assert result.exit_code == 0, result.output
+    assert "page 2 only" in result.stdout and result.stdout.endswith("conflict check: not passed\n")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gitcode.com/other/r.git",
+        "https://gitcode.com/o/other.git",
+        "https://gitcode.com.evil.invalid/o/r.git",
+        "https://evil.invalid@gitcode.com/o/r.git",
+        "https://gitcode.com:443/o/r.git",
+        "http://gitcode.com/o/r.git",
+        "https://gitcode.com/o/r.git/",
+        "https://gitcode.com/o/r.git.git",
+        "https://gitcode.com/o/r%2Egit",
+        "https://gitcode.com/o/r.git?",
+        "https://gitcode.com/o/r.git#branch",
+        "https://gitcode.com/o/r.gi\nt",
+    ],
+)
+def test_noncanonical_clone_url_cannot_verify_repository_before_fanout(invoke, url):
+    row = {**ROW, "base": {"repo": {"full_name": "o/r", "html_url": url}}}
+    result = invoke(["-c"], ("", PAGE, 200, [row]))
+    assert result.exit_code == 1 and not result.stdout
+    assert "Cannot verify" in result.stderr
+
+
+def test_valid_clone_url_cannot_override_conflicting_base_identity(invoke):
+    detail = {**ROW, "base": {"repo": {"full_name": "other/r", "html_url": "https://gitcode.com/o/r.git"}}}
+    result = invoke(["-c"], ("", PAGE, 200, [ROW]), ("/7", {}, 200, detail))
+    assert result.exit_code == 1 and not result.stdout
+    assert "Cannot verify" in result.stderr
+
+
 @pytest.mark.parametrize(
     "detail",
     [

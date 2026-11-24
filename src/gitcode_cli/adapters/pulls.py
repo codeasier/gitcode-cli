@@ -89,15 +89,20 @@ def _status_base_matches(item: dict, owner: str, repo: str) -> bool:
         return False
     if "html_url" not in source:
         return True
-    if not isinstance(source["html_url"], str):
+    html_url = source["html_url"]
+    if not isinstance(html_url, str):
         return False
     try:
-        url = urlsplit(source["html_url"])
+        url = urlsplit(html_url)
     except ValueError:
         return False
-    return (
-        url.scheme in ("http", "https") and url.netloc.lower() == "gitcode.com" and url.path.rstrip("/") == f"/{path}"
+    # GitCode also puts its HTTPS clone URL in html_url. Admit only that
+    # exact spelling, without normalizing malformed or foreign clone URLs.
+    repo_path = f"/{path}"
+    valid_path = url.path.rstrip("/") == repo_path or (
+        url.path == f"{repo_path}.git" and html_url == f"https://gitcode.com{repo_path}.git"
     )
+    return url.scheme in ("http", "https") and url.netloc.lower() == "gitcode.com" and valid_path
 
 
 class PullRequestAdapter:

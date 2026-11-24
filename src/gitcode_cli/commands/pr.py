@@ -20,6 +20,7 @@ from ..errors import APIError, GCError
 from ..formatters import format_pr_audit_list, format_pr_detail, format_pr_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
 from ..json_projection import project_pr
+from ..personal_pr_status import AUTHORED_SCOPE, personal_status
 from ..pr_git import checkout_head, delete_head
 from ..pr_update_plan import MAX_PR_NUMBER, build_update_plan
 from ..repo import resolve_repo
@@ -1079,12 +1080,44 @@ def pr_update_plan(ctx: click.Context, repo_name: str | None, number: int) -> No
     )
 
 
+def _print_authored_status(ctx: click.Context, repo_name: str | None, scope: str) -> None:
+    app = ctx.obj["app"]
+    if "" in (repo_name, app.repo):
+        raise click.UsageError("Expected a repository after --repo.")
+    targets = {resolve_repo(value) for value in (repo_name, app.repo) if value is not None}
+    if len(targets) > 1:
+        raise click.UsageError("Conflicting repository selectors for personal PR status.")
+    target = "/".join(targets.pop()) if targets else None
+    canonical, rows = personal_status(app.token, scope, target)
+    where = f"in {canonical}" if canonical is not None else "across repositories"
+    safe_echo(f"Open pull requests {where} (GitCode scope: {scope})")
+    for row in rows:
+        safe_echo(f"  {row.repository}#{row.number}\t{row.title}")
+    if not rows:
+        safe_echo("  No open pull requests in this scope")
+
+
 @pr_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-c", "--conflict-status", is_flag=True, help="Read the GitCode conflict check for up to 20 open PRs.")
 @click.option("--page", type=click.IntRange(min=1), help="With -c, read only this page of open PRs (default: 1).")
+@click.option(
+    "--scope",
+    type=click.Choice([AUTHORED_SCOPE]),
+    multiple=True,
+    help="List open PRs created by the current account; use -R to restrict the base repository.",
+)
 @click.pass_context
-def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool, page: int | None) -> None:
+def pr_status(
+    ctx: click.Context, repo_name: str | None, conflict_status: bool, page: int | None, scope: tuple[str, ...]
+) -> None:
+    if scope:
+        if len(scope) != 1:
+            raise click.UsageError("Supply --scope only once.")
+        if conflict_status or page is not None:
+            raise click.UsageError("--scope cannot be combined with --conflict-status or --page.")
+        _print_authored_status(ctx, repo_name, scope[0])
+        return
     if page is not None and not conflict_status:
         raise click.UsageError("--page requires --conflict-status (-c).")
     app = ctx.obj["app"]
@@ -1098,8 +1131,8 @@ def pr_status(ctx: click.Context, repo_name: str | None, conflict_status: bool, 
     page_number = page or 1
     result = adapter.status(owner, repo, conflict_status=conflict_status, page=page_number)
     page_label = "first page" if page_number == 1 else f"page {page_number}"
-    scope = f"; {page_label} only, up to 20 PRs" if conflict_status else ""
-    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message}{scope})")
+    page_note = f"; {page_label} only, up to 20 PRs" if conflict_status else ""
+    safe_echo(f"Open pull requests in {owner}/{repo}  ({result.message}{page_note})")
     if result.items:
         for item in result.items:
             title = item["title"]
@@ -1358,8 +1391,12 @@ pr_checkout.short_help = "Check out a pull request locally"
 pr_checkout.help = "Check out a pull request locally."
 pr_ready.short_help = "Mark a pull request as ready for review"
 pr_ready.help = "Mark a pull request as ready for review."
-pr_status.short_help = "Show open pull requests in the repository"
-pr_status.help = "Show one page of open pull requests in the repository, not personal or current-branch groups."
+pr_status.short_help = "Show repository or authored open pull requests"
+pr_status.help = (
+    "By default, show one page of open pull requests in the repository. "
+    "Use --scope created_by_me for open PRs authored across repositories, even inside a checkout. "
+    "Pass -R to restrict the exact base repository. Not gh grouped or current-branch status."
+)
 pr_audit.short_help = "Audit pull requests against merge-readiness rules"
 pr_audit.help = (
     "Audit open pull requests against the R1-R4 merge-readiness rules and print a concrete "

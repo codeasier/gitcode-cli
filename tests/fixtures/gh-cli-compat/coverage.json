@@ -518,8 +518,8 @@
           },
           "status": {
             "category": "semantics",
-            "reason": "Direct gc shows repository-open pull requests rather than gh's personal/current-branch status groups.",
-            "value": "Show open pull requests in the repository"
+            "reason": "Direct gc offers repository or authored open PRs, not gh's grouped/current-branch status.",
+            "value": "Show repository or authored open pull requests"
           }
         }
       },
@@ -577,6 +577,11 @@
       },
       "pr status": {
         "additional_flags": {
+          "--scope": {
+            "category": "extension",
+            "reason": "Direct gc supports only GitCode's authored personal PR queue.",
+            "value": {"target": "--scope", "takes_value": true}
+          },
           "--page": {
             "category": "extension",
             "reason": "Direct gc can select one page of repository conflict checks; gh personal status cannot.",

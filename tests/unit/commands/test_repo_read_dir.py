@@ -363,3 +363,121 @@ def test_json_discoverable_and_still_direct_only():
     assert "--json" in help_text and "JSON FIELDS" in help_text and "gitSHA" in help_text
     with pytest.raises(ProxyError, match="refusing to fall back"):
         validate_gitcode_command(["repo", "read-dir", "--ref", "main", "--json", "path", "-R", "gitcode.com/o/r"])
+
+
+# Object IDs independently produced with 'git mktree -z --missing' (SHA-1).
+# Including a.c, directory a and a0 distinguishes Git sorting from lexical name sorting.
+ALL_ROWS = [
+    item("a0", "", "blob", mode="100755", sha="A" * 40),
+    item("sub", "", "commit", sha="c" * 40),
+    item("a", "", "tree", sha="1" * 40),
+    item('é"🌍', "", "blob", sha="4" * 40),
+    item("a.c", "", "blob", sha="a" * 40),
+    item("link", "", "blob", mode="120000", sha="5" * 40),
+]
+TREE = "a65c6637d20d88455075ed6ad357400da0ca697a"
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def all_args(ref=TREE):
+    return ["repo", "read-dir", "-R", "team/project", "--all", "--ref", ref]
+
+
+@pytest.mark.parametrize(("size", "pages"), [(2, 4), (4, 2), (100, 1)])
+def test_all_pins_tree_and_checks_git_oid_without_sorting_provider_output(install, size, pages):
+    calls = []
+
+    def handle(req):
+        calls.append(len(calls) + 1)
+        assert req.method == "GET" and req.url.path == f"/api/v5/repos/team/project/git/trees/{TREE}"
+        assert dict(req.url.params) == {"page": str(calls[-1]), "per_page": str(size)}
+        assert req.headers["Authorization"] == "Bearer dummy-secret"
+        start = (calls[-1] - 1) * size
+        return httpx.Response(200, json={"tree": ALL_ROWS[start : start + size]})
+
+    provider = install(handle)
+    result = run(["--token", "dummy-secret", *all_args(), "--per-page", str(size), "--json", "name,gitType"])
+    assert result.exit_code == 0 and not result.stderr, result.output
+    assert json.loads(result.stdout_bytes) == [{"name": r["name"], "gitType": r["type"]} for r in ALL_ROWS]
+    assert provider.call_count == pages
+
+
+@pytest.mark.parametrize(
+    "last_page",
+    [
+        {"tree": []},  # A short or empty response by itself is not proof of completeness.
+        {"tree": ALL_ROWS[2:3]},
+        {"tree": [ALL_ROWS[1]]},  # Duplicate across pages, including exact replay.
+        {"tree": [dict(ALL_ROWS[2], sha="6" * 40)]},
+        {"tree": [dict(ALL_ROWS[2], path="elsewhere/a")]},
+        {"tree": [ALL_ROWS[2]], "truncated": True},
+        {"tree": [ALL_ROWS[2], {}, ALL_ROWS[4]]},
+        None,
+    ],
+)
+def test_all_never_prints_prefix_on_later_failure(install, last_page):
+    def handle(req):
+        if req.url.params["page"] == "1":
+            return httpx.Response(200, json={"tree": ALL_ROWS[:2]})
+        assert req.url.params["page"] == "2"
+        return httpx.Response(200, json=last_page) if last_page is not None else httpx.Response(403, text="foo-secret")
+
+    provider = install(handle)
+    result = run([*all_args(), "--per-page", "2", "--json", "gitType"])
+    assert result.exit_code != 0 and result.stdout_bytes == b"" and "foo-secret" not in result.stderr
+    assert provider.call_count == 2
+
+
+def test_all_empty_tree_and_empty_impostor(install):
+    provider = install(lambda _: httpx.Response(200, json={"tree": []}))
+    result = run([*all_args(EMPTY_TREE), "--json"])
+    assert result.exit_code == 0 and result.stdout == "[]\n" and not result.stderr
+    wrong = run([*all_args(COMMIT), "--json"])
+    assert wrong.exit_code != 0 and not wrong.stdout
+    assert provider.call_count == 2
+
+
+@pytest.mark.parametrize("extra", [["--page", "1"], ["--page", "2"], ["dir"]])
+def test_all_cannot_combine_path_or_page(install, extra):
+    provider = install(lambda req: pytest.fail("invalid combination should not make requests"))
+    result = run([*all_args(), *extra])
+    assert result.exit_code == 2 and not result.stdout
+    provider.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["main", "topic/v1", TREE[:8], ""])
+def test_all_refuses_moving_or_short_ref(install, name):
+    provider = install(lambda req: pytest.fail("never page a mutable ref"))
+    result = run(all_args(name))
+    assert result.exit_code != 0 and not result.stdout
+    provider.assert_not_called()
+
+
+def test_all_hard_request_budget_includes_finding_completion(install, monkeypatch):
+    from gitcode_cli import repo_read_dir
+
+    monkeypatch.setattr(repo_read_dir, "MAX_TREE_PAGES", 2)
+    provider = install(lambda req: httpx.Response(200, json={"tree": [ALL_ROWS[int(req.url.params["page"]) - 1]]}))
+    exact = run([*all_args("4963befdc43c2403e45f19b40d3641deb6bc69fd"), "--per-page", "1"])
+    assert exact.exit_code == 0 and len(exact.stdout.splitlines()) == 2
+    assert provider.call_count == 2  # Exact fit proven by the tree object, no over-budget probe.
+    over = run([*all_args(), "--per-page", "1"])
+    assert over.exit_code != 0 and not over.stdout and "limit" in over.stderr
+    assert provider.call_count == 4
+
+
+def test_all_detects_wrong_tree_even_when_all_rows_are_well_formed(install):
+    altered = [dict(row) for row in ALL_ROWS]
+    altered[-1]["mode"] = "100644"  # Still a blob; a name-only comparison wouldn't notice.
+    provider = install(lambda req: httpx.Response(200, json={"tree": altered}))
+    result = run([*all_args(), "--json", "name"])
+    assert result.exit_code != 0 and not result.stdout_bytes
+    provider.assert_called_once()
+
+
+def test_all_verifies_output_token_guard_even_after_hash_match(install):
+    provider = install(lambda req: httpx.Response(200, json={"tree": ALL_ROWS}))
+    # Backslash appears only after JSON escaping; the input row itself has no backslash.
+    result = run(["--token", r"\"", *all_args(), "--json", "path"])
+    assert result.exit_code != 0 and not result.stdout_bytes
+    provider.assert_called_once()

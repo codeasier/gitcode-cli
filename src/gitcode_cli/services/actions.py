@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from typing import Any
+from unicodedata import category
 
 from ..actions_client import UNCERTAIN, ActionsClient, segment
 from ..errors import APIError, NetworkError
@@ -44,6 +45,68 @@ def _rows(data: dict, key: str, limit: int | None = None) -> list[dict]:
     if limit is not None and len(rows) > limit:
         raise APIError("Actions returned more entries than requested.")
     return rows
+
+
+def _snapshot_text(value: object, field: str, maximum: int) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value) > maximum
+        or any(category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for char in value)
+    ):
+        raise APIError(f"Missing, invalid or oversized Actions snapshot field: {field}.")
+    return value
+
+
+def _snapshot_id(value: object) -> str:
+    identifier = _snapshot_text(value, "id", 255)
+    segment(identifier)  # Validate the native identifier; return its unescaped form.
+    return identifier
+
+
+def _snapshot_label(row: dict, seen: set[str], kind: str) -> dict[str, str]:
+    """Only documented native identifiers, display names and status; no logs or job configuration."""
+    identifier = _snapshot_id(row.get("id"))
+    if identifier in seen:
+        raise APIError(f"Duplicate Actions snapshot {kind} ID.")
+    seen.add(identifier)
+    return {
+        "id": identifier,
+        "name": _snapshot_text(row.get("name"), "name", 512),
+        "status": _snapshot_text(row.get("status"), "status", 64),
+    }
+
+
+def _snapshot_steps(rows: list[dict], included: bool) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    result = []
+    for row in rows:
+        step = _snapshot_label(row, seen, "step")
+        if included:
+            result.append(step)
+    return result
+
+
+def _snapshot_window(data: dict, offset: int, limit: int) -> dict:
+    jobs = []
+    total = step_count = 0
+    stage_ids: set[str] = set()
+    job_ids: set[str] = set()
+    for stage in _rows(data, "stages"):
+        stage_label = _snapshot_label(stage, stage_ids, "stage")
+        for job in _rows(stage, "jobs"):
+            job_label = _snapshot_label(job, job_ids, "job")
+            rows = _rows(job, "steps")
+            included = offset <= total < offset + limit
+            if included:
+                step_count += len(rows)
+                if step_count > MAX_PAGE:
+                    raise APIError("Snapshot exceeds 100 steps per page; lower --limit or inspect one job with --job.")
+            steps = _snapshot_steps(rows, included)
+            if included:
+                jobs.append({**job_label, "stage": stage_label, "steps": steps})
+            total += 1
+    return {"jobs": jobs, "total_count": total, "next_offset": offset + limit if offset + limit < total else None}
 
 
 class ActionsService:
@@ -128,20 +191,38 @@ class ActionsService:
             raise APIError("Ambiguous workflow selector; use the exact ID from workflow list.")
         return matches[0]
 
-    def detail(self, run_id: str) -> dict:
+    def _read_run(self, run_id: str) -> dict:
         data = self._call("run", ids={"run_id": run_id})
         if data.get("workflow_run_id") != run_id:
             raise APIError("Actions returned a different or missing run ID.")
-        return pick(data, RUN_FIELDS)
+        return data
 
-    def pin(self, run_id: str, attempt: int | None = None, commit: str | None = None) -> dict:
-        detail = self.detail(run_id)
+    def detail(self, run_id: str) -> dict:
+        return pick(self._read_run(run_id), RUN_FIELDS)
+
+    @staticmethod
+    def _check_pin(detail: dict, attempt: int | None, commit: str | None) -> None:
         sha = detail.get("head_sha")
         if not isinstance(sha, str) or not SHA_RE.fullmatch(sha) or not nonnegative(detail.get("attempt")):
             raise APIError("Cannot verify the exact Actions commit and attempt.")
         if attempt is not None and detail["attempt"] != attempt or commit is not None and sha.lower() != commit.lower():
             raise APIError("Actions run no longer matches the requested commit/attempt.")
+
+    def pin(self, run_id: str, attempt: int | None = None, commit: str | None = None) -> dict:
+        detail = self.detail(run_id)
+        self._check_pin(detail, attempt, commit)
         return detail
+
+    def job_snapshot(self, run_id: str, attempt: int | None, commit: str | None, offset: int, limit: int) -> dict:
+        """One run observation: pin and project the same response, never join different reads."""
+        if offset < 0 or not 1 <= limit <= MAX_PAGE:
+            raise APIError("Invalid result window.")
+        data = self._read_run(_snapshot_id(run_id))
+        self._check_pin(data, attempt, commit)
+        return {
+            "run": pick(data, ("workflow_run_id", "attempt", "head_sha")),
+            **_snapshot_window(data, offset, limit),
+        }
 
     def _jobs(self, run_id: str) -> list[dict]:
         data = self._call("jobs", ids={"run_id": run_id})

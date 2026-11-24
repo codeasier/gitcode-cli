@@ -15,6 +15,7 @@ from ..actions_client import ActionsClient
 from ..actions_watch import MAX_INTERVAL, MAX_TIMEOUT, watch_run
 from ..adapters.action_checks import CHECK_ROW_FIELDS, check_rows, pr_evidence
 from ..context import AppContext
+from ..errors import APIError
 from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services.actions import MAX_WORKFLOW_SCAN, SHA_RE, ActionsService
@@ -36,16 +37,19 @@ def _service(ctx: click.Context, repo_name: str | None):
     return _open_service(*resolve_repo(repo_name or app.repo), app.token)
 
 
-def _show(ctx: click.Context, value: dict | list):
+def _show(ctx: click.Context, value: dict | list, *, exact_fields: tuple[str, ...] = ()):
     # Escaped JSON (including log lines) is intentional: never interpret terminal controls or
     # emit the request credential if a workflow or an upstream error reflects it in output.
-    def scrub(item: Any) -> Any:
+    def scrub(item: Any, field: str | None = None) -> Any:
         if isinstance(item, str):
-            return redact(item, ctx.obj["app"].token)
+            safe = redact(item, ctx.obj["app"].token)
+            if field in exact_fields and safe != item:
+                raise APIError("Cannot safely display Actions snapshot identity or status.")
+            return safe
         if isinstance(item, list):
             return [scrub(v) for v in item]
         if isinstance(item, dict):
-            return {k: scrub(v) for k, v in item.items()}
+            return {k: scrub(v, k) for k, v in item.items()}
         return item
 
     click.echo(json.dumps(scrub(value), indent=2, ensure_ascii=True))
@@ -87,21 +91,35 @@ def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr):
 @click.option("-j", "--job", "job_id", help="Inspect one job's steps instead of listing jobs.")
 @click.option("--log", "log_requested", is_flag=True, help="Read a page of one step log (requires --job and --step).")
 @click.option("--step", help="Step run ID for --log.")
+@click.option("--with-steps", is_flag=True, help="List jobs and their steps together from one GitCode run detail.")
 @offset_option
 @limit_option
 @click.option("--sort", type=click.Choice(["asc", "desc"]), default="asc")
 @click.pass_context
-def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, offset, limit, sort):
+def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, with_steps, offset, limit, sort):
     """Show the current run/attempt and jobs, one job's steps, or a bounded log page."""
+    if with_steps and ctx.get_parameter_source("sort") != click.core.ParameterSource.DEFAULT:
+        raise click.UsageError("--sort controls log direction, not --with-steps display order.")
+    if with_steps and commit is not None and not SHA_RE.fullmatch(commit):
+        raise click.UsageError("--commit requires a full hexadecimal commit SHA.")
+    if with_steps and (job_id is not None or log_requested or step is not None):
+        raise click.UsageError("--with-steps cannot be combined with --job, --log or --step.")
     if (log_requested and not (job_id and step)) or (not log_requested and step):
         raise click.UsageError("--log needs --job and --step; --step requires --log.")
     if sort != "asc" and not log_requested:
         raise click.UsageError("--sort desc applies only to --log.")
     with _service(ctx, repo_name) as svc:
+        if with_steps:
+            _show(
+                ctx,
+                svc.job_snapshot(run_id, attempt, commit, offset, limit),
+                exact_fields=("workflow_run_id", "head_sha", "id", "status"),
+            )
+            return
         pinned = svc.pin(run_id, attempt, commit)
         if job_id:
             job = svc.job(run_id, job_id)
-            extra = svc.logs(run_id, job, step, offset, limit, sort) if log_requested else svc.steps(job, offset, limit)
+            extra = svc.logs(run_id, job, step, offset, limit, sort) if step else svc.steps(job, offset, limit)
         else:
             extra = svc.jobs(run_id, offset, limit)
         latest = svc.pin(run_id, pinned["attempt"], pinned["head_sha"])

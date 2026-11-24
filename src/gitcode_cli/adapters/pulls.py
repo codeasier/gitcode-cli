@@ -375,10 +375,10 @@ class PullRequestAdapter:
             )
         return item
 
-    def _conflict_status(self, owner: str, repo: str) -> list[dict]:
-        # Match the list endpoint's default first page; never fan out across the repository.
+    def _conflict_status(self, owner: str, repo: str, page_number: int) -> list[dict]:
+        # Read only the requested page; never fan out across the repository.
         page_size = 20
-        page = self.service.list(owner, repo, state="open", page=1, per_page=page_size)
+        page = self.service.list(owner, repo, state="open", page=page_number, per_page=page_size)
         if not isinstance(page, list) or len(page) > page_size:
             raise APIError("Cannot verify the open pull request page for conflict checks.")
         rows = []
@@ -428,8 +428,12 @@ class PullRequestAdapter:
             )
         return rows
 
-    def status(self, owner: str, repo: str, *, conflict_status: bool = False) -> AdapterActionResult:
-        items = self._conflict_status(owner, repo) if conflict_status else self.service.list(owner, repo, state="open")
+    def status(self, owner: str, repo: str, *, conflict_status: bool = False, page: int = 1) -> AdapterActionResult:
+        items = (
+            self._conflict_status(owner, repo, page)
+            if conflict_status
+            else self.service.list(owner, repo, state="open")
+        )
         return AdapterActionResult(
             items=items,
             message=capability_message("PR_STATUS_GH_SEMANTICS"),

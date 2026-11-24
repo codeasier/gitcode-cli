@@ -136,7 +136,58 @@ def test_empty_page_reads_no_detail(invoke):
     assert result.exit_code == 0 and "No open pull requests" in result.output
 
 
-@pytest.mark.parametrize("flags", [[], ["-c"], ["--json", "number"]])
+def test_explicit_page_reads_only_that_page_and_bounds_fanout(invoke):
+    rows = [{**ROW, "number": n, "id": n + 100, "title": f"PR {n}"} for n in range(21, 41)]
+    details = [(f"/{r['number']}", {}, 200, {**r, "mergeable_state": {"conflict_passed": False}}) for r in rows]
+    result = invoke(["-c", "--page", "2"], ("", {**PAGE, "page": "2"}, 200, rows), *details)
+    assert result.exit_code == 0, result.output
+    assert "page 2 only" in result.output and "first page" not in result.output
+    assert result.output.count("conflict check: not passed") == 20
+    assert "#40\topen\tPR 40" in result.output
+
+
+def test_empty_later_page_does_not_claim_empty_repository(invoke):
+    result = invoke(["-c", "--page=3"], ("", {**PAGE, "page": "3"}, 200, []))
+    assert result.exit_code == 0, result.output
+    assert "No open pull requests on page 3" in result.output
+
+
+@pytest.mark.parametrize("args", [["--page", "1"], ["-c", "--page", "0"], ["-c", "--page", "-1"]])
+def test_invalid_page_usage_never_reads(invoke, args):
+    result = invoke(args)
+    assert result.exit_code == 2
+    assert "--page" in result.output
+
+
+@pytest.mark.parametrize("target", ["other/r", "github.com/o/r", ""])
+def test_page_rejects_conflicting_or_empty_explicit_repository_before_io(invoke, target):
+    result = invoke(["-c", "--page", "2", "-R", target])
+    assert result.exit_code != 0 and "Open pull requests in" not in result.output
+
+
+def test_same_repository_can_be_repeated_for_explicit_page(invoke):
+    result = invoke(["-c", "--page", "2", "-R", "gitcode.com/o/r"], ("", {**PAGE, "page": "2"}, 200, []))
+    assert result.exit_code == 0, result.output
+
+
+def test_later_page_changed_target_discards_entire_report(invoke):
+    other = {**ROW, "number": 8, "id": 108}
+    result = invoke(
+        ["--page", "2", "-c"],
+        ("", {**PAGE, "page": "2"}, 200, [ROW, other]),
+        ("/7", {}, 200, ROW),
+        ("/8", {}, 200, {**other, "base": {"repo": {"full_name": "other/r"}}}),
+    )
+    assert result.exit_code == 1 and "Open pull requests in" not in result.output
+
+
+def test_later_page_preserves_unknown_on_missing_gate(invoke):
+    result = invoke(["--page", "2", "-c"], ("", {**PAGE, "page": "2"}, 200, [ROW]), ("/7", {}, 200, ROW))
+    assert result.exit_code == 0, result.output
+    assert result.output.endswith("conflict check: unknown\n")
+
+
+@pytest.mark.parametrize("flags", [[], ["-c"], ["-c", "--page", "2"], ["--json", "number"]])
 def test_repository_status_never_proxied_as_gh_personal_status(monkeypatch, flags):
     monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("must not fall back to native gh"))
     monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("neither backend may run"))

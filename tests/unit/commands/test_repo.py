@@ -413,7 +413,7 @@ class TestRepoCreate:
         assert mock_client.post.call_args.kwargs["json"]["private"] is False
 
     def test_org_repo_uses_orgs_endpoint(self, runner, mock_client):
-        mock_client.post.return_value = {"full_name": "org/repo", "web_url": "https://gitcode.com/org/repo"}
+        mock_client.post.return_value = {"full_name": "org/repo", "visibility": "public"}
 
         result = runner.invoke(main, ["repo", "create", "org/repo", "--public"])
 

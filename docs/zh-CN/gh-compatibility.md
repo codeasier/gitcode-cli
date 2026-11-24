@@ -49,6 +49,10 @@ GitCode 路由采用失败关闭策略：已知不支持的命令和参数会直
 | `pr comment --edit-last`、`--create-if-none`、`--delete-last`、`--yes` | 支持，限当前用户的普通 PR 评论 |
 | `pr diff --patch` | 支持，返回按提交划分的邮件格式补丁 |
 
+### 创建组织仓库
+
+`gc repo create ORG/NAME` 默认请求私有仓库，须显式指定 `--public` 才会请求公开。[组织接口](https://docs.gitcode.com/docs/apis/post-api-v-5-orgs-org-repos/) 的 `public` 是整数（0 私有、1 公开），[个人接口](https://docs.gitcode.com/docs/apis/post-api-v-5-user-repos/) 的 `private` 是布尔值。组织接口必须返回正确的仓库及明确、一致的可见性，`gc` 才会报告成功或执行显式指定的克隆。例如，仅有 `public: 0` 不代表仓库是私有的。返回未确认时，GitCode 仍可能已创建仓库；请先核实实际归属和可见性，再决定是否重试或推送。此命令不会修改现有工作区的 remote，也不会上传本地提交。
+
 ### 本地账号与结构化认证状态
 
 `gc auth status --json hosts` 通过 GitCode API 验证列出的账号，返回以 `gitcode.com` 为键的 `hosts` 映射。`--active` 仅验证生效账号；PAT 登录与切换见[本地 GitCode 多账号](auth-accounts.md)。输出始终不包含 token；无法获取的 scopes 与 Git 协议字段省略。缺少 token 时返回 `{"hosts": {}}`；API 或网络认证验证失败时返回 `state: "error"` 的条目，退出码仍为 0。配置损坏、JSON 字段错误、jq 表达式错误或格式化参数错误仍会失败。gh proxy 启用时也保持纯机器可读输出。

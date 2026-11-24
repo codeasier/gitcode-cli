@@ -585,6 +585,14 @@ def repo_create(
         gitignore_template=gitignore_template,
         license_template=license_template,
     )
+    if target_owner:
+        # The adapter confirmed this exact identity. Do not substitute an
+        # unrelated web or transport URL from the response.
+        url = _repo_url(None, target_owner, repo_name)
+        safe_echo(url)
+        if clone:
+            _git_clone(url + ".git")
+        return
     item_dict = item if isinstance(item, dict) else None
     owner = _resolve_created_owner(item_dict, target_owner)
     if owner:

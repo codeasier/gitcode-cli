@@ -133,7 +133,8 @@ def _compare(owner: str, repo: str, start: str, end: str, token: str) -> str:
     )
     if (
         not isinstance(comparison, dict)
-        or type(comparison.get("truncated")) is not int
+        # GitCode returns JSON false or integer 0 for a complete comparison.
+        or type(comparison.get("truncated")) not in (bool, int)
         or comparison["truncated"] != 0
         or not isinstance(comparison.get("commits"), list)
         or not isinstance(comparison.get("files"), list)

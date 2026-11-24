@@ -41,7 +41,7 @@ def compare(start, merge_base, **overrides):
         "merge_base_commit": {"sha": merge_base},
         "commits": [],
         "files": [],
-        "truncated": 0,
+        "truncated": False,
         **overrides,
     }
 
@@ -94,9 +94,13 @@ def invoke(monkeypatch):
     ("merge_base", "relationship"),
     [(BASE, "head-includes-base"), (HEAD, "head-is-ancestor-of-base"), (COMMON, "diverged")],
 )
-def test_compare_exact_shas_in_both_orders_and_read_back_pr(invoke, merge_base, relationship):
+@pytest.mark.parametrize("complete", [False, 0], ids=["boolean", "integer"])
+def test_compare_exact_shas_in_both_orders_and_read_back_pr(invoke, merge_base, relationship, complete):
     result = invoke(
-        (DETAIL, PR), (FORWARD, compare(BASE, merge_base)), (REVERSE, compare(HEAD, merge_base)), (DETAIL, PR)
+        (DETAIL, PR),
+        (FORWARD, compare(BASE, merge_base, truncated=complete)),
+        (REVERSE, compare(HEAD, merge_base, truncated=complete)),
+        (DETAIL, PR),
     )
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
@@ -310,7 +314,13 @@ def test_revalidates_immutable_repository_and_namespace_ids_on_final_read(invoke
     "bad",
     [
         {"truncated": 1},
-        {"truncated": False},
+        {"truncated": True},
+        {"truncated": -1},
+        {"truncated": 0.0},
+        {"truncated": "false"},
+        {"truncated": "0"},
+        {"truncated": []},
+        {"truncated": {}},
         {"truncated": None},
         {"commits": None},
         {"files": None},
@@ -322,6 +332,13 @@ def test_revalidates_immutable_repository_and_namespace_ids_on_final_read(invoke
 def test_refuses_truncated_or_unverified_first_comparison(invoke, bad):
     result = invoke((DETAIL, PR), (FORWARD, compare(BASE, COMMON, **bad)))
     assert result.exit_code != 0 and "Relationship:" not in result.output
+
+
+def test_refuses_missing_truncation_flag_on_reverse_comparison(invoke):
+    reverse = compare(HEAD, COMMON)
+    del reverse["truncated"]
+    result = invoke((DETAIL, PR), (FORWARD, compare(BASE, COMMON)), (REVERSE, reverse))
+    assert result.exit_code != 0 and "malformed or truncated" in result.output and "Relationship:" not in result.output
 
 
 def test_refuses_inconsistent_reverse_merge_base(invoke):

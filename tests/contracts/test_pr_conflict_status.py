@@ -23,22 +23,28 @@ def invoke(monkeypatch):
     # Click 8.1 mixes stderr into stdout unless separation is requested.
     runner = CliRunner(**({"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}))
 
-    def run(args, *expected):
+    def run(args, *expected, target=None, token=TOKEN):
         steps = iter(expected)
+        prefix = PREFIX if target is None else f"/api/v5/repos/{target}/pulls"
+        auth = ["--token", token] if token else []
+        repo = ["-R", "o/r"] if target is None else []
+        if target is not None:
+            args = ["-R", target, *args]
+        monkeypatch.setattr("gitcode_cli.cli.get_token", lambda: "")
 
         def respond(request):
             step = next(steps, None)
             assert step is not None, "Unexpected additional request"
             suffix, query, status, payload = step
             assert request.method == "GET" and request.url.host == "conflict.invalid"
-            assert request.url.path == PREFIX + suffix and not request.content
-            assert sorted(request.url.params.multi_items()) == sorted({"access_token": TOKEN, **query}.items())
+            assert request.url.path == prefix + suffix and not request.content
+            assert sorted(request.url.params.multi_items()) == sorted({"access_token": token, **query}.items())
             return httpx.Response(status, json=payload)
 
         with httpx.Client(transport=httpx.MockTransport(respond)) as mocked:
             monkeypatch.setattr("gitcode_cli.client.httpx.Client", lambda **_: mocked)
-            monkeypatch.setattr(AppContext, "client", lambda _: GitCodeClient(TOKEN, base_url=BASE))
-            result = runner.invoke(main, ["--token", TOKEN, "-R", "o/r", "pr", "status", *args])
+            monkeypatch.setattr(AppContext, "client", lambda app: GitCodeClient(app.token, base_url=BASE))
+            result = runner.invoke(main, [*auth, *repo, "pr", "status", *args])
         assert next(steps, None) is None
         if result.exception is not None and not isinstance(result.exception, SystemExit):
             raise result.exception
@@ -133,6 +139,78 @@ def test_valid_clone_url_cannot_override_conflicting_base_identity(invoke):
     result = invoke(["-c"], ("", PAGE, 200, [ROW]), ("/7", {}, 200, detail))
     assert result.exit_code == 1 and not result.stdout
     assert "Cannot verify" in result.stderr
+
+
+@pytest.mark.parametrize("token", ["", TOKEN])
+def test_uppercase_namespace_with_canonical_provider_page_and_detail(invoke, token):
+    source = {
+        "path": "ops-nn",
+        "full_path": "cann/ops-nn",
+        "full_name": "cann/ops-nn",
+        "html_url": "https://gitcode.com/cann/ops-nn.git",
+    }
+    rows = [
+        {**ROW, "number": n, "id": n + 100, "title": f"PR {n}", "base": {"repo": source}} for n in range(15910, 15930)
+    ]
+    statuses = {True: "passed", False: "not passed", None: "unknown"}
+    responses = []
+    expected_lines = []
+    for index, row in enumerate(rows):
+        gate = (True, False, None)[index % 3]
+        detail_source = {**source, "namespace": {"path": "cann"}, "path_with_namespace": "CaNN/ops-nn"}
+        detail_source["html_url"] = "https://gitcode.com/cann/ops-nn/"
+        detail = {**row, "base": {"repo": detail_source}, "mergeable_state": {"conflict_passed": gate}}
+        responses.append((f"/{row['number']}", {}, 200, detail))
+        expected_lines.append(f"  #{row['number']}\topen\t{row['title']}\tconflict check: {statuses[gate]}")
+    result = invoke(
+        ["-c", "--page", "2"], ("", {**PAGE, "page": "2"}, 200, rows), *responses, target="CANN/ops-nn", token=token
+    )
+    assert result.exit_code == 0 and not result.stderr, result.output
+    header, *lines = result.stdout.splitlines()
+    assert "CANN/ops-nn" in header and "page 2 only" in header
+    assert lines == expected_lines
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"path": "OPS-NN"},
+        {"full_name": "cann/OPS-NN"},
+        {"full_path": "can-other/ops-nn"},
+        {"path_with_namespace": "can-else/ops-nn"},
+        {"namespace": {"path": "cann-other"}},
+        {"html_url": "https://gitcode.com/cann/OPS-NN.git"},
+        {"html_url": "https://gitcode.com.evil.invalid/cann/ops-nn.git"},
+        {"html_url": "https://bad@gitcode.com/cann/ops-nn.git"},
+        {"html_url": "https://gitcode.com/cann/ops-nn.git?"},
+        {"html_url": "https://gitcode.com/can\nn/ops-nn"},
+    ],
+)
+def test_canonical_namespace_cannot_hide_conflicting_identity(invoke, override):
+    correct = {
+        "path": "ops-nn",
+        "full_path": "cann/ops-nn",
+        "full_name": "cann/ops-nn",
+        "html_url": "https://gitcode.com/cann/ops-nn.git",
+    }
+    row = {**ROW, "base": {"repo": correct}}
+    contradictory = {**ROW, "base": {"repo": {**correct, **override}}}
+    result = invoke(
+        ["-c", "--page", "2"],
+        ("", {**PAGE, "page": "2"}, 200, [row]),
+        ("/7", {}, 200, contradictory),
+        target="CANN/ops-nn",
+    )
+    assert result.exit_code == 1 and not result.stdout
+    assert "against its detail" in result.stderr
+
+
+def test_namespace_case_does_not_fold_unicode_confusables(invoke):
+    # Kelvin sign folds to k under Unicode lower/casefold; they are not equivalent slugs here.
+    row = {**ROW, "base": {"repo": {"full_name": "k/ops-nn"}}}
+    result = invoke(["-c", "--page", "2"], ("", {**PAGE, "page": "2"}, 200, [row]), target="K/ops-nn")
+    assert result.exit_code == 1 and not result.stdout
+    assert "status list" in result.stderr
 
 
 @pytest.mark.parametrize(

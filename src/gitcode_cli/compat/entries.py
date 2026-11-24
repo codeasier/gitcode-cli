@@ -169,7 +169,7 @@ ENTRIES: list[CompatEntry] = [
         "run download",
         None,
         CompatStatus.IMPLEMENTED,
-        "First attempt, explicit asset ID, verified ZIP to safe POSIX path.",
+        "First attempt, one exact artifact ID or unique name, verified ZIP to safe POSIX path; no gh routing.",
         proxy_allowed=False,
     ),
     # --- auth subcommands ---

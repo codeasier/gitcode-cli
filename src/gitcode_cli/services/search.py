@@ -35,6 +35,11 @@ class SearchService:
             for item in data:
                 if not isinstance(item, dict) or type(item.get("id")) not in (int, str) or not str(item["id"]):
                     raise APIError("Missing identity in GitCode search result.")
+                if resource == "repositories" and params.get("fork") == "false":
+                    # The two published schemas use a boolean and an integer, respectively.
+                    fork = item.get("fork")
+                    if not (fork is False or (type(fork) is int and fork == 0)):
+                        raise APIError("GitCode did not confirm a non-fork repository; no results displayed.")
                 identity = str(item["id"])
                 if identity in seen:
                     raise APIError("GitCode returned overlapping search pages; repeat the search.")

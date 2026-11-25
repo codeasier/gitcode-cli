@@ -263,7 +263,7 @@ class TestPullRequestAdapter:
         result = adapter.status("owner", "repo")
 
         assert result.approximated is True
-        assert result.message == "GitCode API approximation -- user-specific filtering is not available"
+        assert result.message == "GitCode API approximation -- repository view, use --scope for personal status"
         assert result.items == [{"number": 1, "state": "open", "title": "Test"}]
 
     def test_edit_pr_maps_add_remove_fields(self, adapter, service):

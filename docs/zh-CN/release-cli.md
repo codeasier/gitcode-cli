@@ -26,3 +26,9 @@ gc release delete-asset v1.0 project.whl -R org/project
 - 公开 API 可按附件 ID 删除单个附件，没有独立的删除发行版接口，不能用删除 tag 代替。草稿、证书验证、生成发行说明、讨论区等也不等同于 GitHub 能力。
 
 [完整接口列表与官方来源](../en/release-cli.md)
+
+## 不重新下载，比对已有文件
+
+`gc release check-digest TAG PATH -R OWNER/REPO` 将本地文件与 GitCode 附件元数据中的 SHA-256 比对，**不是发布者签名或认证**，也不等价于 `gh release verify` / `verify-asset`。显式指定仓库和精确标签，本地文件名须与唯一上传附件名完全一致；支持 POSIX 下受信任、非符号链接的普通文件，最大 1 GiB。只查询一次[按标签获取发行版](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-releases-tags-tag/)，不请求下载地址，不传送本地文件或文件名，不写盘。
+
+[GitCode 的按标签查询定义](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-releases-tags-tag/)将 `digest`（SHA-256）列为可选字段；[AtomGit 同端点的字段表](https://atomgit-api-doc.atomgit.com/14.release/222.get_repository_release_by_tag_name.html)没有列出摘要，响应示例也未返回 `type`。不能假定每个附件都有类型和摘要。此命令要求正整数 ID 和 GitCode 提供的 SHA-256，并接受 `ATTACH_FILE`；对 GitCode 返回的 `attach`，只在元数据中的地址与所选仓库、标签和文件名对应的 GitCode 下载路径完全匹配时接受。命令只比对地址，不会访问它。如果提供大小，也须一致。元数据缺失、源码归档、重名或不匹配均以非零退出。成功只描述本次比对，不代表标签或附件不可变。

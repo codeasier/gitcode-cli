@@ -242,6 +242,8 @@ class TestRepoView:
             ({"archived": "false"}, None),
             ({"status": "关闭", "archived": 1}, None),
             ({"status": "future", "archived": True}, None),
+            ({"status": "start"}, None),
+            ({"status": "close"}, None),
         ],
     )
     def test_view_archive_state_requires_unambiguous_evidence(self, runner, mock_client, payload, expected):
@@ -413,7 +415,7 @@ class TestRepoCreate:
         assert mock_client.post.call_args.kwargs["json"]["private"] is False
 
     def test_org_repo_uses_orgs_endpoint(self, runner, mock_client):
-        mock_client.post.return_value = {"full_name": "org/repo", "web_url": "https://gitcode.com/org/repo"}
+        mock_client.post.return_value = {"full_name": "org/repo", "visibility": "public"}
 
         result = runner.invoke(main, ["repo", "create", "org/repo", "--public"])
 
@@ -846,7 +848,7 @@ class TestRepoHelpSections:
         result = runner.invoke(main, ["repo", "list", "--help"])
         assert result.exit_code == 0
         assert "JSON FIELDS" in result.output
-        assert "isArchived" not in result.output.split("EXAMPLES")[0]
+        assert "isArchived" in result.output.split("EXAMPLES")[0]
 
     def test_create_help_documents_private_default(self, runner):
         result = runner.invoke(main, ["repo", "create", "--help"])

@@ -164,8 +164,6 @@
         {"name": "--remote-name", "reason": "local remote rewiring is not implemented by gc repo fork"}
       ],
       "list": [
-        {"name": "--archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
-        {"name": "--no-archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
         {"name": "--topic", "reason": "GitCode v5 has no repository topics API"}
       ],
       "sync": [
@@ -518,8 +516,8 @@
           },
           "status": {
             "category": "semantics",
-            "reason": "Direct gc shows repository-open pull requests rather than gh's personal/current-branch status groups.",
-            "value": "Show open pull requests in the repository"
+            "reason": "Direct gc offers repository or personal scopes, not gh's grouped/current-branch status.",
+            "value": "Show open pull requests by repository or personal scope"
           }
         }
       },
@@ -584,6 +582,11 @@
               "target": "--page",
               "takes_value": true
             }
+          },
+          "--scope": {
+            "category": "extension",
+            "reason": "Direct gc can select one GitCode personal PR queue.",
+            "value": {"target": "--scope", "takes_value": true}
           }
         },
         "gc_invariants": {

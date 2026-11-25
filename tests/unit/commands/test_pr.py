@@ -1390,7 +1390,7 @@ class TestPrStatus:
         # Single header with GitCode approximation disclaimer
         assert "Open pull requests in owner/repo" in result.output
         assert "GitCode API approximation" in result.output
-        assert "user-specific filtering is not available" in result.output
+        assert "repository view, use --scope for personal status" in result.output
         # PR is listed once
         assert result.output.count("#1\topen\tFirst PR") == 1
         # Old misleading headings must NOT appear

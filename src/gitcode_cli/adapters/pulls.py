@@ -73,6 +73,43 @@ def _comment_creation_key(comment: dict[str, Any]) -> tuple[datetime, int]:
     return created, int(comment_id)
 
 
+def _status_namespace_matches(value: object, owner: str) -> bool:
+    # GitCode may return a different ASCII case for the namespace in a path.
+    # Do not case-fold the repository slug or equate Unicode lookalikes.
+    return isinstance(value, str) and (
+        value == owner or (value.isascii() and owner.isascii() and value.lower() == owner.lower())
+    )
+
+
+def _status_path_matches(value: object, owner: str, repo: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    namespace, separator, slug = value.partition("/")
+    return bool(separator) and slug == repo and _status_namespace_matches(namespace, owner)
+
+
+def _status_url_matches(html_url: object, owner: str, repo: str) -> bool:
+    # urlsplit drops some raw ASCII whitespace and controls; do not match the
+    # sanitized path of an otherwise malformed URL.
+    if not isinstance(html_url, str) or any(ord(char) <= 32 or ord(char) == 127 for char in html_url):
+        return False
+    try:
+        url = urlsplit(html_url)
+    except ValueError:
+        return False
+    if url.scheme not in ("http", "https") or url.netloc.lower() != "gitcode.com" or not url.path.startswith("/"):
+        return False
+    if _status_path_matches(url.path[1:].rstrip("/"), owner, repo):
+        return True
+    # GitCode also puts its HTTPS clone URL in html_url. Keep its raw URL
+    # spelling strict and compare only the extracted namespace case-insensitively.
+    return (
+        url.path.endswith(".git")
+        and html_url == f"https://gitcode.com{url.path}"
+        and _status_path_matches(url.path[1:-4], owner, repo)
+    )
+
+
 def _status_base_matches(item: dict, owner: str, repo: str) -> bool:
     # A fork's head may have a different owner. Compare only advertised base identity.
     base = item.get("base")
@@ -83,21 +120,16 @@ def _status_base_matches(item: dict, owner: str, repo: str) -> bool:
     namespace = source.get("namespace")
     if (
         source.get("path", repo) != repo
-        or (isinstance(namespace, dict) and namespace.get("path", owner) != owner)
-        or any(source.get(key, path) != path for key in ("full_path", "full_name", "path_with_namespace"))
+        or (isinstance(namespace, dict) and not _status_namespace_matches(namespace.get("path", owner), owner))
+        or any(
+            not _status_path_matches(source.get(key, path), owner, repo)
+            for key in ("full_path", "full_name", "path_with_namespace")
+        )
     ):
         return False
     if "html_url" not in source:
         return True
-    if not isinstance(source["html_url"], str):
-        return False
-    try:
-        url = urlsplit(source["html_url"])
-    except ValueError:
-        return False
-    return (
-        url.scheme in ("http", "https") and url.netloc.lower() == "gitcode.com" and url.path.rstrip("/") == f"/{path}"
-    )
+    return _status_url_matches(source["html_url"], owner, repo)
 
 
 class PullRequestAdapter:
@@ -375,10 +407,10 @@ class PullRequestAdapter:
             )
         return item
 
-    def _conflict_status(self, owner: str, repo: str) -> list[dict]:
-        # Match the list endpoint's default first page; never fan out across the repository.
+    def _conflict_status(self, owner: str, repo: str, page_number: int) -> list[dict]:
+        # Read only the requested page; never fan out across the repository.
         page_size = 20
-        page = self.service.list(owner, repo, state="open", page=1, per_page=page_size)
+        page = self.service.list(owner, repo, state="open", page=page_number, per_page=page_size)
         if not isinstance(page, list) or len(page) > page_size:
             raise APIError("Cannot verify the open pull request page for conflict checks.")
         rows = []
@@ -428,8 +460,12 @@ class PullRequestAdapter:
             )
         return rows
 
-    def status(self, owner: str, repo: str, *, conflict_status: bool = False) -> AdapterActionResult:
-        items = self._conflict_status(owner, repo) if conflict_status else self.service.list(owner, repo, state="open")
+    def status(self, owner: str, repo: str, *, conflict_status: bool = False, page: int = 1) -> AdapterActionResult:
+        items = (
+            self._conflict_status(owner, repo, page)
+            if conflict_status
+            else self.service.list(owner, repo, state="open")
+        )
         return AdapterActionResult(
             items=items,
             message=capability_message("PR_STATUS_GH_SEMANTICS"),

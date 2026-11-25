@@ -491,6 +491,33 @@ class TestRepoCreate:
 
 
 class TestRepoClone:
+    @pytest.mark.parametrize(
+        ("args", "extra"),
+        [
+            (["--no-upstream", "o/r"], []),
+            (["o/r", "dest", "--no-upstream"], ["dest"]),
+            (["o/r", "--no-upstream", "--", "-u", "git-upload-pack"], ["-u", "git-upload-pack"]),
+            (["--no-upstream", "o/r", "--", "--", "-dest"], ["--", "-dest"]),
+            (["o/r", "--", "--no-upstream"], ["--no-upstream"]),
+            (["o/r", "-u", "git-upload-pack"], ["-u", "git-upload-pack"]),
+        ],
+    )
+    def test_direct_clone_keeps_the_gc_and_native_option_boundary(self, runner, args, extra):
+        with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as call:
+            result = runner.invoke(main, ["repo", "clone", *args])
+        assert result.exit_code == 0
+        call.assert_called_once_with(["git", "clone", "https://gitcode.com/o/r.git", *extra])
+
+    @pytest.mark.parametrize(
+        "native", [["-u", "mirror"], ["-umirror"], ["--upstream-remote-name=mirror"], ["--depth", "1"]]
+    )
+    def test_no_upstream_requires_unambiguous_passthrough(self, runner, native):
+        with patch("gitcode_cli.commands.repo.subprocess.call") as call:
+            result = runner.invoke(main, ["repo", "clone", "o/r", *native, "--no-upstream"])
+        assert result.exit_code == 2
+        assert "put native git clone options after --" in result.output
+        call.assert_not_called()
+
     def test_clones_gitcode_url(self, runner, mock_client):
         with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as mock_call:
             result = runner.invoke(main, ["repo", "clone", "owner/repo"])

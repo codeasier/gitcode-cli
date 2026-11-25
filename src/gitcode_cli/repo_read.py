@@ -96,7 +96,14 @@ def bounded_read_url(endpoint: str, params: dict[str, str]) -> httpx.URL:
 
 def bounded_json_response(
     resource: Literal[
-        "Contents", "Tree", "Issue status", "fork sync status", "PR detail", "Commit comparison", "Release metadata"
+        "Contents",
+        "Tree",
+        "Issue status",
+        "fork sync status",
+        "PR detail",
+        "Commit comparison",
+        "Release metadata",
+        "Repository labels",
     ],
     endpoint: str,
     params: dict[str, str],

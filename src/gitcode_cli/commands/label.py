@@ -10,6 +10,7 @@ import click
 from ..adapters.labels import clone_labels, upsert_label
 from ..helptext import GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
+from ..services.label_order import name_ordered_labels
 from ..services.labels import LabelService, validate_name
 from ..utils import safe_echo
 from ._listing_output import listing_options, render_listing, selected_fields
@@ -44,13 +45,38 @@ def label_group():
 @label_group.command("list")
 @_repo_opt
 @click.option("--limit", "-L", default=30, type=click.IntRange(1, 10000), show_default=True, help="Maximum results.")
-@click.option("--search", "-S", default="", help="Match text in the label name (case-insensitive).")
+@click.option("--search", "-S", default=None, help="Match text in the label name (case-insensitive).")
+@click.option(
+    "--sort",
+    "sort_by",
+    type=click.Choice(["name"]),
+    help="Sort up to 1,000 catalog labels by Unicode name; not with --search.",
+)
+@click.option("--order", type=click.Choice(["asc", "desc"]), help="Direction for --sort name (default: asc).")
 @listing_options
 @click.pass_context
-def label_list(ctx, repo, limit, search, json_fields, jq_query, template):
+def label_list(ctx, repo, limit, search, sort_by, order, json_fields, jq_query, template):
     """List task labels, optionally filtering their names."""
     fields = selected_fields(json_fields, _LABEL_FIELDS, jq_query, template)
-    labels = _service(ctx, repo).list(limit, search)
+    if sort_by is None:
+        if order is not None:
+            raise click.UsageError("--order requires --sort name; ordering by creation time is not supported.")
+        labels = _service(ctx, repo).list(limit, search or "")
+    else:
+        if search is not None:
+            raise click.UsageError("Use --sort name or --search, not both.")
+        app = ctx.obj["app"]
+        if repo == "" or app.repo == "":
+            raise click.UsageError("Specify a nonempty repository for sorted label listing.")
+        owner, name = resolve_repo(repo if repo is not None else app.repo)
+        if repo is not None and app.repo is not None:
+            global_owner, global_name = resolve_repo(app.repo)
+            if not all(x.isascii() for x in (owner, name, global_owner, global_name)) or (
+                owner.lower(),
+                name.lower(),
+            ) != (global_owner.lower(), global_name.lower()):
+                raise click.UsageError("Global and label list repository selectors must identify the same repository.")
+        labels = name_ordered_labels(owner, name, token=app.token, descending=order == "desc", limit=limit)
     rows = [{"id": x.get("id"), "name": x["name"], "color": (x.get("color") or "").lstrip("#")} for x in labels]
 
     def display(data):

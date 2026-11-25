@@ -26,6 +26,7 @@ _FIELDS = {
         "pushedAt",
         "defaultBranch",
         "forksCount",
+        "isFork",
         "stargazersCount",
         "openIssuesCount",
         "watchersCount",
@@ -101,7 +102,12 @@ def _project(resource: str, item: dict) -> dict:
         "watchersCount": "watchers_count",
         "avatarUrl": "avatar_url",
     }
-    return {key: item.get(aliases.get(key, key)) for key in _FIELDS[resource]}
+    result = {key: item.get(aliases.get(key, key)) for key in _FIELDS[resource]}
+    if resource == "repositories":
+        # The two published search schemas use a boolean or an integer flag.
+        fork = item.get("fork")
+        result["isFork"] = bool(fork) if type(fork) in (bool, int) and fork in (0, 1) else None
+    return result
 
 
 def _show_rows(resource: str, rows: list[dict]) -> None:

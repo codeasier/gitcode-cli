@@ -30,11 +30,11 @@ The CLI starts at page 1 and makes at most **10** non-recursive requests (at mos
 
 ## JSON output
 
-Put `--json` after the optional path to print all four fields, or pass a comma-separated selection:
+Put `--json` after the optional path to print the four default fields (`name,path,gitSHA,gitType`). Pass a comma-separated list to select fields, including the two optional mode fields:
 
 ```sh
 gc repo read-dir scripts/MemSnapDump -R Ascend/msinsight --ref 7fe24b3805ade9beb48e55f354315960567443d3 --json
-gc repo read-dir --ref main -R team/project --json path,gitSHA
+gc repo read-dir --ref main -R team/project --json path,mode,modeOctal
 ```
 
 Stdout is a single UTF-8 array for the requested page (or verified complete tree with `--all`), in provider order. Each object contains only the selected keys, in selector order:
@@ -42,5 +42,7 @@ Stdout is a single UTF-8 array for the requested page (or verified complete tree
 - `name`: immediate child name; `path`: its exact path relative to the requested ref's root.
 - `gitSHA`: the child's Git object ID from the entry's native `sha`, not the requested ref or the enclosing tree ID.
 - `gitType`: the native Git object type, checked against its mode: `blob`, `tree` or `commit`. A symlink is a blob; a submodule entry is a commit.
+- `mode`: the Git file mode as a JSON integer, parsed from the validated octal mode (for example, `33188` for a regular file).
+- `modeOctal`: the same mode as a six-character octal string (`"100644"` for a regular file, `"040000"` for a directory).
 
-No file sizes, content or inferred metadata are emitted. All rows (including unselected fields needed to validate identity) must pass validation before any output. In manual page mode, page bounds, the ambiguous filtered first-page error, and continuation hints on stderr are unchanged.
+Both mode fields use the existing Tree response; they do not trigger additional requests. No file sizes, content or inferred metadata are emitted. All rows (including unselected fields needed to validate identity) must pass validation before any output. In manual page mode, page bounds, the ambiguous filtered first-page error, and continuation hints on stderr are unchanged.

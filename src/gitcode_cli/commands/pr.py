@@ -934,7 +934,7 @@ def pr_close(
     "--exclude",
     multiple=True,
     metavar="PATTERN",
-    help="With --name-only, omit matching paths or basenames. Use literal text and * within a component; "
+    help="With --name-only, omit matching paths or basenames. Use * or ? per component (? matches one code point); "
     "up to 32 patterns, each at most 512 UTF-8 bytes.",
 )
 @click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")

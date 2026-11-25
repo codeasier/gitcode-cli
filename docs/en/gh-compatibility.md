@@ -78,9 +78,9 @@ PR checkout fetches from the verified source repository rather than assuming `or
 gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
 ```
 
-Direct `gc` filters the existing file list, in order, using the path it would print (the displayed name on a rename, not both names). Matches are case-sensitive, against the entire path or its basename, so a pattern without `/` can match a file at any depth. `*` can match zero or more characters within a component: `generated/*` excludes `generated/a.py` but keeps `generated/sub/a.py`. `**` does not recurse.
+Direct `gc` filters the existing file list, in order, using the path it would print (the displayed name on a rename, not both names). Matches are case-sensitive, against the entire path or its basename, so a pattern without `/` can match a file at any depth. `*` can match zero or more characters within a component: `generated/*` excludes `generated/a.py` but keeps `generated/sub/a.py`. `**` does not recurse. `?` matches exactly one Unicode code point, never a slash: `src/?.ts` matches `src/图.ts` but not `src/ui.ts`.
 
-Use one nonempty pattern per flag, with up to 32 patterns and at most 512 UTF-8 bytes per pattern. This is a subset of [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go): `?`, bracket classes, backslash escapes, commas, double quotes and nonprintable characters are rejected before lookup. The GitCode-targeted `gh` proxy does not forward this flag. Plain diff and mail-format patch bodies cannot be filtered.
+Use one nonempty pattern per flag, with up to 32 patterns and at most 512 UTF-8 bytes per pattern. This is a subset of [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go): bracket classes, backslash escapes, commas, double quotes and nonprintable characters are rejected before lookup. The GitCode-targeted `gh` proxy does not forward this flag. Plain diff and mail-format patch bodies cannot be filtered.
 
 ### PR comment history and patches
 

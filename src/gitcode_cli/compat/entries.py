@@ -669,7 +669,7 @@ ENTRIES: list[CompatEntry] = [
         "pr diff",
         "-e/--exclude",
         CompatStatus.IMPLEMENTED,
-        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        "Direct gc --name-only only: literal, * and ? path or basename patterns; no patch/diff filtering or gh proxy",
         proxy_allowed=False,
     ),
     _e(

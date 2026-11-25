@@ -164,8 +164,6 @@
         {"name": "--remote-name", "reason": "local remote rewiring is not implemented by gc repo fork"}
       ],
       "list": [
-        {"name": "--archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
-        {"name": "--no-archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
         {"name": "--topic", "reason": "GitCode v5 has no repository topics API"}
       ],
       "sync": [

@@ -815,18 +815,16 @@ ENTRIES: list[CompatEntry] = [
     _e("repo list", "-l/--language", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--fork", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--source", CompatStatus.IMPLEMENTED, "Client-side filter (non-forks)"),
-    _e(
-        "repo list",
-        "--archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
-    _e(
-        "repo list",
-        "--no-archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
+    *[
+        _e(
+            "repo list",
+            flag,
+            CompatStatus.IMPLEMENTED,
+            "Direct gc only: filter list rows before the limit; fail on unverified archive state.",
+            proxy_allowed=False,
+        )
+        for flag in ("--archived", "--no-archived")
+    ],
     _e("repo list", "--topic", CompatStatus.NOT_IN_CLI, "GitCode v5 has no repository topics API"),
     _e("repo create", "-d/--description", CompatStatus.IMPLEMENTED),
     _e("repo create", "--add-readme", CompatStatus.IMPLEMENTED, "Maps to auto_init"),

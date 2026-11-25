@@ -242,6 +242,8 @@ class TestRepoView:
             ({"archived": "false"}, None),
             ({"status": "关闭", "archived": 1}, None),
             ({"status": "future", "archived": True}, None),
+            ({"status": "start"}, None),
+            ({"status": "close"}, None),
         ],
     )
     def test_view_archive_state_requires_unambiguous_evidence(self, runner, mock_client, payload, expected):
@@ -846,7 +848,7 @@ class TestRepoHelpSections:
         result = runner.invoke(main, ["repo", "list", "--help"])
         assert result.exit_code == 0
         assert "JSON FIELDS" in result.output
-        assert "isArchived" not in result.output.split("EXAMPLES")[0]
+        assert "isArchived" in result.output.split("EXAMPLES")[0]
 
     def test_create_help_documents_private_default(self, runner):
         result = runner.invoke(main, ["repo", "create", "--help"])

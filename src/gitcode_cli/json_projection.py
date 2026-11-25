@@ -110,6 +110,29 @@ def _path(value: Any) -> str | None:
     return value
 
 
+def repo_is_archived(item: dict, *, from_list: bool = False) -> bool | None:
+    """Report only an explicit archive state; unknown or conflicting evidence is null."""
+    flag = item.get("archived")
+    if flag is not None and not isinstance(flag, bool):
+        return None
+    status = item.get("status")
+    if status is None:
+        return flag
+    # The v5 schema describes 0/2; its examples use the localized labels.
+    # Avoid truthiness or substring matches (notably "未归档" and "已归档").
+    if type(status) not in (int, str):
+        return None
+    # GitCode's English examples show exact "start"/"close" labels for
+    # api.gitcode.com. Other spellings are not evidence for this list contract.
+    if status in (0, "0", "开始", "未归档") or (from_list and status == "start"):
+        state = False
+    elif status in (2, "2", "关闭", "已归档") or (from_list and status == "close"):
+        state = True
+    else:
+        return None
+    return state if flag is None or flag == state else None
+
+
 def repo_name_with_owner(item: dict) -> str | None:
     path_with_namespace = _path(item.get("path_with_namespace"))
     if path_with_namespace and "/" in path_with_namespace:

@@ -179,3 +179,76 @@ def test_actual_1000_label_limit_accepts_empty_and_refuses_nonempty_probe(cli):
     assert count == 11 and result.exit_code == 0 and json.loads(result.output) == [{"id": 1000, "name": "L0999"}]
     result, count = cli([*pages, [label(1001, "new")]], args)
     assert count == 11 and result.exit_code == 1 and result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        '<https://api.gitcode.com/api/v5/repos/Acme/tools/labels?page=2&per_page=100>; rel="next"',
+        "</api/v5/repos/Acme/tools/labels?per_page=100&page=2>; rel=next",
+        '<?page=2&per_page=100>; rel="next"',
+    ],
+)
+def test_adjacent_link_confirms_independent_numbered_request(cli, link):
+    page = httpx.Response(200, headers={"Link": link, "X-Next-Page": "2"}, json=[label(1, "z")])
+    result, count = cli([page, [label(2, "A")], []], ["--sort", "name", "-L", "1", "--json", "name"])
+    assert count == 3 and result.exit_code == 0
+    assert json.loads(result.stdout) == [{"name": "A"}]
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        '<?page=4&per_page=100>; rel="next"',
+        '<?page=2&per_page=99>; rel="next"',
+        '<?page=2&page=4&per_page=100>; rel="next"',
+        '</api/v5/repos/Acme/other/labels?page=2&per_page=100>; rel="next"',
+        '<https://elsewhere.invalid/api/v5/repos/Acme/tools/labels?page=2&per_page=100>; rel="next"',
+        "<?page=4&per_page=100>; rel=next, <?page=2&per_page=100>; rel=next",
+        '<?page=4&per_page=100>; rel="alternate next"',
+    ],
+)
+def test_contradictory_next_link_fails_without_another_request_or_output(cli, link):
+    page = httpx.Response(200, headers={"Link": link}, json=[label(1, "z")])
+    result, count = cli([page, [label(2, "A")], []], ["--sort", "name", "--json", "name"])
+    assert count == 1 and result.exit_code == 1 and result.stdout == ""
+    assert "Cannot verify a complete repository label catalog" in result.stderr
+
+
+@pytest.mark.parametrize("extra", [{}, {"X-Total-Pages": "2"}])
+def test_last_link_without_next_confirms_terminal_page(cli, extra):
+    first = httpx.Response(
+        200,
+        headers={"Link": '<?page=2&per_page=100>; rel="last"', **extra},
+        json=[label(1, "z")],
+    )
+    result, count = cli([first, [label(2, "A")], []], ["--sort", "name", "-L", "1", "--json", "name"])
+    assert count == 3 and result.exit_code == 0
+    assert json.loads(result.stdout) == [{"name": "A"}]
+
+
+def test_last_link_without_next_refuses_early_empty_page(cli):
+    first = httpx.Response(200, headers={"Link": '<?page=4&per_page=100>; rel="last"'}, json=[label(1, "z")])
+    result, count = cli([first, [label(2, "A")], []], ["--sort", "name", "--json", "name"])
+    assert count == 3 and result.exit_code == 1 and result.stdout == ""
+
+
+def test_last_link_cannot_disagree_with_total_pages(cli):
+    first = httpx.Response(
+        200, headers={"Link": '<?page=4&per_page=100>; rel="last"', "X-Total-Pages": "2"}, json=[label(1, "z")]
+    )
+    result, count = cli([first, [label(2, "A")], []], ["--sort", "name", "--json", "name"])
+    assert count == 1 and result.exit_code == 1 and result.stdout == ""
+
+
+def test_changed_last_link_refuses_catalog(cli):
+    first = httpx.Response(200, headers={"Link": '<?page=2&per_page=100>; rel="last"'}, json=[label(1, "z")])
+    second = httpx.Response(200, headers={"Link": '<?page=3&per_page=100>; rel="last"'}, json=[label(2, "A")])
+    result, count = cli([first, second, []], ["--sort", "name", "--json", "name"])
+    assert count == 2 and result.exit_code == 1 and result.stdout == ""
+
+
+def test_last_link_on_probe_cannot_deny_a_page_already_seen(cli):
+    last = httpx.Response(200, headers={"Link": '<?page=1&per_page=100>; rel="last"'}, json=[])
+    result, count = cli([[label(1, "z")], [label(2, "A")], last], ["--sort", "name", "--json", "name"])
+    assert count == 3 and result.exit_code == 1 and result.stdout == ""

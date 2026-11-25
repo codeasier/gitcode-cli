@@ -9,6 +9,7 @@ import httpx
 from .._redact import redact
 from ..errors import APIError
 from ..repo_read import bounded_json_response, validate_target
+from .issue_status import _continuation_links, _linked_page
 
 PAGE_SIZE = 100
 MAX_DATA_PAGES = 10
@@ -22,6 +23,19 @@ def _total(headers: httpx.Headers, key: str, previous: int | None) -> int | None
     if not re.fullmatch(r"0|[1-9][0-9]{0,9}", raw) or (previous is not None and int(raw) != previous):
         raise APIError(_INCOMPLETE)
     return int(raw)
+
+
+def _link_pages(headers: httpx.Headers, url: httpx.URL) -> dict[str, int]:
+    # Check the same numbered route and query that we would derive locally.
+    # This is evidence only; never use a link as a request destination.
+    try:
+        return {
+            relation: _linked_page(target, url)
+            for relation, target in _continuation_links(headers).items()
+            if relation in ("next", "last")
+        }
+    except APIError:
+        raise APIError(_INCOMPLETE) from None
 
 
 def _collect(rows: list, catalog: dict[int, dict], names: set[str], repo_id: int | None, token: str) -> int | None:
@@ -69,7 +83,7 @@ def name_ordered_labels(owner: str, repo: str, *, token: str, descending: bool, 
     # page, never a provider-supplied URL. The probe after the bound must be empty.
     for number in range(1, MAX_DATA_PAGES + 2):
         query = {"page": str(number), "per_page": str(PAGE_SIZE)}
-        rows, headers, _ = bounded_json_response(
+        rows, headers, url = bounded_json_response(
             "Repository labels", endpoint, query, token, (endpoint, *query, *query.values())
         )
         if (
@@ -87,14 +101,23 @@ def name_ordered_labels(owner: str, repo: str, *, token: str, descending: bool, 
         total = _total(headers, "x-total", total)
         pages = _total(headers, "x-total-pages", pages)
         next_page = headers.get("x-next-page")
-        has_next = "next" in httpx.Response(200, headers=headers).links
-        if next_page not in (None, "", str(number + 1)) or (has_next and next_page == ""):
+        links = _link_pages(headers, url)
+        last_page = links.get("last")
+        if (
+            next_page not in (None, "", str(number + 1))
+            or ("next" in links and (links["next"] != number + 1 or next_page == ""))
+            or (last_page is not None and pages not in (None, last_page))
+        ):
             raise APIError(_INCOMPLETE)
-        has_next = has_next or bool(next_page)
+        if last_page is not None:
+            pages = last_page
+        has_next = "next" in links or bool(next_page)
         if not rows:
             if expect_data or has_next or (total is not None and total != len(catalog)):
                 raise APIError(_INCOMPLETE)
-            if pages is not None and number <= pages and not (number == 1 == pages):
+            # All preceding requests had rows, so this probe is exactly
+            # one past the last data page (or an empty page-one catalog).
+            if pages is not None and pages != number - 1 and not (number == 1 == pages):
                 raise APIError(_INCOMPLETE)
             return sorted(catalog.values(), key=lambda r: r["name"], reverse=descending)[:limit]
         if ended or number > MAX_DATA_PAGES or (pages is not None and number > pages):

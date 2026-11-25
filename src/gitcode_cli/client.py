@@ -8,6 +8,7 @@ import httpx
 
 from ._redact import redact, redacted_transport
 from .errors import APIError, NetworkError
+from .rest_api import validate_bearer_target
 
 BASE_URL = "https://api.gitcode.com/api/v5/"
 ISSUE_STATUS_PAGE_SIZE = 50
@@ -78,10 +79,13 @@ class GitCodeClient:
     ) -> Any | None:
         merged_params: dict[str, Any] = {k: v for k, v in (params or {}).items() if v is not None}
         headers = {"Accept": accept}
-        # Typed global search supports anonymous requests and, when configured,
-        # uses the documented bearer header without putting a token in the URL.
-        if method.upper() == "GET" and path == "/search":
-            merged_params.pop("access_token", None)
+        url = urljoin(self.base_url, path.lstrip("/"))
+        repo_search = method.upper() == "GET" and path == "/search/repositories"
+        if method.upper() == "GET" and (repo_search or path == "/search"):
+            if repo_search:
+                validate_bearer_target(url, httpx.QueryParams(merged_params).multi_items(), self.token)
+            else:
+                merged_params.pop("access_token", None)
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
         else:
@@ -94,14 +98,19 @@ class GitCodeClient:
         form_label = method.upper() == "POST" and re.fullmatch(r"/repos/[^/]+/[^/]+/labels", path) is not None
         try:
             with redacted_transport(self.token):
-                response = self._client.request(
-                    method,
-                    urljoin(self.base_url, path.lstrip("/")),
-                    params=merged_params,
-                    data=json if form_label else None,
-                    json=None if form_label else json,
-                    headers=headers,
-                )
+                if repo_search:
+                    # Never merge session cookies/auth or follow a redirect, even on later pages.
+                    request = httpx.Request(method, url, params=merged_params, headers=headers)
+                    response = self._client.send(request, auth=None, follow_redirects=False)
+                else:
+                    response = self._client.request(
+                        method,
+                        url,
+                        params=merged_params,
+                        data=json if form_label else None,
+                        json=None if form_label else json,
+                        headers=headers,
+                    )
         except httpx.HTTPError as exc:
             label = "Network error"
             if isinstance(exc, httpx.TimeoutException):

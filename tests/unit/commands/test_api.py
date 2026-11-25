@@ -65,6 +65,13 @@ def test_get_version_placeholders_and_headers(call):
     assert req.headers["If-None-Match"] == "old" and "private-token" not in req.headers
 
 
+def test_generic_get_retains_existing_duplicate_key_handling(call):
+    invoke, requests = call
+    result = invoke(["user"], [httpx.Response(200, content=b'{"value": 1, "value": 2}')])
+    assert result.exit_code == 0 and json.loads(result.output) == {"value": 2}
+    assert len(requests) == 1
+
+
 def test_fields_and_input(call):
     invoke, requests = call
     result = invoke(

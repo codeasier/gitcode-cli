@@ -3,17 +3,23 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+from collections.abc import Callable, Iterator
+from functools import partial
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import click
 
+from ..config import valid_login
 from ..errors import APIError
+from ..json_projection import json_number, repo_is_archived
 from ..repo import is_single_ref, validate_gitcode_repo
 from ..services import RepoService
 from .base import AdapterActionResult
 
 _README_BLOB_RE = re.compile(r"/blob/[^/]+/(?P<path>.+)$")
+_ARCHIVE_PAGE_SIZE = 100
+_ARCHIVE_MAX_PAGES = 100
 
 
 def _as_list(items: Any) -> list[Any]:
@@ -45,6 +51,71 @@ def _matches_forkness(item: dict[str, Any], *, fork: bool, source: bool) -> bool
     if fork and not is_fork:
         return False
     return not (source and is_fork)
+
+
+def _flag(value: Any) -> bool | None:
+    return bool(value) if type(value) in (int, bool) and value in (0, 1) else None
+
+
+def _visibility_matches_evidence(item: dict, wanted: str) -> bool | None:
+    flags = {k: _flag(item.get(k)) for k in ("public", "private", "internal")}
+    if any(item.get(k) is not None and flags[k] is None for k in flags):
+        return None
+    possible = {k for k, v in flags.items() if v is not False}
+    explicit = {k for k, v in flags.items() if v is True}
+    if len(explicit) > 1 or not possible:
+        return None
+    if explicit:
+        return wanted in explicit
+    if wanted not in possible:
+        return False
+    return True if len(possible) == 1 else None
+
+
+def _matches_archive_filters(
+    item: dict, archived: bool, *, fork: bool, source: bool, visibility: str | None, language: str | None
+) -> bool:
+    state = repo_is_archived(item, from_list=True)
+    checks: list[bool | None] = [state is archived if state is not None else None]
+    if fork or source:
+        flag = _flag(item.get("fork"))
+        checks.append(flag is fork if flag is not None else None)
+    if visibility:
+        checks.append(_visibility_matches_evidence(item, visibility))
+    if language:
+        value = item.get("language")
+        checks.append(value.lower() == language.lower() if isinstance(value, str) else None)
+    if False in checks:
+        return False
+    if state is None:
+        raise click.ClickException(
+            "Cannot filter repositories with unknown or conflicting archive state. "
+            "Run without the archive filter and inspect --json nameWithOwner,isArchived."
+        )
+    if None in checks:
+        raise click.ClickException("Cannot verify the combined repository filters from GitCode list data.")
+    return True
+
+
+def _archive_rows(fetch: Callable[..., Any]) -> Iterator[dict]:
+    seen: set[int] = set()
+    for page in range(1, _ARCHIVE_MAX_PAGES + 1):
+        rows = fetch(page=page, per_page=_ARCHIVE_PAGE_SIZE)
+        if not isinstance(rows, list) or len(rows) > _ARCHIVE_PAGE_SIZE:
+            raise APIError("Invalid GitCode repository list response.")
+        # Validate identities across the entire fetched page before letting a
+        # consumer reach its match limit, including the unused tail of the page.
+        for row in rows:
+            if not isinstance(row, dict):
+                raise APIError("Invalid GitCode repository list response.")
+            identity = json_number(row.get("id"))
+            if identity is None or identity in seen:
+                raise APIError("Missing, invalid or repeated identity in GitCode repository list response.")
+            seen.add(identity)
+        yield from rows
+        if len(rows) < _ARCHIVE_PAGE_SIZE:
+            return
+    raise APIError("Repository list page safety limit reached; result would be incomplete.")
 
 
 def _drop_none(payload: dict[str, Any]) -> dict[str, Any]:
@@ -86,6 +157,39 @@ def _confirmed_fork_full_name(item: Any, organization: str, repo: str) -> str:
             "No clone was attempted."
         )
     return f"{organization}/{name}"
+
+
+def _org_visibility_matches(item: dict[str, Any], private: bool) -> bool:
+    expected = "private" if private else "public"
+    # Negating an opposite flag is not affirmative proof; an internal
+    # repository can be neither public nor private.
+    if expected not in item and "visibility" not in item:
+        return False
+    if item.get("visibility", expected) != expected:
+        return False
+    for key, flag in (("private", private), ("public", not private), ("internal", False)):
+        if key in item:
+            value = item[key]
+            if type(value) not in (bool, int) or value != int(flag):
+                return False
+    return True
+
+
+def _confirm_org_creation(item: Any, owner: str, name: str, private: bool) -> None:
+    """Require the exact destination and affirmative, consistent visibility evidence."""
+    if isinstance(item, dict) and item.get("full_name") == f"{owner}/{name}" and item.get("path", name) == name:
+        namespace = item.get("namespace", {})
+        if (
+            isinstance(namespace, dict)
+            and all(namespace.get(key, owner) == owner for key in ("path", "full_path"))
+            and _org_visibility_matches(item, private)
+        ):
+            return
+    raise click.ClickException(
+        "A repository may have been created, but the response did not confirm the requested organization, "
+        "repository name and visibility. Verify the actual repository owner and visibility in GitCode before "
+        "retrying or pushing. No clone was attempted."
+    )
 
 
 class RepoAdapter:
@@ -133,6 +237,7 @@ class RepoAdapter:
         source: bool,
         visibility: str | None,
         language: str | None,
+        archived: bool | None = None,
     ) -> list[dict[str, Any]]:
         has_filters = fork or source or bool(visibility) or bool(language)
 
@@ -142,6 +247,21 @@ class RepoAdapter:
                 and _matches_visibility(item, visibility)
                 and _matches_language(item, language)
             )
+
+        if archived is not None:
+            if owner is not None and not valid_login(owner):
+                raise click.UsageError("Archive filters require a literal GitCode username or organization path.")
+            # Filter before truncating. An unknown row that could affect the result is
+            # an error, not a match or a non-match. Stop filtering at the limit.
+            found: list[dict[str, Any]] = []
+            for item in _archive_rows(self._archive_fetcher(owner)):
+                if _matches_archive_filters(
+                    item, archived, fork=fork, source=source, visibility=visibility, language=language
+                ):
+                    found.append(item)
+                    if len(found) == limit:
+                        break
+            return found
 
         per_page = 100 if limit is None else min(limit, 100)
         items: list[dict[str, Any]] = []
@@ -170,6 +290,23 @@ class RepoAdapter:
                 raise
             return self.service.list_org(owner, **params)
 
+    def _archive_fetcher(self, owner: str | None) -> Callable[..., Any]:
+        if owner is None:
+            return self.service.list_own
+        fetch = partial(self.service.list_user, owner)
+
+        def fixed_scope(*, page: int, per_page: int) -> Any:
+            nonlocal fetch
+            try:
+                return fetch(page=page, per_page=per_page)
+            except APIError as exc:
+                if page != 1 or exc.status_code != 404:
+                    raise
+                fetch = partial(self.service.list_org, owner)
+                return fetch(page=page, per_page=per_page)
+
+        return fixed_scope
+
     # --- write ---
 
     def create_repo(
@@ -189,7 +326,11 @@ class RepoAdapter:
         payload: dict[str, Any] = {"name": name}
         if description is not None:
             payload["description"] = description
-        if private is not None:
+        if owner:
+            # /orgs/:org/repos and /user/repos have different request contracts.
+            # Never hand the organization's default visibility to the provider.
+            payload["public"] = 1 if private is False else 0
+        elif private is not None:
             payload["private"] = private
         if auto_init:
             payload["auto_init"] = True
@@ -204,7 +345,9 @@ class RepoAdapter:
         if license_template is not None:
             payload["license_template"] = license_template
         if owner:
-            return self.service.create_org(owner, **payload)
+            item = self.service.create_org(owner, **payload)
+            _confirm_org_creation(item, owner, name, private=private is not False)
+            return item
         return self.service.create_personal(**payload)
 
     def fork_repo(self, owner: str, repo: str, *, org: str | None = None) -> AdapterActionResult:

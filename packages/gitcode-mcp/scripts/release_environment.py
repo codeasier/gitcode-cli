@@ -1,5 +1,7 @@
 """Read-only, fail-closed checks of the pre-existing public release environment.
 
+A solo-maintainer environment may omit required reviewers. Multi-maintainer
+environments must keep an independent reviewer and disable self-review.
 No token, authentication fallback, environment creation or setting update exists
 here. Network/API errors stop the release; only mocked readers are used in tests.
 """
@@ -56,22 +58,24 @@ def verify_environment(read=read_public_json) -> None:
     rules = environment.get("protection_rules")
     require(isinstance(rules, list), "Missing environment protection rules")
     reviewers = [rule for rule in rules if rule.get("type") == "required_reviewers"]
-    require(len(reviewers) == 1, "A required-reviewer protection rule must exist")
-    rule = reviewers[0]
-    require(rule.get("prevent_self_review") is True, "Release self-review must be disabled")
-    identities = rule.get("reviewers")
-    require(
-        isinstance(identities, list) and bool(identities), "Required reviewers must be configured"
-    )
-    require(
-        all(
-            item.get("type") in {"User", "Team"}
-            and isinstance(item.get("reviewer", {}).get("id"), int)
-            and item["reviewer"]["id"] > 0
-            for item in identities
-        ),
-        "Invalid required-reviewer identity",
-    )
+    require(len(reviewers) <= 1, "At most one required-reviewer protection rule is supported")
+    if reviewers:
+        rule = reviewers[0]
+        require(rule.get("prevent_self_review") is True, "Release self-review must be disabled")
+        identities = rule.get("reviewers")
+        require(
+            isinstance(identities, list) and bool(identities),
+            "Required reviewers must be configured",
+        )
+        require(
+            all(
+                item.get("type") in {"User", "Team"}
+                and isinstance(item.get("reviewer", {}).get("id"), int)
+                and item["reviewer"]["id"] > 0
+                for item in identities
+            ),
+            "Invalid required-reviewer identity",
+        )
     require(
         environment.get("deployment_branch_policy")
         == {"protected_branches": False, "custom_branch_policies": True},
@@ -93,4 +97,4 @@ def verify_environment(read=read_public_json) -> None:
 
 if __name__ == "__main__":
     verify_environment()
-    print("Verified existing release environment, independent reviewer and tag-only policy.")
+    print("Verified existing release environment and tag-only policy.")

@@ -294,24 +294,12 @@ class TestIssueView:
         assert result.exit_code == 0
         assert json.loads(result.output) == "alice"
 
-    def test_comments_json_includes_comments(self, runner, mock_client, mock_repo):
-        mock_client.get.side_effect = [
-            {"number": "42", "title": "Test", "body": "Body", "html_url": "https://ex.com/42"},
-            [
-                {"id": 1, "body": "First comment"},
-                {"id": 2, "body": "Second comment"},
-            ],
-        ]
-        result = runner.invoke(main, ["issue", "view", "42", "--comments", "--json", "number,comments"])
+    def test_view_json_without_comments_only_reads_the_detail(self, runner, mock_client, mock_repo):
+        mock_client.get.return_value = {"number": "42", "title": "Test", "comments": 7}
+        result = runner.invoke(main, ["issue", "view", "42", "--json", "number,title"])
         assert result.exit_code == 0
-        assert '"number": 42' in result.output
-        assert '"comments"' in result.output
-        assert '"First comment"' in result.output
-        assert '"Second comment"' in result.output
-        assert mock_client.get.call_args_list == [
-            call("/repos/owner/repo/issues/42"),
-            call("/repos/owner/repo/issues/42/comments"),
-        ]
+        assert json.loads(result.output) == {"number": 42, "title": "Test"}
+        mock_client.get.assert_called_once_with("/repos/owner/repo/issues/42")
 
     def test_comments_default_keeps_metadata_and_comments(self, runner, mock_client, mock_repo):
         mock_client.get.side_effect = [

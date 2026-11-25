@@ -32,6 +32,8 @@ GitCode 路由采用失败关闭策略：已知不支持的命令和参数会直
 
 ## 已对齐能力
 
+`gc issue view 42 -R OWNER/REPO --json number,comments` 返回可见评论数组，不拿 Issue 详情里的评论计数代替。[GitCode 单个 Issue 评论接口](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues-number-comments/) 最多读取 10 个数据页，每页 50 条，并用空页确认结束。逐条核对所属 Issue；无权限、超限、数据矛盾或不完整时不输出部分 JSON。并发编辑期间不能保证原子快照。保留 GitCode 的数字 ID、正文、用户、目标和时间字段；根据实有字段提供 `author.login`、`createdAt`、`updatedAt`，不推测 GitHub 专有的查看者、表态或审核属性。结构化读取不在 URL 中携带凭据；服务端允许时可匿名读取。普通文本详情和 `issue list` 不变。
+
 `gc pr checks 42 -R owner/repo --json workflow,state,event` 可从同一份证据中按字段列出当前 PR
 提交的各条流水线，不逐个列出作业，也不判断哪些检查为必需。`state` 为原生运行状态，没有
 `bucket`；`COMPLETED` 不等于门禁通过。字段缺失或类型不符时返回 null。

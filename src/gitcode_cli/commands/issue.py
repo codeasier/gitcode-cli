@@ -11,6 +11,7 @@ from ..json_projection import project_issue
 from ..repo import resolve_repo
 from ..repo_read import resolve_origin_target
 from ..services import IssueService, UserService
+from ..services.issue_comments import view_with_comments
 from ..services.issue_status import status as repository_issue_status
 from ..utils import (
     open_in_browser,
@@ -298,6 +299,12 @@ def issue_view(
     owner, repo, number, target_url = _resolve_issue_target(app, repo_name, identifier)
     if web:
         open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
+        return
+    if json_fields and "comments" in {field.strip() for field in json_fields.split(",")}:
+        if repo_name and app.repo and resolve_repo(repo_name) != resolve_repo(app.repo):
+            raise click.UsageError("Conflicting global and issue view repository targets.")
+        data = _normalize_issue_item(view_with_comments(owner, repo, number, app.token))
+        output_result(data, json_fields, jq_query, template, default_formatter=_echo_issue_summary)
         return
     service = IssueService(app.client())
     item = service.get(owner, repo, number)
@@ -752,7 +759,7 @@ set_gc_help(
 )
 
 issue_view.short_help = "View an issue"
-issue_view.help = "View an issue."
+issue_view.help = "View an issue. Select --json comments for a bounded collection of verified issue comments."
 issue_create.short_help = "Create a new issue"
 issue_create.help = "Create a new issue."
 set_gc_help(issue_create, gc_aliases=["new"], gc_json_fields=list(COMMON_FIELDS))

@@ -80,7 +80,14 @@ def _unique_fields(pairs: list[tuple[str, Any]]) -> dict:
 
 def bounded_json(
     resource: Literal[
-        "Contents", "Tree", "Issue status", "fork sync status", "PR detail", "Commit comparison", "Release metadata"
+        "Contents",
+        "Tree",
+        "Issue status",
+        "Issue comments",
+        "fork sync status",
+        "PR detail",
+        "Commit comparison",
+        "Release metadata",
     ],
     endpoint: str,
     params: dict[str, str],
@@ -99,6 +106,7 @@ def bounded_json_response(
         "Contents",
         "Tree",
         "Issue status",
+        "Issue comments",
         "fork sync status",
         "PR detail",
         "Commit comparison",

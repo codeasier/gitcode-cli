@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
+
 import click
 
 _MAX_PATTERNS = 32
 _MAX_PATTERN_BYTES = 512
-_ComponentPattern = tuple[str, ...]
+_ComponentPattern = tuple[tuple[int, re.Pattern[str]], ...]
 _PathPattern = tuple[_ComponentPattern, ...]
 
 
@@ -18,13 +20,18 @@ def _parse_pattern(value: str) -> _PathPattern:
     if too_long:
         raise click.UsageError(f"Each --exclude pattern must be at most {_MAX_PATTERN_BYTES} UTF-8 bytes.")
     # Don't guess at Go path.Match's classes/escapes or pflag's CSV grammar.
-    if not value or not value.isprintable() or any(ch in '?[\\,"' for ch in value):
+    if not value or not value.isprintable() or any(ch in '[\\,"' for ch in value):
         raise click.UsageError(
-            "--exclude accepts nonempty printable text and '*' within path components. "
-            "No ?, classes, escapes, commas or double quotes. "
+            "--exclude accepts nonempty printable text and '*' or '?' within path components. "
+            "No classes, escapes, commas or double quotes. "
             "Repeat the flag for multiple patterns."
         )
-    return tuple(tuple(part.split("*")) for part in value.split("/"))
+    # Compile fixed-width chunks only. '*' is handled separately; arbitrary
+    # glob text never becomes a user-controlled regex.
+    return tuple(
+        tuple((len(chunk), re.compile(re.escape(chunk).replace(r"\?", "[^/]"))) for chunk in part.split("*"))
+        for part in value.split("/")
+    )
 
 
 def exclude_patterns(values: tuple[str, ...]) -> tuple[_PathPattern, ...]:
@@ -35,19 +42,18 @@ def exclude_patterns(values: tuple[str, ...]) -> tuple[_PathPattern, ...]:
 
 def _matches_component(name: str, pattern: _ComponentPattern) -> bool:
     if len(pattern) == 1:
-        return name == pattern[0]
-    prefix, *middle, suffix = pattern
-    start, end = len(prefix), len(name) - len(suffix)
-    if start > end or not name.startswith(prefix) or not name.endswith(suffix):
+        return pattern[0][1].fullmatch(name) is not None
+    (start, prefix), *middle, (suffix_width, suffix) = pattern
+    end = len(name) - suffix_width
+    if start > end or not prefix.match(name) or not suffix.fullmatch(name, end):
         return False
-    # Anchor the outer literals, then take the earliest occurrence of each
-    # interior literal. That leaves the most space for the rest: no regex or
-    # backtracking, even for many stars followed by a nonmatching literal.
-    for literal in middle:
-        start = name.find(literal, start, end)
-        if start == -1:
+    # Fixed-width chunks: taking each earliest match leaves the most room
+    # for all later chunks. No recursive/backtracking expansion of '*'.
+    for _, chunk in middle:
+        match = chunk.search(name, start, end)
+        if match is None:
             return False
-        start += len(literal)
+        start = match.end()
     return True
 
 

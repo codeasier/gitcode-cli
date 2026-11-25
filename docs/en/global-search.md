@@ -19,6 +19,12 @@ marker. It does not guarantee that every matching repository is indexed.
 were included in the index. A boolean or integer 0/1 becomes a JSON boolean;
 a missing or unrecognized marker becomes `null` in an unfiltered search.
 
+Use `--json fullName,isPrivate` to show whether each repository is explicitly
+marked private. Missing or malformed private markers give `null`, as do rows
+marked both private and public. A non-public repository is not necessarily
+private. This output field does not filter the search or make private
+repositories discoverable.
+
 Two modes are unavailable: including forks alongside originals (or selecting
 only forks), and sorting by watch count. The [AtomGit reference][repos]
 describes both inclusion and watch sorting, but in [live GitCode verification][live]

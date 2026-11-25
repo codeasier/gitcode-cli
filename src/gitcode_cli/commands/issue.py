@@ -200,7 +200,7 @@ def issue_group() -> None:
 
 @issue_group.command("list")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
-@click.option("-s", "--state", type=click.Choice(["open", "closed", "all"]))
+@click.option("-s", "--state", type=click.Choice(["open", "closed", "all"]), default="open", show_default=True)
 @click.option("-l", "--label", "labels", multiple=True)
 @click.option("-A", "--author")
 @click.option("-a", "--assignee")
@@ -224,7 +224,7 @@ def issue_group() -> None:
 def issue_list(
     ctx: click.Context,
     repo_name: str | None,
-    state: str | None,
+    state: str,
     labels: tuple[str, ...] | None,
     author: str | None,
     assignee: str | None,

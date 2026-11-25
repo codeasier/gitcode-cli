@@ -65,7 +65,10 @@ def test_list_resolves_author_and_assignee_in_one_lookup(http_cli, group, author
     router, runner = http_cli
     current = route(router, "GET", "/user", {"login": "alice", "name": "Wrong Display Name"})
     suffix = "/repos/owner/repo/" + ("pulls" if group == "pr" else "issues")
-    route(router, "GET", suffix, [], query={author_key: "alice", "assignee": "alice", "page": 1, "per_page": 30})
+    query = {author_key: "alice", "assignee": "alice", "page": 1, "per_page": 30}
+    if group == "issue":
+        query["state"] = "open"
+    route(router, "GET", suffix, [], query=query)
 
     result = invoke(runner, [group, "list", "-A", "@me", "-a", "@me", "--json", "number"])
 
@@ -155,7 +158,10 @@ def test_lookup_failure_is_not_retried_and_never_reaches_domain_request(http_cli
 def test_plain_list_filters_skip_identity_lookup(http_cli, group, author_key):
     router, runner = http_cli
     suffix = "/repos/owner/repo/" + ("pulls" if group == "pr" else "issues")
-    route(router, "GET", suffix, [], query={author_key: "alice", "assignee": "bob", "page": 1, "per_page": 30})
+    query = {author_key: "alice", "assignee": "bob", "page": 1, "per_page": 30}
+    if group == "issue":
+        query["state"] = "open"
+    route(router, "GET", suffix, [], query=query)
 
     result = invoke(runner, [group, "list", "-A", "alice", "-a", "bob", "--json", "number"])
 

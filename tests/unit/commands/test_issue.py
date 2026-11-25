@@ -47,12 +47,12 @@ class TestIssueList:
     def test_default_renders_author_in_list_output(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [
             {"number": "1", "state": "open", "title": "First", "author": {"login": "alice"}},
-            {"number": "2", "state": "closed", "title": "Second"},
+            {"number": "2", "state": "open", "title": "Second"},
         ]
         result = runner.invoke(main, ["issue", "list"])
         assert result.exit_code == 0
         assert "#1\topen\tFirst\talice" in result.output
-        assert "#2\tclosed\tSecond\t" in result.output
+        assert "#2\topen\tSecond\t" in result.output
         mock_client.get.assert_called_once()
 
     def test_with_options(self, runner, mock_client, mock_repo):
@@ -109,7 +109,7 @@ class TestIssueList:
             call(
                 "/repos/owner/repo/issues",
                 params={
-                    "state": None,
+                    "state": "open",
                     "labels": None,
                     "creator": None,
                     "assignee": None,
@@ -123,7 +123,7 @@ class TestIssueList:
             call(
                 "/repos/owner/repo/issues",
                 params={
-                    "state": None,
+                    "state": "open",
                     "labels": None,
                     "creator": None,
                     "assignee": None,
@@ -160,7 +160,7 @@ class TestIssueList:
             call(
                 "/repos/owner/repo/issues",
                 params={
-                    "state": None,
+                    "state": "open",
                     "labels": None,
                     "creator": "alice",
                     "assignee": None,

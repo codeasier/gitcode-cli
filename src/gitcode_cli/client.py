@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 import httpx
 
 from ._redact import redact, redacted_transport
-from .errors import APIError, NetworkError
+from .errors import APIError, ConfigError, NetworkError
 from .rest_api import validate_bearer_target
 
 BASE_URL = "https://api.gitcode.com/api/v5/"
@@ -59,9 +59,17 @@ class GitCodeClient:
     def __init__(self, token: str, base_url: str = BASE_URL, *, transport: httpx.BaseTransport | None = None):
         self.token = token
         self.base_url = base_url
-        self._client = (
-            httpx.Client(timeout=30.0) if transport is None else httpx.Client(timeout=30.0, transport=transport)
-        )
+        if transport is not None:
+            self._client = httpx.Client(timeout=30.0, transport=transport)
+            return
+        try:
+            self._client = httpx.Client(timeout=30.0)
+        except httpx.InvalidURL:
+            # Default construction parses environment/system proxies. Never
+            # display their values or retry via a different network route.
+            raise ConfigError(
+                "Invalid HTTP proxy configuration. Check HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, and NO_PROXY."
+            ) from None
 
     def close(self) -> None:
         """Release transport resources for long-lived service consumers."""

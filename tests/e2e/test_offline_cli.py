@@ -180,3 +180,21 @@ def test_network_guard_blocks_child_before_dns(gc_env, tmp_path):
     )
     assert result.returncode != 0
     assert "Network disabled in offline CLI e2e" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "proxy_env",
+    [
+        {"NO_PROXY": "[::1]"},
+        {"NO_PROXY": "localhost", "HTTPS_PROXY": "http://user:fake-proxy-password@proxy.invalid:bad-port"},
+    ],
+    ids=["bracketed-no-proxy", "credential-bearing-proxy"],
+)
+def test_invalid_proxy_environment_fails_without_network_or_traceback(run_gc, proxy_env):
+    result = run_gc(["issue", "view", "1129", "-R", "openeuler/community", "--json", "number"], env=proxy_env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        "error: Invalid HTTP proxy configuration. Check HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, and NO_PROXY.\n"
+    )

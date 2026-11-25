@@ -133,6 +133,13 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e(
         "run view",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Current GitCode run detail only: attempt, headSha, workflowName; no job fields or historical attempts.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "run view",
         "--with-steps",
         CompatStatus.IMPLEMENTED,
         "GitCode-only bounded stage/job/step observations; no GitHub conclusion or execution order.",
@@ -669,7 +676,7 @@ ENTRIES: list[CompatEntry] = [
         "pr diff",
         "-e/--exclude",
         CompatStatus.IMPLEMENTED,
-        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        "Direct gc --name-only only: literal, * and ? path or basename patterns; no patch/diff filtering or gh proxy",
         proxy_allowed=False,
     ),
     _e(
@@ -737,7 +744,7 @@ ENTRIES: list[CompatEntry] = [
         "repo read-dir",
         "--json",
         CompatStatus.IMPLEMENTED,
-        "Direct CLI only: name, path, gitSHA and gitType from one validated GitCode Tree page.",
+        "Direct CLI only: name, path, gitSHA and gitType by default; mode and modeOctal on request.",
         proxy_allowed=False,
     ),
     *[_e("repo read-dir", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False) for flag in ("-q/--jq", "-t/--template")],

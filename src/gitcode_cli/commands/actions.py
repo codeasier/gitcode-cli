@@ -106,6 +106,38 @@ def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr, s
 set_gc_help(run_list, gc_json_fields=list(_RUN_LIST_FIELDS))
 
 
+_RUN_VIEW_FIELDS = {"attempt": "attempt", "headSha": "head_sha", "workflowName": "workflow_name"}
+
+
+def _run_view_json(
+    ctx: click.Context,
+    repo_name: str | None,
+    run_id: str,
+    attempt: int | None,
+    commit: str | None,
+    selections: tuple[str, ...],
+) -> None:
+    fields = tuple(field.strip() for field in selections[0].split(","))
+    if len(selections) != 1 or len(set(fields)) != len(fields) or any(f not in _RUN_VIEW_FIELDS for f in fields):
+        raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(_RUN_VIEW_FIELDS))
+    incompatible = ("job_id", "log_requested", "step", "with_steps", "offset", "limit", "sort")
+    if any(ctx.get_parameter_source(k) != click.core.ParameterSource.DEFAULT for k in incompatible):
+        raise click.UsageError("--json selects run metadata; omit job, step, log, sort and pagination options.")
+    if commit is not None and not SHA_RE.fullmatch(commit):
+        raise click.UsageError("--commit requires a full hexadecimal commit SHA.")
+    global_repo = ctx.obj["app"].repo
+    if global_repo is not None and repo_name is not None and resolve_repo(repo_name) != resolve_repo(global_repo):
+        raise click.UsageError("Conflicting global and command-level repository selectors.")
+    with _service(ctx, repo_name) as svc:
+        # One response supplies both the identity checks and the output; do not fetch jobs, logs or a newer attempt.
+        detail = svc.pin(run_id, attempt, commit)
+    if "workflowName" in fields:
+        name = detail.get("workflow_name")
+        if not isinstance(name, str) or not name.strip():
+            raise APIError("Missing or invalid workflow name in Actions run detail.")
+    _show(ctx, {f: detail[_RUN_VIEW_FIELDS[f]] for f in fields}, exact_fields=fields)
+
+
 @run.command("view")
 @click.argument("run_id")
 @repo_option
@@ -120,9 +152,17 @@ set_gc_help(run_list, gc_json_fields=list(_RUN_LIST_FIELDS))
 @offset_option
 @limit_option
 @click.option("--sort", type=click.Choice(["asc", "desc"]), default="asc")
+@click.option(
+    "--json", "selections", multiple=True, metavar="FIELDS", help="Select metadata from one current run detail."
+)
 @click.pass_context
-def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, with_steps, offset, limit, sort):
+def run_view(
+    ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, with_steps, offset, limit, sort, selections
+):
     """Show the current run/attempt and jobs, one job's steps, or a bounded log page."""
+    if selections:
+        _run_view_json(ctx, repo_name, run_id, attempt, commit, selections)
+        return
     if with_steps and ctx.get_parameter_source("sort") != click.core.ParameterSource.DEFAULT:
         raise click.UsageError("--sort controls log direction, not --with-steps display order.")
     if with_steps and commit is not None and not SHA_RE.fullmatch(commit):
@@ -149,6 +189,9 @@ def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, ste
             extra = svc.jobs(run_id, offset, limit)
         latest = svc.pin(run_id, pinned["attempt"], pinned["head_sha"])
         _show(ctx, {"run": latest, **extra})
+
+
+set_gc_help(run_view, gc_json_fields=list(_RUN_VIEW_FIELDS))
 
 
 @run.command("watch")

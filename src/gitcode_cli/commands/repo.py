@@ -17,6 +17,7 @@ from ..json_projection import repo_is_archived, repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
+from ..repo_read_dir import DEFAULT_FIELDS as READ_DIR_DEFAULT_FIELDS
 from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
 from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page, fetch_verified_tree
 from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
@@ -357,9 +358,9 @@ def _read_fields(options: tuple[str, ...], allowed: tuple[str, ...]) -> tuple[st
     "json_options",
     is_flag=False,
     multiple=True,
-    flag_value=",".join(READ_DIR_JSON_FIELDS),
+    flag_value=",".join(READ_DIR_DEFAULT_FIELDS),
     metavar="[FIELDS]",
-    help="Output one JSON array. Optionally select comma-separated fields.",
+    help="Output one JSON array (default: name,path,gitSHA,gitType). Select other fields explicitly.",
 )
 @click.pass_context
 def repo_read_dir(

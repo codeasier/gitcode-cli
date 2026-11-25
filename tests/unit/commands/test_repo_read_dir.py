@@ -270,6 +270,31 @@ def test_json_page_projects_native_child_fields_preserving_order_and_kind(instal
     provider.assert_called_once()
 
 
+def test_json_modes_use_validated_tree_values_without_extra_requests(install):
+    # Independent decimal values; modeOctal must keep the leading zero for directories.
+    cases = [
+        ("dir", "tree", "040000", 16384),
+        ("file", "blob", "100644", 33188),
+        ("exec", "blob", "100755", 33261),
+        ("link", "blob", "120000", 40960),
+        ("sub", "commit", "160000", 57344),
+    ]
+    rows = [item(name, DIR, kind, mode=mode, modeOctal="untrusted") for name, kind, mode, _ in cases]
+
+    def handle(req):
+        assert req.method == "GET" and req.url.path == f"/api/v5/repos/Ascend/msinsight/git/trees/{COMMIT}"
+        assert dict(req.url.params) == {"page": "1", "per_page": "20", "file_path": DIR}
+        return httpx.Response(200, json={"tree": rows})
+
+    provider = install(handle)
+    result = run([*ARGS, DIR, "--json", "modeOctal,name,mode"])
+    assert result.exit_code == 0 and not result.stderr, result.output
+    assert [list(row.items()) for row in json.loads(result.stdout)] == [
+        [("modeOctal", mode), ("name", name), ("mode", number)] for name, _, mode, number in cases
+    ]
+    provider.assert_called_once()
+
+
 def test_json_selected_keys_and_max_page_hint(install):
     def handle(req):
         assert dict(req.url.params) == {"page": str(MAX_PAGE), "per_page": "1"}
@@ -286,7 +311,7 @@ def test_json_selected_keys_and_max_page_hint(install):
     "options",
     [
         ["--json", "size"],
-        ["--json", "mode"],
+        ["--json", "modeoctal"],
         ["--json", "content"],
         ["--json", "path,gitSha"],
         ["--json="],
@@ -360,7 +385,8 @@ def test_encoded_json_cannot_reconstitute_a_token(install):
 
 def test_json_discoverable_and_still_direct_only():
     help_text = run(["repo", "read-dir", "--help"]).output
-    assert "--json" in help_text and "JSON FIELDS" in help_text and "gitSHA" in help_text
+    assert "--json" in help_text and "JSON FIELDS" in help_text
+    assert all(field in help_text for field in ("gitSHA", "modeOctal", "mode"))
     with pytest.raises(ProxyError, match="refusing to fall back"):
         validate_gitcode_command(["repo", "read-dir", "--ref", "main", "--json", "path", "-R", "gitcode.com/o/r"])
 
@@ -396,9 +422,11 @@ def test_all_pins_tree_and_checks_git_oid_without_sorting_provider_output(instal
         return httpx.Response(200, json={"tree": ALL_ROWS[start : start + size]})
 
     provider = install(handle)
-    result = run(["--token", "dummy-secret", *all_args(), "--per-page", str(size), "--json", "name,gitType"])
+    result = run(["--token", "dummy-secret", *all_args(), "--per-page", str(size), "--json", "name,gitType,modeOctal"])
     assert result.exit_code == 0 and not result.stderr, result.output
-    assert json.loads(result.stdout_bytes) == [{"name": r["name"], "gitType": r["type"]} for r in ALL_ROWS]
+    assert json.loads(result.stdout_bytes) == [
+        {"name": r["name"], "gitType": r["type"], "modeOctal": r["mode"]} for r in ALL_ROWS
+    ]
     assert provider.call_count == pages
 
 

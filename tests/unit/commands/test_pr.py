@@ -1494,6 +1494,35 @@ class TestPrDiff:
         assert result.output == "".join(name + "\n" for name in keep)
         assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
 
+    @pytest.mark.parametrize(
+        ("pattern", "names", "keep"),
+        [
+            (
+                "simplec?che.ts",
+                ["modules/timeline/src/cache/simplecache.ts", "threadTraceCache.test.ts"],
+                ["threadTraceCache.test.ts"],
+            ),
+            (
+                "?.ts",
+                ["d/育.ts", "d/🙂.ts", "e\u0301.ts", ".ts", "ab.ts", "Z.TS"],
+                ["e\u0301.ts", ".ts", "ab.ts", "Z.TS"],
+            ),
+            ("??", ["🙂", "é", "e\u0301", "x/yz", "a/b"], ["🙂", "é", "a/b"]),
+            ("d?f", ["d/f", "d-f", "d--f", "dir/d育f"], ["d/f", "d--f"]),
+            ("src/?/*.ts", ["src/图/x.ts", "src//x.ts", "src/a/b/x.ts"], ["src//x.ts", "src/a/b/x.ts"]),
+            ("?a*?b*?c", ["0a1b2c", "xa0b1b2c", "abc", "xa1bc"], ["abc", "xa1bc"]),
+            ("*?+.*", ["a+.md", "dir/+.md", "dir/cX.md"], ["dir/+.md", "dir/cX.md"]),
+        ],
+    )
+    def test_question_exclude_matches_one_non_separator_code_point(
+        self, runner, mock_client, mock_repo, pattern, names, keep
+    ):
+        mock_client.get.return_value = [{"filename": name} for name in names]
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "-e", pattern])
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == keep
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
     def test_exclude_uses_go_basename_for_trailing_slashes(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"filename": "nested/file.txt///"}, {"filename": "//"}, {"filename": "keep.py"}]
 
@@ -1524,7 +1553,7 @@ class TestPrDiff:
                 "",
                 "[ab]",
                 "[",
-                "?",
+                "?[ab]",
                 "\\*",
                 "tail\\",
                 "a,b",

@@ -15,6 +15,7 @@ from gitcode_cli.cli import main
 from gitcode_cli.commands import actions
 from gitcode_cli.context import AppContext
 from gitcode_cli.errors import APIError, NetworkError
+from gitcode_cli.gh_proxy import ProxyError, validate_gitcode_command
 from gitcode_cli.services.actions import MAX_LOG, ActionsService
 
 SHA, OTHER = "a" * 40, "b" * 40
@@ -119,6 +120,85 @@ def test_list(api):
     result = invoke(actions.run, "list", "-L1", "-bmain", "-w1", "--pr", "42", "-eMR", "-sFAILED")
     assert result.exit_code == 0
     assert json.loads(result.output)["next_page"] == 2
+
+
+def test_run_list_json_is_one_native_page_with_only_selected_fields(api):
+    expect, invoke, _, calls = api
+    run_id = "123456789012345678901234567890"
+    name = f"build {SYNTHETIC}\x1b[0m"
+    rows = [
+        {**RUN, "workflow_run_id": run_id, "workflow_name": name, "conclusion": "success"},
+        {"workflow_run_id": True, "workflow_name": 1, "head_sha": {}, "status": "FAILED", "event": "Push"},
+    ]
+    expect("runs", page(rows, 7), query=q(page="2", limit="2", branch="main", workflow_id="1"))
+    result = invoke(
+        actions.run,
+        "list",
+        "--page",
+        "2",
+        "-L2",
+        "-bmain",
+        "-w1",
+        "--json",
+        "status,databaseId,event,headSha,workflowName",
+        runner=_separate_stderr_runner(),
+    )
+    assert result.exit_code == 0 and not result.stderr, result.output
+    assert calls == [("GET", "runs")]
+    assert SYNTHETIC not in result.stdout and "\x1b" not in result.stdout
+    first, second = json.loads(result.stdout)
+    assert list(first) == list(second) == ["status", "databaseId", "event", "headSha", "workflowName"]
+    assert first == {
+        "status": "COMPLETED",
+        "databaseId": run_id,
+        "event": "MR",
+        "headSha": SHA,
+        "workflowName": "build [REDACTED]\x1b[0m",
+    }
+    assert second == {
+        "status": "FAILED",
+        "databaseId": None,
+        "event": "Push",
+        "headSha": None,
+        "workflowName": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "bad_args",
+    [
+        ["--json", "conclusion"],
+        ["--json", ""],
+        ["--json", "status,"],
+        ["--json", "status,status"],
+        ["--json", "status", "--json", "event"],
+    ],
+)
+def test_run_list_invalid_json_is_usage_error_before_network(api, bad_args):
+    _, invoke, v5, calls = api
+    result = invoke(actions.run, "list", *bad_args, runner=_separate_stderr_runner())
+    assert result.exit_code == 2 and not result.stdout
+    assert "databaseId" in result.stderr and not calls and not v5.get.called
+
+
+def test_run_list_json_empty_is_not_unavailable_or_incomplete(api):
+    expect, invoke, _, calls = api
+    expect("runs", page([]), query=q(page="2"))
+    success = invoke(actions.run, "list", "--page", "2", "--json", "status", runner=_separate_stderr_runner())
+    assert success.exit_code == 0 and success.stdout == "[]\n" and not success.stderr
+    for body, code in (({}, 403), (page([], 1), 200)):
+        expect("runs", body, query=q(), http=code)
+        failure = invoke(actions.run, "list", "--json", "status", runner=_separate_stderr_runner())
+        assert isinstance(failure.exception, APIError) and not failure.stdout
+    assert calls == [("GET", "runs")] * 3
+
+
+def test_run_list_json_is_discoverable_in_main_but_not_proxied(monkeypatch, tmp_config_dir):
+    monkeypatch.delenv("GC_TOKEN", raising=False)
+    result = CliRunner().invoke(main, ["run", "list", "--help"])
+    assert result.exit_code == 0 and "--json" in result.output and "databaseId" in result.output
+    with pytest.raises(ProxyError, match="refusing to fall back"):
+        validate_gitcode_command(["run", "list", "--json", "databaseId"])
 
 
 def test_view_run_jobs_and_step_window(api):

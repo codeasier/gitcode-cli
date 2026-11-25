@@ -126,6 +126,13 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e(
         "run view",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Current GitCode run detail only: attempt, headSha, workflowName; no job fields or historical attempts.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "run view",
         "--with-steps",
         CompatStatus.IMPLEMENTED,
         "GitCode-only bounded stage/job/step observations; no GitHub conclusion or execution order.",

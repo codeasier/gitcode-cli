@@ -18,3 +18,4 @@
 - [不克隆仓库读取指定文件](../en/repo-read-file.md)
 - [按页浏览仓库目录或校验完整 Git 目录树（英文指南）](../en/repo-read-dir.md)
 - [观察指定的 GitCode 流水线运行（英文指南）](../en/actions-evidence.md#watch-one-run-without-changing-it)
+- [读取指定 GitCode 运行的 attempt、提交 SHA 和工作流名称](run-view-json.md)

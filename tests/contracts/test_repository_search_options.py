@@ -177,3 +177,28 @@ def test_fork_projection_does_not_weaken_exclusion(search):
     assert result.exit_code == 1 and "non-fork" in result.stderr
     assert result.stdout == ""
     assert route.call_count == 1 and route.calls[0].request.url.params["fork"] == "false"
+
+
+def test_repo_search_private_is_projected_not_filtered(search):
+    route, invoke = search
+    # GitCode documents integer markers but returns native booleans in real examples.
+    rows = [
+        {"id": 1, "private": False, "public": True},
+        {"id": 2, "private": True},
+        {"id": 3, "private": 1},
+        {"id": 4, "private": 0, "public": 0, "internal": 1},
+        {"id": 5, "public": False},
+        {"id": 6, "public": True, "isPrivate": True},
+        {"id": 7, "private": 3},
+        {"id": 8, "private": "1"},
+        {"id": 9, "private": 0.0},
+        {"id": 10, "private": True, "public": 1},
+    ]
+    route.respond(200, json=rows)
+    result = invoke("-L", "10", "--json", "id,isPrivate")
+    assert result.exit_code == 0, result.output
+    values = [False, True, True, False] + [None] * 6
+    assert json.loads(result.stdout) == [{"id": i, "isPrivate": v} for i, v in enumerate(values, 1)]
+    assert route.call_count == 1
+    req = route.calls[0].request
+    assert req.method == "GET" and dict(req.url.params) == {"q": "example", "page": "1", "per_page": "10"}

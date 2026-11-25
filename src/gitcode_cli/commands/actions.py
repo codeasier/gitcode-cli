@@ -24,6 +24,13 @@ repo_option = click.option("-R", "--repo", "repo_name", help="[HOST/]OWNER/REPO 
 page_option = click.option("--page", type=click.IntRange(1), default=1, show_default=True)
 limit_option = click.option("-L", "--limit", type=click.IntRange(1, 100), default=20, show_default=True)
 offset_option = click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+_RUN_LIST_FIELDS = {
+    "databaseId": "workflow_run_id",
+    "workflowName": "workflow_name",
+    "event": "event",
+    "headSha": "head_sha",
+    "status": "status",
+}
 
 
 @contextmanager
@@ -69,16 +76,34 @@ def run():
 @click.option("-e", "--event", type=click.Choice(["MR", "Push", "Manual"]))
 @click.option("-s", "--status", help="GitCode status, e.g. FAILED.")
 @click.option("--pr", type=click.IntRange(1), help="PR number, not database ID.")
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select fields from this page of runs.")
 @click.pass_context
-def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr):
+def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr, selections):
     """List one page of runs, with a continuation page when available."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(key not in _RUN_LIST_FIELDS for key in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(_RUN_LIST_FIELDS))
     with _service(ctx, repo_name) as svc:
-        _show(
-            ctx,
-            svc.page(
-                "runs", page, limit, branch=branch, workflow_id=workflow, event=event, status=status, pull_request_id=pr
-            ),
+        result = svc.page(
+            "runs", page, limit, branch=branch, workflow_id=workflow, event=event, status=status, pull_request_id=pr
         )
+    if not fields:
+        _show(ctx, result)
+        return
+    rows = []
+    for run_entry in result["workflow_runs"]:
+        values = {field: run_entry.get(_RUN_LIST_FIELDS[field]) for field in fields}
+        rows.append({key: value if isinstance(value, str) and value else None for key, value in values.items()})
+    _show(ctx, rows)
+
+
+set_gc_help(run_list, gc_json_fields=list(_RUN_LIST_FIELDS))
 
 
 _RUN_VIEW_FIELDS = {"attempt": "attempt", "headSha": "head_sha", "workflowName": "workflow_name"}
@@ -257,15 +282,48 @@ def workflow():
     """List or view workflow definitions, or explicitly dispatch GitCode workflows."""
 
 
+WORKFLOW_LIST_FIELDS = {"id": "workflow_id", "name": "name", "path": "file_path", "state": "state"}
+
+
+def _workflow_definition_row(row: dict, fields: tuple[str, ...]) -> dict[str, str]:
+    projected = {}
+    for field in fields:
+        value = row.get(WORKFLOW_LIST_FIELDS[field])
+        if not isinstance(value, str) or not value.strip():
+            raise APIError(f"Workflow definition has a missing or invalid {field}.")
+        projected[field] = value
+    return projected
+
+
 @workflow.command("list")
 @repo_option
 @page_option
 @limit_option
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select workflow definition fields.")
 @click.pass_context
-def workflow_list(ctx, repo_name, page, limit):
+def workflow_list(ctx, repo_name, page, limit, selections):
     """List one page of workflow definitions, not runs."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(k not in WORKFLOW_LIST_FIELDS for k in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(WORKFLOW_LIST_FIELDS))
+        global_repo = ctx.obj["app"].repo
+        if global_repo and repo_name and resolve_repo(repo_name) != resolve_repo(global_repo):
+            raise click.UsageError("Conflicting global and workflow list repository targets.")
     with _service(ctx, repo_name) as svc:
-        _show(ctx, svc.page("workflows", page, limit))
+        result = svc.page("workflows", page, limit)
+    if not fields:
+        _show(ctx, result)
+        return
+    _show(ctx, [_workflow_definition_row(row, fields) for row in result["workflows"]], exact_fields=fields)
+
+
+set_gc_help(workflow_list, gc_json_fields=list(WORKFLOW_LIST_FIELDS))
 
 
 @workflow.command("view")

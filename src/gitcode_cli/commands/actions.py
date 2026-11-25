@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing, contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +12,11 @@ import click
 
 from .._redact import redact
 from ..actions_client import ActionsClient
-from ..adapters.action_checks import pr_evidence
+from ..actions_watch import MAX_INTERVAL, MAX_TIMEOUT, watch_run
+from ..adapters.action_checks import CHECK_ROW_FIELDS, check_rows, pr_evidence
 from ..context import AppContext
-from ..helptext import GCSectionCommand, GCSectionGroup
+from ..errors import APIError
+from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
 from ..repo import resolve_repo
 from ..services.actions import MAX_WORKFLOW_SCAN, SHA_RE, ActionsService
 
@@ -24,23 +27,29 @@ offset_option = click.option("--offset", type=click.IntRange(0), default=0, show
 
 
 @contextmanager
-def _service(ctx: click.Context, repo_name: str | None):
-    app: AppContext = ctx.obj["app"]
-    owner, repo = resolve_repo(repo_name or app.repo)
-    with closing(ActionsClient(app.token)) as client:
+def _open_service(owner: str, repo: str, token: str):
+    with closing(ActionsClient(token)) as client:
         yield ActionsService(client, owner, repo)
 
 
-def _show(ctx: click.Context, value: dict):
+def _service(ctx: click.Context, repo_name: str | None):
+    app: AppContext = ctx.obj["app"]
+    return _open_service(*resolve_repo(repo_name or app.repo), app.token)
+
+
+def _show(ctx: click.Context, value: dict | list, *, exact_fields: tuple[str, ...] = ()):
     # Escaped JSON (including log lines) is intentional: never interpret terminal controls or
     # emit the request credential if a workflow or an upstream error reflects it in output.
-    def scrub(item: Any) -> Any:
+    def scrub(item: Any, field: str | None = None) -> Any:
         if isinstance(item, str):
-            return redact(item, ctx.obj["app"].token)
+            safe = redact(item, ctx.obj["app"].token)
+            if field in exact_fields and safe != item:
+                raise APIError("Cannot safely display Actions snapshot identity or status.")
+            return safe
         if isinstance(item, list):
             return [scrub(v) for v in item]
         if isinstance(item, dict):
-            return {k: scrub(v) for k, v in item.items()}
+            return {k: scrub(v, k) for k, v in item.items()}
         return item
 
     click.echo(json.dumps(scrub(value), indent=2, ensure_ascii=True))
@@ -82,25 +91,84 @@ def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr):
 @click.option("-j", "--job", "job_id", help="Inspect one job's steps instead of listing jobs.")
 @click.option("--log", "log_requested", is_flag=True, help="Read a page of one step log (requires --job and --step).")
 @click.option("--step", help="Step run ID for --log.")
+@click.option("--with-steps", is_flag=True, help="List jobs and their steps together from one GitCode run detail.")
 @offset_option
 @limit_option
 @click.option("--sort", type=click.Choice(["asc", "desc"]), default="asc")
 @click.pass_context
-def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, offset, limit, sort):
+def run_view(ctx, repo_name, run_id, attempt, commit, job_id, log_requested, step, with_steps, offset, limit, sort):
     """Show the current run/attempt and jobs, one job's steps, or a bounded log page."""
+    if with_steps and ctx.get_parameter_source("sort") != click.core.ParameterSource.DEFAULT:
+        raise click.UsageError("--sort controls log direction, not --with-steps display order.")
+    if with_steps and commit is not None and not SHA_RE.fullmatch(commit):
+        raise click.UsageError("--commit requires a full hexadecimal commit SHA.")
+    if with_steps and (job_id is not None or log_requested or step is not None):
+        raise click.UsageError("--with-steps cannot be combined with --job, --log or --step.")
     if (log_requested and not (job_id and step)) or (not log_requested and step):
         raise click.UsageError("--log needs --job and --step; --step requires --log.")
     if sort != "asc" and not log_requested:
         raise click.UsageError("--sort desc applies only to --log.")
     with _service(ctx, repo_name) as svc:
+        if with_steps:
+            _show(
+                ctx,
+                svc.job_snapshot(run_id, attempt, commit, offset, limit),
+                exact_fields=("workflow_run_id", "head_sha", "id", "status"),
+            )
+            return
         pinned = svc.pin(run_id, attempt, commit)
         if job_id:
             job = svc.job(run_id, job_id)
-            extra = svc.logs(run_id, job, step, offset, limit, sort) if log_requested else svc.steps(job, offset, limit)
+            extra = svc.logs(run_id, job, step, offset, limit, sort) if step else svc.steps(job, offset, limit)
         else:
             extra = svc.jobs(run_id, offset, limit)
         latest = svc.pin(run_id, pinned["attempt"], pinned["head_sha"])
         _show(ctx, {"run": latest, **extra})
+
+
+@run.command("watch")
+@click.argument("run_id")
+@repo_option
+@click.option(
+    "-i",
+    "--interval",
+    type=click.IntRange(1, MAX_INTERVAL),
+    default=3,
+    show_default=True,
+    help="Seconds between run-detail reads.",
+)
+@click.option(
+    "--timeout",
+    type=click.IntRange(1, MAX_TIMEOUT),
+    default=300,
+    show_default=True,
+    help="Local watch deadline in seconds; never cancels the remote run.",
+)
+@click.option("--exit-status", is_flag=True, help="Return nonzero for FAILED or CANCELED (IGNORED is always nonzero).")
+@click.pass_context
+def run_watch(ctx: click.Context, repo_name, run_id, interval, timeout, exit_status):
+    """Watch one explicit run ID. Exit 0 means a terminal state was observed, not that PR checks passed.
+
+    Use --exit-status to also return nonzero for FAILED or CANCELED.
+    """
+    app: AppContext = ctx.obj["app"]
+    owner, repo = resolve_repo(repo_name or app.repo)
+    try:
+        result = watch_run(
+            partial(_open_service, owner, repo, app.token),
+            run_id,
+            interval,
+            timeout,
+            lambda status: click.echo(f"Run status: {status}", err=True),
+        )
+    except KeyboardInterrupt:
+        click.echo("Watch interrupted locally; no stop request was sent.", err=True)
+        ctx.exit(130)
+    _show(ctx, result)
+    if result["status"] == "IGNORED":
+        ctx.exit(3)
+    if exit_status and result["status"] in {"FAILED", "CANCELED"}:
+        ctx.exit(1)
 
 
 @run.command("rerun")
@@ -190,17 +258,37 @@ def workflow_run(ctx, repo_name, workflow_id, ref, raw_field):
 @click.argument("number", type=click.IntRange(1))
 @repo_option
 @click.option("--scan-limit", type=click.IntRange(1, 100), default=100, show_default=True)
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select fields for observed workflow runs.")
 @click.pass_context
-def pr_checks(ctx, number, repo_name, scan_limit):
+def pr_checks(ctx, number, repo_name, scan_limit, selections):
     """Report v5 gates separately from observed exact-head v8 runs (not a merge decision)."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(key not in CHECK_ROW_FIELDS for key in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(CHECK_ROW_FIELDS))
+    if fields and repo_name and ctx.obj["app"].repo and resolve_repo(repo_name) != resolve_repo(ctx.obj["app"].repo):
+        raise click.UsageError("Conflicting global and PR checks repository targets.")
     with _service(ctx, repo_name) as svc:
         result = pr_evidence(svc, number, scan_limit)
-    _show(ctx, result)
-    ctx.exit(
-        {"observed_completed": 0, "failed_or_canceled": 1, "ci_gate_not_passed": 1, "pending": 8}.get(
-            result["outcome"], 3
-        )
-    )
+    outcome = result["outcome"]
+    code = {"observed_completed": 0, "failed_or_canceled": 1, "ci_gate_not_passed": 1, "pending": 8}.get(outcome, 3)
+    if not fields:
+        _show(ctx, result)
+    else:
+        rows = check_rows(result, fields)
+        if rows is not None:
+            _show(ctx, rows)
+        if code:
+            click.echo(f"PR checks: {outcome}. Omit --json for the full evidence report.", err=True)
+    ctx.exit(code)
+
+
+set_gc_help(pr_checks, gc_json_fields=list(CHECK_ROW_FIELDS))
 
 
 @run.command("artifacts")
@@ -222,7 +310,8 @@ def run_artifacts(ctx, repo_name, run_id, page, limit, attempt, commit):
 @run.command("download")
 @click.argument("run_id")
 @repo_option
-@click.option("--artifact-id", required=True, help="Exact artifact ID from 'run artifacts'.")
+@click.option("--artifact-id", multiple=True, help="Select one exact artifact ID instead of --name.")
+@click.option("--name", multiple=True, help="Select one unique, case-sensitive artifact name instead of --artifact-id.")
 @click.option("-a", "--attempt", type=click.IntRange(1), required=True, help="Observed current attempt (only 1).")
 @click.option("--commit", required=True, help="Expected full head commit SHA.")
 @click.option(
@@ -233,9 +322,16 @@ def run_artifacts(ctx, repo_name, run_id, page, limit, attempt, commit):
     help="New ZIP file under an existing safe local directory; never overwritten or extracted.",
 )
 @click.pass_context
-def run_download(ctx, repo_name, run_id, artifact_id, attempt, commit, output):
+def run_download(ctx, repo_name, run_id, artifact_id, name, attempt, commit, output):
     """Save one verified artifact ZIP, without extracting it."""
     from ..services.actions_artifacts import ActionsArtifactService  # noqa: PLC0415
 
+    if len(artifact_id) + len(name) != 1:
+        raise click.UsageError("Specify exactly one --artifact-id or --name, once.")
     with _service(ctx, repo_name) as svc:
-        _show(ctx, ActionsArtifactService(svc).download(run_id, artifact_id, attempt, commit, output))
+        _show(
+            ctx,
+            ActionsArtifactService(svc).download(
+                run_id, artifact_id[0] if artifact_id else None, attempt, commit, output, name=name[0] if name else None
+            ),
+        )

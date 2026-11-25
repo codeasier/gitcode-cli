@@ -242,6 +242,8 @@ class TestRepoView:
             ({"archived": "false"}, None),
             ({"status": "关闭", "archived": 1}, None),
             ({"status": "future", "archived": True}, None),
+            ({"status": "start"}, None),
+            ({"status": "close"}, None),
         ],
     )
     def test_view_archive_state_requires_unambiguous_evidence(self, runner, mock_client, payload, expected):
@@ -489,6 +491,33 @@ class TestRepoCreate:
 
 
 class TestRepoClone:
+    @pytest.mark.parametrize(
+        ("args", "extra"),
+        [
+            (["--no-upstream", "o/r"], []),
+            (["o/r", "dest", "--no-upstream"], ["dest"]),
+            (["o/r", "--no-upstream", "--", "-u", "git-upload-pack"], ["-u", "git-upload-pack"]),
+            (["--no-upstream", "o/r", "--", "--", "-dest"], ["--", "-dest"]),
+            (["o/r", "--", "--no-upstream"], ["--no-upstream"]),
+            (["o/r", "-u", "git-upload-pack"], ["-u", "git-upload-pack"]),
+        ],
+    )
+    def test_direct_clone_keeps_the_gc_and_native_option_boundary(self, runner, args, extra):
+        with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as call:
+            result = runner.invoke(main, ["repo", "clone", *args])
+        assert result.exit_code == 0
+        call.assert_called_once_with(["git", "clone", "https://gitcode.com/o/r.git", *extra])
+
+    @pytest.mark.parametrize(
+        "native", [["-u", "mirror"], ["-umirror"], ["--upstream-remote-name=mirror"], ["--depth", "1"]]
+    )
+    def test_no_upstream_requires_unambiguous_passthrough(self, runner, native):
+        with patch("gitcode_cli.commands.repo.subprocess.call") as call:
+            result = runner.invoke(main, ["repo", "clone", "o/r", *native, "--no-upstream"])
+        assert result.exit_code == 2
+        assert "put native git clone options after --" in result.output
+        call.assert_not_called()
+
     def test_clones_gitcode_url(self, runner, mock_client):
         with patch("gitcode_cli.commands.repo.subprocess.call", return_value=0) as mock_call:
             result = runner.invoke(main, ["repo", "clone", "owner/repo"])
@@ -819,7 +848,7 @@ class TestRepoHelpSections:
         result = runner.invoke(main, ["repo", "list", "--help"])
         assert result.exit_code == 0
         assert "JSON FIELDS" in result.output
-        assert "isArchived" not in result.output.split("EXAMPLES")[0]
+        assert "isArchived" in result.output.split("EXAMPLES")[0]
 
     def test_create_help_documents_private_default(self, runner):
         result = runner.invoke(main, ["repo", "create", "--help"])

@@ -483,6 +483,7 @@ def test_native_or_no_target_arguments_stay_unchanged(monkeypatch, argv):
         (["pr", "diff", "--color", "synthetic-marker", "https://gitcode.com/o/r/pull/1"], "--color"),
         (["pr", "merge", "--auto", "https://gitcode.com/o/r/pull/1"], "--auto"),
         (["repo", "clone", "-u", "synthetic-marker", "gitcode.com/o/r"], "--upstream-remote-name"),
+        (["repo", "clone", "--no-upstream", "gitcode.com/o/r"], "--no-upstream"),
     ],
 )
 def test_gitcode_target_rejects_unsupported_routes_before_any_backend(monkeypatch, argv, guide):

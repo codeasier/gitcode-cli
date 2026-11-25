@@ -7,6 +7,35 @@ from typing import Any
 from ..errors import APIError, NetworkError
 from ..services.actions import SHA_RE, ActionsService, nonnegative
 
+CHECK_ROW_FIELDS = {"workflow": "workflow_name", "state": "status", "event": "event"}
+
+
+def check_rows(report: dict, fields: tuple[str, ...]) -> list[dict] | None:
+    """Project only a complete, exact-head observation. None is not an empty inventory."""
+    observed = report["observed_actions"]
+    if (
+        report["outcome"]
+        not in {
+            "no_observed_runs",
+            "observed_completed",
+            "pending",
+            "failed_or_canceled",
+            "unknown_status",
+            "ci_gate_not_passed",
+            "ci_gate_unverified",
+        }
+        or observed.get("complete") is not True
+    ):
+        return None
+    rows = []
+    for observation in observed["runs"]:
+        if observation["identity"] != "exact_head":
+            return None
+        run = observation["run"]
+        values = {field: run.get(CHECK_ROW_FIELDS[field]) for field in fields}
+        rows.append({key: value if isinstance(value, str) and value else None for key, value in values.items()})
+    return rows
+
 
 def _snapshot(actions: ActionsService, number: int) -> tuple[str | None, dict]:
     data = actions.pull(number)

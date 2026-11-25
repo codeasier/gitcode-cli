@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,15 +12,16 @@ from ..adapters import RepoAdapter
 from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
-from ..helptext import GCSectionGroup, set_gc_help
-from ..json_projection import repo_name_with_owner
+from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
+from ..json_projection import repo_is_archived, repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
 from ..repo_read_dir import JSON_FIELDS as READ_DIR_JSON_FIELDS
-from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page
+from ..repo_read_dir import MAX_PAGE, encode_page, fetch_page, fetch_verified_tree
 from ..repo_read_file import JSON_FIELDS as READ_FILE_JSON_FIELDS
 from ..repo_read_file import METADATA_FIELDS, encode_file, fetch_file, write_file, write_stdout
+from ..repo_sync_status import read_sync_status
 from ..services import RepoService
 from ..utils import open_in_browser, prompt_if_missing, safe_echo
 
@@ -45,9 +47,7 @@ REPO_VIEW_JSON_FIELDS = [
     "pushedAt",
 ]
 
-REPO_LIST_JSON_FIELDS = [
-    field for field in REPO_VIEW_JSON_FIELDS if field not in {"isArchived", "createdAt", "pushedAt"}
-]
+REPO_LIST_JSON_FIELDS = [field for field in REPO_VIEW_JSON_FIELDS if field not in {"createdAt", "pushedAt"}]
 
 
 def _is_gitcode_host(host: str) -> bool:
@@ -116,28 +116,7 @@ def _normalize_repo_owner(item: dict) -> Any:
     }
 
 
-def _is_archived(item: dict) -> bool | None:
-    """Report only an explicit archive state; unknown or conflicting evidence is null."""
-    flag = item.get("archived")
-    if flag is not None and not isinstance(flag, bool):
-        return None
-    status = item.get("status")
-    if status is None:
-        return flag
-    # The v5 schema describes 0/2; its examples use the localized labels.
-    # Avoid truthiness or substring matches (notably "未归档" and "已归档").
-    if type(status) not in (int, str):
-        return None
-    if status in (0, "0", "开始", "未归档"):
-        state = False
-    elif status in (2, "2", "关闭", "已归档"):
-        state = True
-    else:
-        return None
-    return state if flag is None or flag == state else None
-
-
-def _normalize_repo_fields(item: dict) -> dict:
+def _normalize_repo_fields(item: dict, *, from_list: bool = False) -> dict:
     name = item.get("name")
     name_with_owner = repo_name_with_owner(item)
     return {
@@ -150,7 +129,7 @@ def _normalize_repo_fields(item: dict) -> dict:
         "defaultBranch": item.get("default_branch"),
         "homepage": item.get("homepage"),
         "isFork": bool(item.get("fork")),
-        "isArchived": _is_archived(item),
+        "isArchived": repo_is_archived(item, from_list=from_list),
         "stargazers": item.get("stargazers_count"),
         "forks": item.get("forks_count"),
         "openIssues": item.get("open_issues_count"),
@@ -164,7 +143,7 @@ def _normalize_repo_fields(item: dict) -> dict:
 
 
 def _normalize_repo_list(items: list[dict]) -> list[dict]:
-    return [_normalize_repo_fields(item) for item in items]
+    return [_normalize_repo_fields(item, from_list=True) for item in items]
 
 
 def _echo_repo_list(items: list[dict]) -> None:
@@ -364,12 +343,13 @@ def _read_fields(options: tuple[str, ...], allowed: tuple[str, ...]) -> tuple[st
     return fields
 
 
-@repo_group.command("read-dir", short_help="List one page of a GitCode directory")
+@repo_group.command("read-dir", short_help="List a GitCode directory")
 @click.argument("path", required=False)
 @click.option(
     "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
 )
 @click.option("--ref", required=True, help="A literal branch, commit or tree SHA. Pin a SHA when paging.")
+@click.option("--all", "read_all", is_flag=True, help="Read a complete tree by its tree SHA; omit PATH and --page.")
 @click.option("--page", type=click.IntRange(1, MAX_PAGE), default=1, show_default=True, help="Page number to read.")
 @click.option("--per-page", type=click.IntRange(1, 100), default=20, show_default=True, help="Entries per page.")
 @click.option(
@@ -387,14 +367,21 @@ def repo_read_dir(
     path: str | None,
     repo_name: str | None,
     ref: str,
+    read_all: bool,
     page: int,
     per_page: int,
     json_options: tuple[str, ...],
 ) -> None:
     """Read immediate directory entries without cloning. Omit PATH for the root of the specified ref."""
     fields = _read_fields(json_options, READ_DIR_JSON_FIELDS)
+    if read_all and (path is not None or ctx.get_parameter_source("page") is not click.core.ParameterSource.DEFAULT):
+        raise click.UsageError("--all takes a tree SHA via --ref. Omit PATH and --page.")
     owner, name = _read_target(ctx, repo_name)
     token = ctx.obj["app"].token
+    if read_all:
+        entries = fetch_verified_tree(owner, name, ref, per_page, token)
+        click.open_file("-", "wb").write(encode_page(entries, fields, token))
+        return
     entries = fetch_page(owner, name, path, ref, page, per_page, token)
     if not entries:
         message = "No entries on this page; the Tree API does not confirm the path is an existing directory."
@@ -417,7 +404,12 @@ set_gc_help(repo_read_dir, gc_json_fields=READ_DIR_JSON_FIELDS)
     "-R", "--repo", "repo_name", help="Select [HOST/]OWNER/REPO instead of the configured default or Git origin."
 )
 @click.option("--ref", help="Read this branch, tag, or commit (default: the repository default branch).")
-@click.option("-o", "--output", type=click.Path(path_type=Path), help="Create a new file with the exact bytes (POSIX).")
+@click.option("-o", "--output", type=click.Path(), help="Write the exact bytes to a local file (POSIX).")
+@click.option(
+    "--clobber",
+    is_flag=True,
+    help="With --output, atomically replace a regular file. Do not concurrently change the destination or its path.",
+)
 @click.option(
     "--json",
     "json_options",
@@ -433,13 +425,18 @@ def repo_read_file(
     path: str,
     repo_name: str | None,
     ref: str | None,
-    output: Path | None,
+    output: str | None,
+    clobber: bool,
     json_options: tuple[str, ...],
 ) -> None:
     """Read one file (up to 1 MiB) without cloning. Default stdout accepts safe UTF-8 text only."""
     fields = _read_fields(json_options, READ_FILE_JSON_FIELDS)
     if fields is not None and output is not None:
         raise click.UsageError("Specify only one of --json and --output.")
+    # Path() normalizes a trailing slash or /. away. Do not turn an explicit
+    # directory spelling into permission to replace a file of the same name.
+    if clobber and (output is None or os.path.basename(output) in {"", ".", ".."}):
+        raise click.UsageError("--clobber requires --output FILE (an explicit filename).")
     owner, name = _read_target(ctx, repo_name)
     token = ctx.obj["app"].token
     content = fetch_file(owner, name, path, ref, token)
@@ -448,7 +445,7 @@ def repo_read_file(
     elif output is None:
         write_stdout(content)
     else:
-        write_file(output, content)
+        write_file(Path(output), content, clobber=clobber)
 
 
 set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)
@@ -465,6 +462,8 @@ set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)
 @click.option("-l", "--language", help="Filter by primary coding language (applied client-side).")
 @click.option("--fork", "fork_only", is_flag=True, help="Show only forks.")
 @click.option("--source", is_flag=True, help="Show only non-forks.")
+@click.option("--archived", is_flag=True, help="Show only confirmed archived repositories.")
+@click.option("--no-archived", is_flag=True, help="Show only confirmed unarchived repositories.")
 @click.option(
     "--json",
     "json_fields",
@@ -484,6 +483,8 @@ def repo_list(
     language: str | None,
     fork_only: bool,
     source: bool,
+    archived: bool,
+    no_archived: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
@@ -492,6 +493,8 @@ def repo_list(
     _require_valid_limit(limit)
     if fork_only and source:
         raise click.UsageError("specify only one of --fork or --source")
+    if archived and no_archived:
+        raise click.UsageError("specify only one of --archived or --no-archived")
     if owner and "/" in owner:
         raise click.UsageError("owner must be a username or organization, not OWNER/REPO")
     service = RepoService(ctx.obj["app"].client())
@@ -503,6 +506,7 @@ def repo_list(
         source=source,
         visibility=visibility,
         language=language,
+        archived=archived if archived or no_archived else None,
     )
     output_items = _normalize_repo_list(items) if json_fields or jq_query or template else items
     output_result(
@@ -610,17 +614,35 @@ def repo_create(
         )
 
 
-@repo_group.command("clone", context_settings={"ignore_unknown_options": True})
+class _RepoCloneCommand(GCSectionCommand):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click removes the first "--" before the callback. Check this new mode
+        # here so gh's -u NAME cannot accidentally select Git's upload-pack.
+        prefix = args[: args.index("--")] if "--" in args else args
+        if "--no-upstream" in prefix and any(
+            arg.startswith("-") and arg not in {"--no-upstream", "--help"} for arg in prefix
+        ):
+            raise click.UsageError(
+                "With --no-upstream, put native git clone options after --. Named fork remotes are not supported.",
+                ctx,
+            )
+        return super().parse_args(ctx, args)
+
+
+@repo_group.command("clone", cls=_RepoCloneCommand, context_settings={"ignore_unknown_options": True})
+@click.option("--no-upstream", is_flag=True, help="Do not discover or add a fork parent (the default).")
 @click.argument("repository")
 @click.argument("directory", required=False)
 @click.argument("gitflags", nargs=-1, type=click.UNPROCESSED)
-def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...]) -> None:
+def repo_clone(repository: str, directory: str | None, gitflags: tuple[str, ...], no_upstream: bool) -> None:
     owner, repo = _parse_repository_arg(repository)
     # With ignore_unknown_options, click may stuff a passthrough flag into the
     # optional `directory` positional; prepending whatever landed there keeps
     # the original argument order for `git clone`.
     clone_args: list[str] = [directory] if directory else []
-    clone_args.extend(arg for arg in gitflags if arg != "--")
+    # An additional "--" in the explicit mode belongs to Git. Keep the
+    # historical passthrough behavior for invocations without the new flag.
+    clone_args.extend(gitflags if no_upstream else (arg for arg in gitflags if arg != "--"))
     _git_clone(f"https://gitcode.com/{owner}/{repo}.git", *clone_args)
 
 
@@ -744,6 +766,21 @@ def repo_delete(ctx: click.Context, repo_name: str | None, repository: str | Non
     safe_echo(f"Deleted repository {target}")
 
 
+@repo_group.command("sync-status", short_help="Query GitCode fork synchronization status without syncing")
+@click.argument("repository", metavar="OWNER/FORK")
+@click.option("-b", "--branch", required=True, multiple=True, help="One explicit fork branch to query.")
+@click.pass_context
+def repo_sync_status(ctx: click.Context, repository: str, branch: tuple[str, ...]) -> None:
+    """Read the provider's status as JSON. Use a positional OWNER/FORK without -R; no branch is updated.
+
+    Output includes a boolean repo_sync_result and a repo_sync_message string or null.
+    """
+    app = ctx.obj["app"]
+    if app.repo is not None or len(branch) != 1:
+        raise click.UsageError("Specify one positional OWNER/FORK and one --branch; do not use -R.")
+    safe_echo(read_sync_status(repository, branch[0], app.token))
+
+
 @repo_group.command("sync")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.argument("repository", required=False)
@@ -763,7 +800,7 @@ set_gc_help(
     gc_usage="gc repo <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["clone", "create", "fork", "list", "set-default"]),
-        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "view"]),
+        ("TARGETED COMMANDS", ["delete", "edit", "read-dir", "read-file", "rename", "sync", "sync-status", "view"]),
     ],
     gc_examples=[
         "gc repo list",
@@ -787,9 +824,11 @@ set_gc_help(
     gc_usage="gc repo view [{<repository> | -R OWNER/REPO}] [flags]",
     gc_json_fields=REPO_VIEW_JSON_FIELDS,
 )
-repo_list.short_help = "List repositories owned by user or organization"
+repo_list.short_help = "List repositories for a user or organization"
 repo_list.help = (
-    "List repositories owned by user or organization. With no argument, lists repositories of the authenticated user."
+    "Without OWNER, list repositories accessible to the authenticated user. With OWNER, list the user's public "
+    "repositories or the organization's accessible repositories. Archive filters read list rows only. An invalid "
+    "page or an unverified filter match fails without printing a partial list."
 )
 set_gc_help(
     repo_list,
@@ -799,6 +838,7 @@ set_gc_help(
         "gc repo list",
         "gc repo list owner",
         "gc repo list --limit 10 --visibility private",
+        "gc repo list owner --archived --json nameWithOwner,isArchived",
     ],
 )
 repo_create.short_help = "Create a new repository"
@@ -818,7 +858,8 @@ repo_clone.short_help = "Clone a repository locally"
 repo_clone.help = "Clone a gitcode.com repository locally, passing extra flags to git clone after --."
 set_gc_help(
     repo_clone,
-    gc_usage="gc repo clone <repository> [<directory>] [-- <gitflags>...] [flags]",
+    gc_usage="gc repo clone [--no-upstream] <repository> [<directory>] [-- <gitflags>...]",
+    gc_examples=["gc repo clone --no-upstream owner/project work -- --depth 1"],
 )
 repo_fork.short_help = "Create a fork of a repository"
 repo_fork.help = "Create a fork of a repository. With no argument, the repository is taken from the git origin remote."

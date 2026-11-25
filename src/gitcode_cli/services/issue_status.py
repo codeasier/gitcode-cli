@@ -105,7 +105,7 @@ def _repo(value: Any) -> tuple[str, int]:
     return f"{owners.pop()}/{names.pop()}", _positive(value.get("id"))
 
 
-def _link_parameters(header: str, offset: int) -> tuple[list[str], bool, int]:
+def _link_parameters(header: str, offset: int, source: str) -> tuple[list[str], bool, int]:
     rels: list[str] = []
     anchored = False
     while param := _LINK_PARAM.match(header, offset):
@@ -116,32 +116,32 @@ def _link_parameters(header: str, offset: int) -> tuple[list[str], bool, int]:
             anchored = True
         offset = param.end()
     if len(rels) > 1 or (rels and not rels[0]):
-        raise APIError("Ambiguous issue status pagination link.")
+        raise APIError(f"Ambiguous {source} pagination link.")
     return re.sub(r"\\(.)", r"\1", rels[0]).lower().split() if rels else [], anchored, offset
 
 
-def _continuation_links(headers: httpx.Headers) -> dict[str, str]:
+def _continuation_links(headers: httpx.Headers, source: str) -> dict[str, str]:
     links: dict[str, str] = {}
     for header in (value.strip() for value in headers.get_list("link")):
         offset = 0
         while offset < len(header):
             match = _LINK_URI.match(header, offset)
             if not match:
-                raise APIError("Malformed issue status pagination link.")
-            rels, anchored, offset = _link_parameters(header, match.end())
+                raise APIError(f"Malformed {source} pagination link.")
+            rels, anchored, offset = _link_parameters(header, match.end(), source)
             for rel in rels:
                 if rel in ("first", "prev", "next", "last"):
                     if anchored or rel in links:
-                        raise APIError("Ambiguous issue status pagination link.")
+                        raise APIError(f"Ambiguous {source} pagination link.")
                     links[rel] = match[1]
             if offset < len(header):
                 if header[offset] != "," or offset + 1 == len(header):
-                    raise APIError("Malformed issue status pagination link.")
+                    raise APIError(f"Malformed {source} pagination link.")
                 offset += 1
     return links
 
 
-def _linked_page(link: str, current: httpx.URL) -> int:
+def _linked_page(link: str, current: httpx.URL, source: str) -> int:
     try:
         if "\\" in link or any(char.isspace() or not char.isprintable() for char in link):
             raise ValueError
@@ -163,29 +163,38 @@ def _linked_page(link: str, current: httpx.URL) -> int:
             raise ValueError
         return int(page)
     except ValueError:
-        raise APIError("Issue status pagination link disagrees with the requested scope or page.") from None
+        raise APIError(
+            f"{source[0].upper() + source[1:]} pagination link disagrees with the requested scope or page."
+        ) from None
 
 
-def _header(headers: httpx.Headers, key: str) -> str | None:
+def _header(headers: httpx.Headers, key: str, source: str) -> str | None:
     values = headers.get_list(key)
     if len(values) > 1:
-        raise APIError("Duplicate issue status pagination header.")
+        raise APIError(f"Duplicate {source} pagination header.")
     return values[0].strip() if values else None
 
 
-def _validate_backward_links(links: dict[str, str], headers: httpx.Headers, url: httpx.URL, page: int) -> None:
+def _validate_backward_links(
+    links: dict[str, str], headers: httpx.Headers, url: httpx.URL, page: int, source: str
+) -> None:
     previous = str(page - 1) if page > 1 else ""
-    advertised_prev = _header(headers, "x-prev-page")
+    advertised_prev = _header(headers, "x-prev-page", source)
     if (
         advertised_prev not in (None, previous)
-        or ("first" in links and _linked_page(links["first"], url) != 1)
-        or ("prev" in links and (page == 1 or _linked_page(links["prev"], url) != page - 1))
+        or ("first" in links and _linked_page(links["first"], url, source) != 1)
+        or ("prev" in links and (page == 1 or _linked_page(links["prev"], url, source) != page - 1))
     ):
-        raise APIError("Conflicting issue status pagination first or previous page.")
+        raise APIError(f"Conflicting {source} pagination first or previous page.")
 
 
 class _Pagination:
-    def __init__(self) -> None:
+    """Validate a bounded v5 status array while callers probe fixed, sequential URLs."""
+
+    def __init__(self, *, page_size: int = PAGE_SIZE, source: str = "issue status") -> None:
+        self.page_size = page_size
+        self.source = source
+        self.label = source[0].upper() + source[1:]
         self.seen_count = 0
         self.total: int | None = None
         self.total_pages: int | None = None
@@ -193,32 +202,32 @@ class _Pagination:
         self.expects_data = False
 
     def validate(self, items: Any, headers: httpx.Headers, url: httpx.URL) -> None:
-        if not isinstance(items, list) or len(items) > PAGE_SIZE:
-            raise APIError("Invalid issue status page.")
+        if not isinstance(items, list) or len(items) > self.page_size:
+            raise APIError(f"Invalid {self.source} page.")
         page = int(url.params["page"])
-        if _header(headers, "x-page") not in (None, str(page)) or _header(headers, "x-per-page") not in (
-            None,
-            str(PAGE_SIZE),
-        ):
-            raise APIError("GitCode did not confirm the requested issue status page.")
-        advertised_next = _header(headers, "x-next-page")
-        links = _continuation_links(headers)
-        _validate_backward_links(links, headers, url, page)
+        if _header(headers, "x-page", self.source) not in (None, str(page)) or _header(
+            headers, "x-per-page", self.source
+        ) not in (None, str(self.page_size)):
+            raise APIError(f"GitCode did not confirm the requested {self.source} page.")
+        advertised_next = _header(headers, "x-next-page", self.source)
+        links = _continuation_links(headers, self.source)
+        _validate_backward_links(links, headers, url, page, self.source)
         if advertised_next not in (None, "", str(page + 1)) or (
-            "next" in links and (advertised_next == "" or _linked_page(links["next"], url) != page + 1)
+            "next" in links and (advertised_next == "" or _linked_page(links["next"], url, self.source) != page + 1)
         ):
-            raise APIError("Conflicting issue status pagination continuation.")
-        last = _linked_page(links["last"], url) if "last" in links else None
+            raise APIError(f"Conflicting {self.source} pagination continuation.")
+        last = _linked_page(links["last"], url, self.source) if "last" in links else None
         self._read_totals(headers, last)
         if "content-range" in headers or any(
-            _header(headers, key) not in (None, "false", "0") for key in ("x-truncated", "x-incomplete-results")
+            _header(headers, key, self.source) not in (None, "false", "0")
+            for key in ("x-truncated", "x-incomplete-results")
         ):
-            raise APIError("GitCode reported incomplete issue status results.")
+            raise APIError(f"GitCode reported incomplete {self.source} results.")
         self.seen_count += len(items)
         continuation = advertised_next == str(page + 1) or "next" in links
         self._validate_totals(bool(items), page, continuation, advertised_next == "")
         if (not items and (continuation or self.expects_data)) or (self.ended and items):
-            raise APIError("Issue status results contradict the pagination continuation.")
+            raise APIError(f"{self.label} results contradict the pagination continuation.")
         self.expects_data = continuation
         self.ended = (
             advertised_next == ""
@@ -228,40 +237,40 @@ class _Pagination:
 
     def _read_totals(self, headers: httpx.Headers, last: int | None) -> None:
         for key, state, other in (("x-total", "total", None), ("x-total-pages", "total_pages", last)):
-            raw = _header(headers, key)
+            raw = _header(headers, key, self.source)
             if raw is not None and not re.fullmatch(r"0|[1-9][0-9]{0,19}", raw):
-                raise APIError("Invalid issue status pagination total.")
+                raise APIError(f"Invalid {self.source} pagination total.")
             evidence = {
                 value
                 for value in (getattr(self, state), int(raw) if raw is not None else None, other)
                 if value is not None
             }
             if len(evidence) > 1:
-                raise APIError("Conflicting issue status pagination totals.")
+                raise APIError(f"Conflicting {self.source} pagination totals.")
             if evidence:
                 setattr(self, state, evidence.pop())
 
     def _validate_totals(self, data: bool, page: int, continuation: bool, explicit_end: bool) -> None:
         if self.total is not None:
             if self.seen_count > self.total or (not data and self.seen_count < self.total):
-                raise APIError("Issue status results disagree with the reported total.")
+                raise APIError(f"{self.label} results disagree with the reported total.")
             if (continuation and self.seen_count == self.total) or (explicit_end and self.seen_count < self.total):
-                raise APIError("Issue status continuation disagrees with the reported total.")
+                raise APIError(f"{self.label} continuation disagrees with the reported total.")
         if self.total_pages is not None:
             if self.total is not None and not (
-                self.total_pages <= self.total <= self.total_pages * PAGE_SIZE
+                self.total_pages <= self.total <= self.total_pages * self.page_size
                 or self.total == 0
                 and self.total_pages == 1
             ):
-                raise APIError("Issue status results disagree with the reported page and row counts.")
+                raise APIError(f"{self.label} results disagree with the reported page and row counts.")
             if (data and page > self.total_pages) or (
                 not data
                 and page <= self.total_pages
                 and not (page == 1 == self.total_pages and self.total in (None, 0))
             ):
-                raise APIError("Issue status results disagree with the reported page count.")
+                raise APIError(f"{self.label} results disagree with the reported page count.")
             if (continuation and page >= self.total_pages) or (explicit_end and page < self.total_pages):
-                raise APIError("Issue status continuation disagrees with the reported page count.")
+                raise APIError(f"{self.label} continuation disagrees with the reported page count.")
 
 
 def _matches(value: Any, expected: tuple[str, str]) -> bool:

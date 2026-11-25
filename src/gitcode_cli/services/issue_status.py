@@ -184,7 +184,9 @@ def _validate_backward_links(links: dict[str, str], headers: httpx.Headers, url:
         raise APIError("Conflicting issue status pagination first or previous page.")
 
 
-class _Pagination:
+class IssuePagination:
+    """Validate issue collection headers and links for consecutive 50-row page requests."""
+
     def __init__(self) -> None:
         self.seen_count = 0
         self.total: int | None = None
@@ -356,7 +358,7 @@ def status(owner: str, name: str, token: str, *, read_page: StatusPageReader | N
     for group, param in (("assigned", "assignee"), ("createdBy", "creator")):
         seen: set[int] = set()
         rows = []
-        pagination = _Pagination()
+        pagination = IssuePagination()
         path = f"/repos/{identity[0]}/issues"
         for page in range(1, MAX_DATA_PAGES + 2):
             params = {param: actor[0], "state": "open", "page": str(page), "per_page": str(PAGE_SIZE)}

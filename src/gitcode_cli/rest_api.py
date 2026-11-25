@@ -337,7 +337,13 @@ def _confirmed_status(status: int, method: str) -> bool:
 
 
 def _read(
-    response: httpx.Response, method: str, token: str, remaining: int, *, runs: _RunsPagination | None = None
+    response: httpx.Response,
+    method: str,
+    token: str,
+    remaining: int,
+    *,
+    runs: _RunsPagination | None = None,
+    strict_json: bool = False,
 ) -> tuple[Page, int, bytes]:
     status = response.status_code
     if runs is not None:
@@ -370,7 +376,7 @@ def _read(
             runs.accept(data, response.headers)
             digest = b""
         else:
-            data = json.loads(raw)
+            data = json.loads(raw, object_pairs_hook=_unique_fields if strict_json else None)
             if uncertain and data is None:
                 raise ValueError
             digest = hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).digest()
@@ -449,6 +455,7 @@ def fetch(
     paginate: bool,
     *,
     repo_scope: tuple[str, str] | None = None,
+    strict_json: bool = False,
 ) -> list[Page]:
     url, params = _request_target(endpoint, version, query, token)
     if method not in READ_METHODS | {"POST", "PUT", "PATCH", "DELETE"} or (paginate and method != "GET"):
@@ -475,7 +482,7 @@ def fetch(
                 with client.stream(
                     method, url, params=params, headers=request_headers, content=body, follow_redirects=False
                 ) as response:
-                    page, used, digest = _read(response, method, token, remaining, runs=runs)
+                    page, used, digest = _read(response, method, token, remaining, runs=runs, strict_json=strict_json)
                 remaining -= used
                 if not paginate:
                     return [page]

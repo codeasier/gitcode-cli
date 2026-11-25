@@ -6,7 +6,7 @@ listed by each command's `--help`. Search does not interpret GitHub's raw
 qualifier syntax.
 
 ```bash
-gc search repos parser --include-forks false --sort stars --order desc --json fullName,watchersCount
+gc search repos parser --include-forks false --sort stars --order desc --json fullName,isFork,watchersCount
 ```
 
 By default, `gc search repos` uses the [repository search endpoint][gitcode-repos]
@@ -14,6 +14,10 @@ without a fork filter. To request only original repositories, pass
 `--include-forks false`. This sends `fork=false` on each page and fails without
 printing results if a returned row is a fork or lacks a definite non-fork
 marker. It does not guarantee that every matching repository is indexed.
+
+`--json isFork` reports the fork marker on each returned row, not whether forks
+were included in the index. A boolean or integer 0/1 becomes a JSON boolean;
+a missing or unrecognized marker becomes `null` in an unfiltered search.
 
 Two modes are unavailable: including forks alongside originals (or selecting
 only forks), and sorting by watch count. The [AtomGit reference][repos]
@@ -24,6 +28,11 @@ also restricts fork inclusion and does not list a watch sort. The CLI rejects
 these modes before searching rather than printing incomplete or misordered
 results. `watchersCount` remains available as a JSON output field. Repository
 search is direct-only, not available through the gh proxy.
+
+Repository search sends the configured token only in the Bearer authorization
+header on each page. A 401 is an authentication failure: the command does not
+retry with a URL token or print an earlier page as a successful result.
+Anonymous access to this endpoint is not guaranteed.
 
 ```bash
 gc search prs "improve telemetry" --sort updated --limit 25 --json number,title,state,repository,url

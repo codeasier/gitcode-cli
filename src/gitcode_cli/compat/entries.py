@@ -89,6 +89,14 @@ ENTRIES: list[CompatEntry] = [
     _e("label delete", None, CompatStatus.IMPLEMENTED, "Remove a task label and verify absence.", proxy_allowed=False),
     _e("label clone", None, CompatStatus.IMPLEMENTED, "Additive cross-repository copy.", proxy_allowed=False),
     _e("org list", None, CompatStatus.IMPLEMENTED, "Authenticated user's GitCode organizations.", proxy_allowed=False),
+    _e(
+        "org dashboards",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "One page of GitCode organization Kanban boards, not GitHub Projects.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("discussion list", None, CompatStatus.IMPLEMENTED, "Repository discussions.", proxy_allowed=False),
     _e(
         "discussion view",
@@ -441,7 +449,7 @@ ENTRIES: list[CompatEntry] = [
         "pr status",
         None,
         CompatStatus.IMPLEMENTED,
-        "Direct gc only: one page of repository-open PRs, not personal or current-branch groups",
+        "Direct gc: repository-open PRs by default; explicit personal scopes, not gh status groups",
         proxy_allowed=False,
     ),
     _e("pr checks", None, CompatStatus.IMPLEMENTED, "Separate v5 gates and exact-head v8 runs.", proxy_allowed=False),
@@ -687,6 +695,14 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.IMPLEMENTED,
         "Direct gc: GitCode conflict check for each listed PR",
     ),
+    _e(
+        "pr status",
+        "--scope",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: one GitCode personal queue",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("pr status", "--json", CompatStatus.NOT_IN_CLI),
     _e("pr status", "-q/--jq", CompatStatus.NOT_IN_CLI),
     _e("pr status", "-t/--template", CompatStatus.NOT_IN_CLI),
@@ -807,18 +823,16 @@ ENTRIES: list[CompatEntry] = [
     _e("repo list", "-l/--language", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--fork", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--source", CompatStatus.IMPLEMENTED, "Client-side filter (non-forks)"),
-    _e(
-        "repo list",
-        "--archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
-    _e(
-        "repo list",
-        "--no-archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
+    *[
+        _e(
+            "repo list",
+            flag,
+            CompatStatus.IMPLEMENTED,
+            "Direct gc only: filter list rows before the limit; fail on unverified archive state.",
+            proxy_allowed=False,
+        )
+        for flag in ("--archived", "--no-archived")
+    ],
     _e("repo list", "--topic", CompatStatus.NOT_IN_CLI, "GitCode v5 has no repository topics API"),
     _e("repo create", "-d/--description", CompatStatus.IMPLEMENTED),
     _e("repo create", "--add-readme", CompatStatus.IMPLEMENTED, "Maps to auto_init"),
@@ -936,6 +950,15 @@ ENTRIES: list[CompatEntry] = [
     _e("repo sync", "--force", CompatStatus.NOT_IN_CLI, "GitCode fork sync has no force mode"),
     _e("repo sync", "-s/--source", CompatStatus.NOT_IN_CLI, "GitCode fork sync always uses the upstream parent"),
     # --- release subcommands and flags (GitCode semantics are direct-only) ---
+    _e(
+        "release check-digest",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode-only local byte comparison; not a signed publisher attestation.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
+    _e("release check-digest", "-R/--repo", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
     _e("release list", None, CompatStatus.IMPLEMENTED, "Ordered paginated list; aliases: ls.", proxy_allowed=False),
     _e(
         "release view",

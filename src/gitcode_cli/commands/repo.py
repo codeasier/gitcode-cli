@@ -13,7 +13,7 @@ from ..adapters.capabilities import unsupported
 from ..errors import RepoResolutionError
 from ..formatters import format_repo_detail, format_repo_list, output_result, repo_visibility
 from ..helptext import GCSectionCommand, GCSectionGroup, set_gc_help
-from ..json_projection import repo_name_with_owner
+from ..json_projection import repo_is_archived, repo_name_with_owner
 from ..repo import parse_remote_url_with_host, parse_repo_with_host, validate_gitcode_repo
 from ..repo_default import configured_target, set_default, unset_default, view_default
 from ..repo_read import origin_target
@@ -47,9 +47,7 @@ REPO_VIEW_JSON_FIELDS = [
     "pushedAt",
 ]
 
-REPO_LIST_JSON_FIELDS = [
-    field for field in REPO_VIEW_JSON_FIELDS if field not in {"isArchived", "createdAt", "pushedAt"}
-]
+REPO_LIST_JSON_FIELDS = [field for field in REPO_VIEW_JSON_FIELDS if field not in {"createdAt", "pushedAt"}]
 
 
 def _is_gitcode_host(host: str) -> bool:
@@ -118,28 +116,7 @@ def _normalize_repo_owner(item: dict) -> Any:
     }
 
 
-def _is_archived(item: dict) -> bool | None:
-    """Report only an explicit archive state; unknown or conflicting evidence is null."""
-    flag = item.get("archived")
-    if flag is not None and not isinstance(flag, bool):
-        return None
-    status = item.get("status")
-    if status is None:
-        return flag
-    # The v5 schema describes 0/2; its examples use the localized labels.
-    # Avoid truthiness or substring matches (notably "未归档" and "已归档").
-    if type(status) not in (int, str):
-        return None
-    if status in (0, "0", "开始", "未归档"):
-        state = False
-    elif status in (2, "2", "关闭", "已归档"):
-        state = True
-    else:
-        return None
-    return state if flag is None or flag == state else None
-
-
-def _normalize_repo_fields(item: dict) -> dict:
+def _normalize_repo_fields(item: dict, *, from_list: bool = False) -> dict:
     name = item.get("name")
     name_with_owner = repo_name_with_owner(item)
     return {
@@ -152,7 +129,7 @@ def _normalize_repo_fields(item: dict) -> dict:
         "defaultBranch": item.get("default_branch"),
         "homepage": item.get("homepage"),
         "isFork": bool(item.get("fork")),
-        "isArchived": _is_archived(item),
+        "isArchived": repo_is_archived(item, from_list=from_list),
         "stargazers": item.get("stargazers_count"),
         "forks": item.get("forks_count"),
         "openIssues": item.get("open_issues_count"),
@@ -166,7 +143,7 @@ def _normalize_repo_fields(item: dict) -> dict:
 
 
 def _normalize_repo_list(items: list[dict]) -> list[dict]:
-    return [_normalize_repo_fields(item) for item in items]
+    return [_normalize_repo_fields(item, from_list=True) for item in items]
 
 
 def _echo_repo_list(items: list[dict]) -> None:
@@ -485,6 +462,8 @@ set_gc_help(repo_read_file, gc_json_fields=READ_FILE_JSON_FIELDS)
 @click.option("-l", "--language", help="Filter by primary coding language (applied client-side).")
 @click.option("--fork", "fork_only", is_flag=True, help="Show only forks.")
 @click.option("--source", is_flag=True, help="Show only non-forks.")
+@click.option("--archived", is_flag=True, help="Show only confirmed archived repositories.")
+@click.option("--no-archived", is_flag=True, help="Show only confirmed unarchived repositories.")
 @click.option(
     "--json",
     "json_fields",
@@ -504,6 +483,8 @@ def repo_list(
     language: str | None,
     fork_only: bool,
     source: bool,
+    archived: bool,
+    no_archived: bool,
     json_fields: str | None,
     jq_query: str | None,
     template: str | None,
@@ -512,6 +493,8 @@ def repo_list(
     _require_valid_limit(limit)
     if fork_only and source:
         raise click.UsageError("specify only one of --fork or --source")
+    if archived and no_archived:
+        raise click.UsageError("specify only one of --archived or --no-archived")
     if owner and "/" in owner:
         raise click.UsageError("owner must be a username or organization, not OWNER/REPO")
     service = RepoService(ctx.obj["app"].client())
@@ -523,6 +506,7 @@ def repo_list(
         source=source,
         visibility=visibility,
         language=language,
+        archived=archived if archived or no_archived else None,
     )
     output_items = _normalize_repo_list(items) if json_fields or jq_query or template else items
     output_result(
@@ -605,6 +589,14 @@ def repo_create(
         gitignore_template=gitignore_template,
         license_template=license_template,
     )
+    if target_owner:
+        # The adapter confirmed this exact identity. Do not substitute an
+        # unrelated web or transport URL from the response.
+        url = _repo_url(None, target_owner, repo_name)
+        safe_echo(url)
+        if clone:
+            _git_clone(url + ".git")
+        return
     item_dict = item if isinstance(item, dict) else None
     owner = _resolve_created_owner(item_dict, target_owner)
     if owner:
@@ -832,9 +824,11 @@ set_gc_help(
     gc_usage="gc repo view [{<repository> | -R OWNER/REPO}] [flags]",
     gc_json_fields=REPO_VIEW_JSON_FIELDS,
 )
-repo_list.short_help = "List repositories owned by user or organization"
+repo_list.short_help = "List repositories for a user or organization"
 repo_list.help = (
-    "List repositories owned by user or organization. With no argument, lists repositories of the authenticated user."
+    "Without OWNER, list repositories accessible to the authenticated user. With OWNER, list the user's public "
+    "repositories or the organization's accessible repositories. Archive filters read list rows only. An invalid "
+    "page or an unverified filter match fails without printing a partial list."
 )
 set_gc_help(
     repo_list,
@@ -844,6 +838,7 @@ set_gc_help(
         "gc repo list",
         "gc repo list owner",
         "gc repo list --limit 10 --visibility private",
+        "gc repo list owner --archived --json nameWithOwner,isArchived",
     ],
 )
 repo_create.short_help = "Create a new repository"

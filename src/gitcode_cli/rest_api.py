@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, quote, unquote, unquote_plus
@@ -336,7 +337,13 @@ def _confirmed_status(status: int, method: str) -> bool:
 
 
 def _read(
-    response: httpx.Response, method: str, token: str, remaining: int, *, runs: _RunsPagination | None = None
+    response: httpx.Response,
+    method: str,
+    token: str,
+    remaining: int,
+    *,
+    runs: _RunsPagination | None = None,
+    strict_json: bool = False,
 ) -> tuple[Page, int, bytes]:
     status = response.status_code
     if runs is not None:
@@ -369,7 +376,7 @@ def _read(
             runs.accept(data, response.headers)
             digest = b""
         else:
-            data = json.loads(raw)
+            data = json.loads(raw, object_pairs_hook=_unique_fields if strict_json else None)
             if uncertain and data is None:
                 raise ValueError
             digest = hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).digest()
@@ -390,6 +397,19 @@ def _page_number(params: dict[str, str]) -> int:
     return int(raw)
 
 
+def validate_bearer_target(url: str, query: Iterable[tuple[str, str]], token: str) -> None:
+    """Validate the actual URL fields before sending credentials in a header."""
+    if token and (not token.isascii() or not token.isprintable() or any(c.isspace() for c in token)):
+        raise APIError("Invalid GitCode authentication token.")
+    _check_token(url, token)
+    for key, value in query:
+        validate_field(key)
+        if _control(value):
+            raise APIError("Invalid request query value.")
+        _check_token(key, token)
+        _check_token(value, token)
+
+
 def _request_target(
     endpoint: str,
     version: str | None,
@@ -399,17 +419,8 @@ def _request_target(
     url, params = endpoint_url(endpoint, version)
     if params.keys() & query.keys():
         raise APIError("A query parameter was supplied twice.")
-    for key, value in query.items():
-        validate_field(key)
-        if _control(value):
-            raise APIError("Invalid request query value.")
     params.update(query)
-    if token and (not token.isascii() or not token.isprintable() or any(c.isspace() for c in token)):
-        raise APIError("Invalid GitCode authentication token.")
-    _check_token(url, token)
-    for key, value in params.items():
-        _check_token(key, token)
-        _check_token(value, token)
+    validate_bearer_target(url, params.items(), token)
     return url, params
 
 
@@ -444,6 +455,7 @@ def fetch(
     paginate: bool,
     *,
     repo_scope: tuple[str, str] | None = None,
+    strict_json: bool = False,
 ) -> list[Page]:
     url, params = _request_target(endpoint, version, query, token)
     if method not in READ_METHODS | {"POST", "PUT", "PATCH", "DELETE"} or (paginate and method != "GET"):
@@ -470,7 +482,7 @@ def fetch(
                 with client.stream(
                     method, url, params=params, headers=request_headers, content=body, follow_redirects=False
                 ) as response:
-                    page, used, digest = _read(response, method, token, remaining, runs=runs)
+                    page, used, digest = _read(response, method, token, remaining, runs=runs, strict_json=strict_json)
                 remaining -= used
                 if not paginate:
                     return [page]

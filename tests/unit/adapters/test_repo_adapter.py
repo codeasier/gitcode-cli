@@ -219,10 +219,12 @@ class TestRepoAdapterCreate:
             license_template="mit",
         )
 
-    def test_create_org_uses_orgs_endpoint(self, adapter, service):
-        adapter.create_repo("repo", "my-org", private=True)
+    @pytest.mark.parametrize("private", [True, None])
+    def test_create_org_defaults_to_private(self, adapter, service, private):
+        service.create_org.return_value = {"full_name": "my-org/repo", "visibility": "private"}
+        adapter.create_repo("repo", "my-org", private=private)
 
-        service.create_org.assert_called_once_with("my-org", name="repo", private=True)
+        service.create_org.assert_called_once_with("my-org", name="repo", public=0)
         service.create_personal.assert_not_called()
 
 

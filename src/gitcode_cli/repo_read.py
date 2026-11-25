@@ -111,6 +111,7 @@ def bounded_json_response(
         "PR detail",
         "Commit comparison",
         "Release metadata",
+        "Repository labels",
     ],
     endpoint: str,
     params: dict[str, str],

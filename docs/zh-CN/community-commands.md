@@ -34,3 +34,10 @@ gc org dashboards --org acme --page 2 --per-page 20 --json id,iid,name,status,vi
 必须明确传入单段组织路径（首字符为 ASCII 字母或数字，其后可含字母、数字、点、下划线和连字符，最多 255 个字符），不接受网址、多级路径、仓库或 `-R`。命令只读取指定的一页（页码 1–10000，每页 1–100 条，默认 20 条），不返回全量或统计值。状态只接受 0（开启）或 1（关闭），可见性只接受 1（公开）或 2（私密）。组织是请求的范围，接口不会在每条看板记录中返回所属组织，CLI 无法独立验证每条记录的归属。不推测权限，不读取条目或执行写入。失败不输出部分结果。此为 GitCode 原生命令，不转发或等同于 `gh project`。
 
 [GitCode 接口定义](https://docs.gitcode.com/docs/apis/get-api-v-5-org-owner-kanban-list/)；[AtomGit 244](https://atomgit-api-doc.atomgit.com/16.dashboard/244.get_the_list_of_organization_kanbans.html) 允许匿名访问或使用用户令牌，未列出必需的 OAuth scope。匿名请求明确传入 `visibility=1`，如果出现非公开或无法识别的看板，则拒绝整页。若已配置令牌，只通过 [GitCode Bearer 请求头](https://docs.gitcode.com/en/docs/guide/)发送；服务端允许时才可看到私密看板。不因失败改用其他鉴权方式，不跟随重定向或自动重试。匿名和认证访问仅按文档用模拟响应验证，未对真实 GitCode 组织做验证。
+
+## 仓库标签按名称排序
+
+`gc label list -R OWNER/REPO --sort name --order desc --limit 5 --json name` 仅读取仓库任务标签。
+排序按 Unicode 码点区分大小写，不使用语言环境、也不做名称归一化；默认升序。
+此模式核对所有编号页后才应用 `--limit`：每页最多 100 条、最多 10 个数据页（共 1,000 条），短页后也继续探测，直到空页。重复、分页矛盾、超限或远端错误时不输出部分结果。跨页读取不是原子快照。排序时同时指定全局和子命令 `-R` 时，两者必须指向同一仓库。
+未指定排序时保留原有行为；排序不能与 `--search` 同用，不能单独使用 `--order`。接口未提供创建时间，不支持 `--sort created`，也不通过 gh 代理分派。

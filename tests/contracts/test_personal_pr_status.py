@@ -273,7 +273,9 @@ def test_lookup_reconciles_public_case_variants_using_canonical_path_and_id(invo
 )
 def test_excluded_rows_with_ambiguous_identity_abort_entire_report(invoke, item):
     result = invoke(["--scope", AUTHORED, "-R", "org/project"], [[row()], [item]], lookup=("org/project", metadata()))
-    assert result.exit_code == 1 and "Change 7" not in _captured(result) and "Open pull requests" not in _captured(result)
+    assert result.exit_code == 1
+    output = _captured(result)
+    assert "Change 7" not in output and "Open pull requests" not in output
 
 
 def test_row_identity_conflicts_across_unrelated_results_are_not_reported_as_empty(invoke):

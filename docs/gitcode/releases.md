@@ -26,14 +26,18 @@ These persistent settings are prerequisites, **not created by the workflow**:
    Use the pending-publisher flow if the project does not exist. Do not add a
    fallback API token to the repository.
 2. Create and review the GitHub environment `mcp-pypi` before enabling releases.
-   Require an authorized reviewer, enable **Prevent self-review**, and configure
-   exactly one selected deployment policy: type **tag**, pattern `mcp-v*`. Review tag rules/permissions so only authorized maintainers can
-   create release tags. The nonprivileged gate verifies the environment and its
-   deployment policy through unauthenticated, read-only public GitHub API calls
-   before acceptance and again immediately before scheduling publication. A
-   missing environment, missing/weak reviewer rule, broad or unknown policy,
-   API refusal, redirect, rate limit or incomplete response fails closed; there
-   is no token fallback and no administrative permission request.
+   Configure exactly one selected deployment policy: type **tag**, pattern
+   `mcp-v*`. Multi-maintainer repositories must also require an authorized
+   reviewer and enable **Prevent self-review**; a solo-maintainer repository may
+   omit required reviewers, in which case tag creation permission is the
+   controlling authorization. Review tag rules/permissions so only authorized
+   maintainers can create release tags. The nonprivileged gate verifies the
+   environment and its deployment policy through unauthenticated, read-only
+   public GitHub API calls before acceptance and again immediately before
+   scheduling publication. A missing environment, a reviewer rule with
+   self-review enabled, broad or unknown policy, API refusal, redirect, rate
+   limit or incomplete response fails closed; there is no token fallback and no
+   administrative permission request.
 3. Only after both settings have been verified, set the **repository-level**
    variable `MCP_PYPI_PUBLISH_ENABLED=true`. This opt-in deliberately lives outside
    the environment and is not itself evidence of protection. Both the opt-in and
@@ -73,7 +77,7 @@ validation-only run, even if an existing tag is selected.
    itself authorize creating the tag.
 
 The privileged publication job runs only for a matching tag-push event, after all
-MCP acceptance jobs succeed and the protected environment permits it. It downloads
+MCP acceptance jobs succeed and the configured release environment permits it. It downloads
 the **immutable artifact ID** returned only by the Python 3.12 producer from
 **that same run**, not a mutable lookup by artifact name, with no source checkout
 or rebuild. Missing/invalid producer outputs stop before download. The manifest
@@ -104,17 +108,20 @@ operator complete it; never work around a failed environment or OIDC gate.
 
 ## Security boundary
 
-The required environment reviewer must independently recheck the live tag,
-commit, workflow contents, tested artifacts and PyPI trust mapping before
-approval. Keep the protected environment and tag rules unchanged while a release
-is pending. Read-only preflight is a point-in-time observation, not an atomic lock
-against an administrator concurrently deleting or weakening settings.
+When the environment has a required reviewer, that reviewer must independently
+recheck the live tag, commit, workflow contents, tested artifacts and PyPI trust
+mapping before approval. A solo-maintainer environment may omit the reviewer;
+tag creation permission is then the controlling authorization, so only the
+maintainer may be able to create `mcp-v*` tags. Keep the environment and tag
+rules unchanged while a release is pending. Read-only preflight is a
+point-in-time observation, not an atomic lock against an administrator
+concurrently deleting or weakening settings.
 
 Workflow checks do not sandbox someone who can modify the workflow itself.
-Authorization ultimately rests on independently maintained tag rules, environment
-review/protection and the exact PyPI OIDC trust mapping. Do not treat a green
-self-check or the opt-in variable as a replacement for those controls. The checks
-only read existing settings; they never create, repair or broaden them.
+Authorization ultimately rests on independently maintained tag rules, optional
+environment review/protection and the exact PyPI OIDC trust mapping. Do not treat
+a green self-check or the opt-in variable as a replacement for those controls.
+The checks only read existing settings; they never create, repair or broaden them.
 
 API contracts: [Get an environment](https://docs.github.com/en/rest/deployments/environments#get-an-environment)
 and [List deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies#list-deployment-branch-policies).

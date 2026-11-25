@@ -12,7 +12,7 @@ release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
 
 
-def responses():
+def reviewer_responses():
     return [
         {
             "name": "mcp-pypi",
@@ -32,8 +32,23 @@ def responses():
     ]
 
 
-def test_existing_environment_requires_independent_review_and_exact_tag_policy():
-    data = responses()
+def solo_responses():
+    return [
+        {
+            "name": "mcp-pypi",
+            "protection_rules": [],
+            "deployment_branch_policy": {
+                "protected_branches": False,
+                "custom_branch_policies": True,
+            },
+        },
+        {"total_count": 1, "branch_policies": [{"name": "mcp-v*", "type": "tag"}]},
+    ]
+
+
+@pytest.mark.parametrize("factory", [solo_responses, reviewer_responses], ids=["solo", "reviewer"])
+def test_existing_environment_requires_exact_tag_policy(factory):
+    data = factory()
     seen = []
 
     def read(url):
@@ -48,9 +63,10 @@ def test_existing_environment_requires_independent_review_and_exact_tag_policy()
     "case",
     [
         "wrong_name",
-        "no_review",
+        "missing_rules",
         "self_review",
         "no_reviewers",
+        "extra_review",
         "open_refs",
         "extra_policy",
         "branch",
@@ -59,16 +75,18 @@ def test_existing_environment_requires_independent_review_and_exact_tag_policy()
     ],
 )
 def test_missing_or_weakened_protection_fails_closed(case):
-    data = copy.deepcopy(responses())
+    data = copy.deepcopy(reviewer_responses())
     environment, policies = data
     if case == "wrong_name":
         environment["name"] = "other"
-    elif case == "no_review":
-        environment["protection_rules"] = []
+    elif case == "missing_rules":
+        del environment["protection_rules"]
     elif case == "self_review":
         environment["protection_rules"][0]["prevent_self_review"] = False
     elif case == "no_reviewers":
         environment["protection_rules"][0]["reviewers"] = []
+    elif case == "extra_review":
+        environment["protection_rules"].append(environment["protection_rules"][0])
     elif case == "open_refs":
         environment["deployment_branch_policy"] = None
     elif case == "extra_policy":

@@ -27,6 +27,7 @@ _FIELDS = {
         "defaultBranch",
         "forksCount",
         "isFork",
+        "isPrivate",
         "stargazersCount",
         "openIssuesCount",
         "watchersCount",
@@ -70,6 +71,11 @@ _COLUMNS = {
 }
 
 
+def _repo_flag(value: object) -> bool | None:
+    # The GitCode schema documents integer flags; real examples use booleans.
+    return bool(value) if type(value) in (bool, int) and value in (0, 1) else None
+
+
 def _project(resource: str, item: dict) -> dict:
     if resource == "pulls":
         pr = project_pr({**item, "number": item.get("iid")})
@@ -104,9 +110,11 @@ def _project(resource: str, item: dict) -> dict:
     }
     result = {key: item.get(aliases.get(key, key)) for key in _FIELDS[resource]}
     if resource == "repositories":
-        # The two published search schemas use a boolean or an integer flag.
-        fork = item.get("fork")
-        result["isFork"] = bool(fork) if type(fork) in (bool, int) and fork in (0, 1) else None
+        result["isFork"] = _repo_flag(item.get("fork"))
+        private = _repo_flag(item.get("private"))
+        # Non-public is not synonymous with private (e.g. internal). Never infer
+        # from public, or claim privacy if the same row explicitly marks both.
+        result["isPrivate"] = None if private is True and _repo_flag(item.get("public")) is True else private
     return result
 
 

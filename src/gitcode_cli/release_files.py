@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import stat
@@ -77,6 +78,46 @@ class UploadInput:
     name: str
     stream: BinaryIO
     size: int
+
+
+MAX_CHECK_BYTES = 1024 * 1024 * 1024
+
+
+def check_local_digest(path: Path, size: int | None, expected: str) -> None:
+    """Compare a stable local file to a mandatory SHA-256, without staging or modifying it."""
+    try:
+        with directory(path.parent) as parent, ExitStack() as cleanup:
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            cleanup.callback(os.close, fd)  # fdopen itself can fail (e.g. a directory).
+            with os.fdopen(fd, "rb", closefd=False) as source:
+                before = os.fstat(fd)
+                if not stat.S_ISREG(before.st_mode) or not _trusted(before, allow_sticky=False):
+                    raise GCError("Use a trusted regular file, not a link or a shared-writable file.")
+                if before.st_size > MAX_CHECK_BYTES:
+                    raise GCError("Local file exceeds the 1 GiB checksum limit.")
+                if size is not None and before.st_size != size:
+                    raise GCError("Local file size differs from the release attachment.")
+                digest = hashlib.sha256()
+                count = 0
+                while block := source.read(min(128 * 1024, before.st_size - count + 1)):
+                    count += len(block)
+                    if count > before.st_size:
+                        raise GCError("Local file changed while computing its checksum.")
+                    digest.update(block)
+                with directory(path.parent) as current:
+                    visible = os.stat(path.name, dir_fd=current, follow_symlinks=False)
+                    if (
+                        _identity(os.fstat(current)) != _identity(os.fstat(parent))
+                        or _identity(visible) != _identity(before)
+                        or _revision(visible) != _revision(before)
+                        or _revision(os.fstat(fd)) != _revision(before)
+                        or count != before.st_size
+                    ):
+                        raise GCError("Local file changed while computing its checksum.")
+                if digest.hexdigest() != expected:
+                    raise GCError("SHA-256 differs from the release attachment metadata.")
+    except OSError:
+        raise GCError("Cannot read a trusted regular file without following links.") from None
 
 
 def _snapshot(path: Path, stream: BinaryIO) -> int:

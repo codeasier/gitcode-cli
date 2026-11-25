@@ -118,6 +118,13 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
     _e(
+        "run list",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "One page: databaseId (string), workflowName, event, headSha, status. Native values; no GitHub conclusion.",
+        proxy_allowed=False,
+    ),
+    _e(
         "run view",
         None,
         CompatStatus.IMPLEMENTED,

@@ -12,7 +12,8 @@ from ._redact import redact
 from .errors import APIError, GCError
 from .repo_read import bounded_json, validate_path, validate_target
 
-JSON_FIELDS = ("name", "path", "gitSHA", "gitType")
+DEFAULT_FIELDS = ("name", "path", "gitSHA", "gitType")
+JSON_FIELDS = (*DEFAULT_FIELDS, "mode", "modeOctal")
 MAX_PAGE = 2**31 - 1
 MAX_TREE_PAGES = 10
 _SHA1 = re.compile(r"[a-fA-F0-9]{40}")
@@ -30,8 +31,15 @@ class TreeEntry:
     def line(self) -> str:
         return f"{self.mode} {self.kind} {self.sha}\t{self.path}"
 
-    def project(self, fields: tuple[str, ...]) -> dict[str, str]:
-        values = {"name": self.name, "path": self.path, "gitSHA": self.sha, "gitType": self.kind}
+    def project(self, fields: tuple[str, ...]) -> dict[str, str | int]:
+        values: dict[str, str | int] = {
+            "name": self.name,
+            "path": self.path,
+            "gitSHA": self.sha,
+            "gitType": self.kind,
+            "mode": int(self.mode, 8),
+            "modeOctal": self.mode,
+        }
         return {field: values[field] for field in fields}
 
 

@@ -187,8 +187,9 @@ def test_network_guard_blocks_child_before_dns(gc_env, tmp_path):
     [
         {"NO_PROXY": "[::1]"},
         {"NO_PROXY": "localhost", "HTTPS_PROXY": "http://user:fake-proxy-password@proxy.invalid:bad-port"},
+        {"NO_PROXY": "localhost", "HTTPS_PROXY": "unsupported://fake-user:fake-password@proxy.invalid:8080"},
     ],
-    ids=["bracketed-no-proxy", "credential-bearing-proxy"],
+    ids=["bracketed-no-proxy", "credential-bearing-proxy", "unsupported-scheme"],
 )
 def test_invalid_proxy_environment_fails_without_network_or_traceback(run_gc, proxy_env):
     result = run_gc(["issue", "view", "1129", "-R", "openeuler/community", "--json", "number"], env=proxy_env)

@@ -64,7 +64,11 @@ class GitCodeClient:
             return
         try:
             self._client = httpx.Client(timeout=30.0)
-        except httpx.InvalidURL:
+        except (httpx.InvalidURL, ValueError) as exc:
+            # HTTPX Proxy reports an unsupported scheme as a ValueError.
+            # Leave unrelated constructor errors (e.g. TLS settings) alone.
+            if not isinstance(exc, httpx.InvalidURL) and not str(exc).startswith("Unknown scheme for proxy URL "):
+                raise
             # Default construction parses environment/system proxies. Never
             # display their values or retry via a different network route.
             raise ConfigError(

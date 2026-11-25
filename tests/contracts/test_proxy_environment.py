@@ -77,3 +77,15 @@ def test_fixed_origin_comments_client_still_ignores_proxy_environment(monkeypatc
         "/api/v5/repos/openeuler/community/issues/1129",
         "/api/v5/repos/openeuler/community/issues/1129/comments",
     ]
+
+
+def test_unrelated_default_client_value_error_is_not_reclassified(monkeypatch):
+    failure = ValueError("unrelated TLS configuration error")
+
+    def reject_client(**_kwargs):
+        raise failure
+
+    monkeypatch.setattr(httpx, "Client", reject_client)
+    with pytest.raises(ValueError) as caught:
+        GitCodeClient("")
+    assert caught.value is failure

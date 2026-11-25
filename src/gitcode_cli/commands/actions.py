@@ -239,15 +239,48 @@ def workflow():
     """List or view workflow definitions, or explicitly dispatch GitCode workflows."""
 
 
+WORKFLOW_LIST_FIELDS = {"id": "workflow_id", "name": "name", "path": "file_path", "state": "state"}
+
+
+def _workflow_definition_row(row: dict, fields: tuple[str, ...]) -> dict[str, str]:
+    projected = {}
+    for field in fields:
+        value = row.get(WORKFLOW_LIST_FIELDS[field])
+        if not isinstance(value, str) or not value.strip():
+            raise APIError(f"Workflow definition has a missing or invalid {field}.")
+        projected[field] = value
+    return projected
+
+
 @workflow.command("list")
 @repo_option
 @page_option
 @limit_option
+@click.option("--json", "selections", multiple=True, metavar="FIELDS", help="Select workflow definition fields.")
 @click.pass_context
-def workflow_list(ctx, repo_name, page, limit):
+def workflow_list(ctx, repo_name, page, limit, selections):
     """List one page of workflow definitions, not runs."""
+    fields = ()
+    if selections:
+        fields = tuple(field.strip() for field in selections[0].split(","))
+        if (
+            len(selections) != 1
+            or len(set(fields)) != len(fields)
+            or any(k not in WORKFLOW_LIST_FIELDS for k in fields)
+        ):
+            raise click.UsageError("Use --json once, with distinct fields from: " + ", ".join(WORKFLOW_LIST_FIELDS))
+        global_repo = ctx.obj["app"].repo
+        if global_repo and repo_name and resolve_repo(repo_name) != resolve_repo(global_repo):
+            raise click.UsageError("Conflicting global and workflow list repository targets.")
     with _service(ctx, repo_name) as svc:
-        _show(ctx, svc.page("workflows", page, limit))
+        result = svc.page("workflows", page, limit)
+    if not fields:
+        _show(ctx, result)
+        return
+    _show(ctx, [_workflow_definition_row(row, fields) for row in result["workflows"]], exact_fields=fields)
+
+
+set_gc_help(workflow_list, gc_json_fields=list(WORKFLOW_LIST_FIELDS))
 
 
 @workflow.command("view")

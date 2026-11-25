@@ -22,6 +22,14 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   The log POST is a read, not a trigger. Responses are capped at 2 MiB, individual log
   pages at 128 KiB; reduce the page size on overflow. A single oversized entry cannot be
   returned. Log text is JSON-escaped, not printed as terminal commands.
+* For a script, `gc workflow list -R owner/repo --page 1 --limit 20 --json id,name,path,state`
+  prints one array of definitions from the requested page, in server order. Select any subset
+  of the four fields once. `id` is GitCode's **string** `workflow_id` (not a run ID);
+  `path` is the listed `file_path`, not its YAML contents. Names and states are native
+  strings. Unlike `gh workflow list`, this does not hide disabled workflows by default.
+  Omit `--json` to see pagination metadata. The request and its authentication are
+  unchanged; no extra pages or resources are read. If a selected value is missing,
+  non-string, blank, or would be changed by credential redaction, no partial array is printed.
 * `workflow view` finds exact IDs, names, filenames, or listed configuration paths.
   Exact IDs take precedence over names and filenames. It rejects ambiguous matches
   or an incomplete list, and returns only definition

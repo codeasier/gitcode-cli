@@ -45,6 +45,20 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "search repos", None, CompatStatus.IMPLEMENTED, "GitCode global repository keyword search.", proxy_allowed=False
     ),
+    _e(
+        "search repos",
+        "--include-forks",
+        CompatStatus.IMPLEMENTED,
+        "Partial: false only (verified non-forks). Including forks or selecting only forks is unsupported.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "search repos",
+        "--sort",
+        CompatStatus.IMPLEMENTED,
+        "Best match, updated, stars, and forks only; no watch-count or help-wanted-issues sort.",
+        proxy_allowed=False,
+    ),
     _e("search issues", None, CompatStatus.IMPLEMENTED, "GitCode global issue keyword search.", proxy_allowed=False),
     _e(
         "search prs",
@@ -75,6 +89,14 @@ ENTRIES: list[CompatEntry] = [
     _e("label delete", None, CompatStatus.IMPLEMENTED, "Remove a task label and verify absence.", proxy_allowed=False),
     _e("label clone", None, CompatStatus.IMPLEMENTED, "Additive cross-repository copy.", proxy_allowed=False),
     _e("org list", None, CompatStatus.IMPLEMENTED, "Authenticated user's GitCode organizations.", proxy_allowed=False),
+    _e(
+        "org dashboards",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "One page of GitCode organization Kanban boards, not GitHub Projects.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("discussion list", None, CompatStatus.IMPLEMENTED, "Repository discussions.", proxy_allowed=False),
     _e(
         "discussion view",
@@ -86,6 +108,14 @@ ENTRIES: list[CompatEntry] = [
     _e("discussion create", None, CompatStatus.IMPLEMENTED, "Create in an existing category.", proxy_allowed=False),
     _e("discussion edit", None, CompatStatus.IMPLEMENTED, "GitCode v5 full update.", proxy_allowed=False),
     _e("discussion comment", None, CompatStatus.IMPLEMENTED, "Add a top-level comment.", proxy_allowed=False),
+    _e(
+        "discussion replies",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: one reply page for an explicit GitCode repository discussion comment.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
     _e("run list", None, CompatStatus.IMPLEMENTED, "GitCode v8 runs and native states.", proxy_allowed=False),
     _e(
         "run view",
@@ -94,6 +124,27 @@ ENTRIES: list[CompatEntry] = [
         "GitCode v8 current attempt, jobs, and step logs.",
         proxy_allowed=False,
     ),
+    _e(
+        "run view",
+        "--with-steps",
+        CompatStatus.IMPLEMENTED,
+        "GitCode-only bounded stage/job/step observations; no GitHub conclusion or execution order.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
+    _e(
+        "run watch",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct only: bounded, run-level observation of the current GitCode attempt; no PR gate evidence.",
+        proxy_allowed=False,
+    ),
+    *[
+        _e("run watch", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-R/--repo", "-i/--interval", "--exit-status")
+    ],
+    _e("run watch", "--timeout", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
+    _e("run watch", "--compact", CompatStatus.NOT_IN_CLI, "No step-level watch.", proxy_allowed=False),
     _e(
         "run rerun",
         None,
@@ -134,7 +185,7 @@ ENTRIES: list[CompatEntry] = [
         "run download",
         None,
         CompatStatus.IMPLEMENTED,
-        "First attempt, explicit asset ID, verified ZIP to safe POSIX path.",
+        "First attempt, one exact artifact ID or unique name, verified ZIP to safe POSIX path; no gh routing.",
         proxy_allowed=False,
     ),
     # --- auth subcommands ---
@@ -202,7 +253,8 @@ ENTRIES: list[CompatEntry] = [
         "issue status",
         None,
         CompatStatus.IMPLEMENTED,
-        "Approximate: lacks gh user-specific filtering (ISSUE_STATUS_GH_SEMANTICS)",
+        "Direct gc: verified repository-scoped assigned/created queues; mentions are unavailable (null).",
+        proxy_allowed=False,
     ),
     _e(
         "issue develop",
@@ -228,7 +280,14 @@ ENTRIES: list[CompatEntry] = [
     _e("issue list", "-A/--author", CompatStatus.IMPLEMENTED, "@me resolves to the authenticated account login"),
     _e("issue list", "-a/--assignee", CompatStatus.IMPLEMENTED, "@me resolves to the authenticated account login"),
     _e("issue list", "--milestone", CompatStatus.IMPLEMENTED),
-    _e("issue list", "--mention", CompatStatus.IMPLEMENTED),
+    _e(
+        "issue list",
+        "--mention",
+        CompatStatus.UNSUPPORTED,
+        "No verified repository mention filter.",
+        unsupported_key="ISSUE_LIST_MENTION",
+        proxy_allowed=False,
+    ),
     _e(
         "issue list",
         "--app",
@@ -326,10 +385,28 @@ ENTRIES: list[CompatEntry] = [
     _e("issue edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("issue reopen", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("issue reopen", "-c/--comment", CompatStatus.IMPLEMENTED, "Implemented (PR #122)"),
-    _e("issue status", "-R/--repo", CompatStatus.IMPLEMENTED),
-    _e("issue status", "--json", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
-    _e("issue status", "-q/--jq", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
-    _e("issue status", "-t/--template", CompatStatus.IMPLEMENTED, "Implemented (PR #113)"),
+    _e("issue status", "-R/--repo", CompatStatus.IMPLEMENTED, proxy_allowed=False),
+    _e(
+        "issue status",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "issue status",
+        "-q/--jq",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "issue status",
+        "-t/--template",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc: native repository queues only.",
+        proxy_allowed=False,
+    ),
     _e("issue develop", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e(
         "issue develop",
@@ -376,6 +453,13 @@ ENTRIES: list[CompatEntry] = [
         proxy_allowed=False,
     ),
     _e("pr checks", None, CompatStatus.IMPLEMENTED, "Separate v5 gates and exact-head v8 runs.", proxy_allowed=False),
+    _e(
+        "pr checks",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Observed workflow runs only: workflow, state, event. Native GitCode statuses, not job or required checks.",
+        proxy_allowed=False,
+    ),
     _e("pr lock", None, CompatStatus.NOT_IN_CLI),
     _e("pr revert", None, CompatStatus.NOT_IN_CLI),
     _e("pr unlock", None, CompatStatus.NOT_IN_CLI),
@@ -567,7 +651,13 @@ ENTRIES: list[CompatEntry] = [
     _e("pr edit", "--remove-project", CompatStatus.NOT_IN_CLI),
     _e("pr diff", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("pr diff", "--color", CompatStatus.NOT_IN_CLI),
-    _e("pr diff", "-e/--exclude", CompatStatus.NOT_IN_CLI),
+    _e(
+        "pr diff",
+        "-e/--exclude",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc --name-only only: repeated literal/* path or basename patterns; no patch/diff filtering or gh proxy",
+        proxy_allowed=False,
+    ),
     _e(
         "pr diff",
         "--name-only",
@@ -618,19 +708,53 @@ ENTRIES: list[CompatEntry] = [
     _e("pr status", "-t/--template", CompatStatus.NOT_IN_CLI),
     # --- repo subcommands ---
     _e(
+        "repo read-dir",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: one non-recursive Tree page; explicit --ref required.",
+        proxy_allowed=False,
+    ),
+    *[_e("repo read-dir", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False) for flag in ("-R/--repo", "--ref")],
+    *[
+        _e("repo read-dir", flag, CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False)
+        for flag in ("--page", "--per-page")
+    ],
+    _e(
+        "repo read-dir",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: name, path, gitSHA and gitType from one validated GitCode Tree page.",
+        proxy_allowed=False,
+    ),
+    *[_e("repo read-dir", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False) for flag in ("-q/--jq", "-t/--template")],
+    _e(
         "repo read-file",
         None,
         CompatStatus.IMPLEMENTED,
-        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; exclusive POSIX file output.",
+        "Direct CLI only: single bounded GitCode Contents GET. Safe text stdout; POSIX file output.",
         proxy_allowed=False,
     ),
     *[
         _e("repo read-file", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
         for flag in ("-R/--repo", "--ref", "-o/--output")
     ],
+    _e(
+        "repo read-file",
+        "--json",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: verified inline metadata and opt-in Base64 content; no URL fields.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "repo read-file",
+        "--clobber",
+        CompatStatus.IMPLEMENTED,
+        "Direct CLI only: replace an explicit regular-file destination on POSIX; no directory expansion.",
+        proxy_allowed=False,
+    ),
     *[
         _e("repo read-file", flag, CompatStatus.NOT_IN_CLI, proxy_allowed=False)
-        for flag in ("--allow-escape-sequences", "--clobber", "--json", "-q/--jq", "-t/--template")
+        for flag in ("--allow-escape-sequences", "-q/--jq", "-t/--template")
     ],
     _e("repo view", None, CompatStatus.IMPLEMENTED, "Repository positional or -R/origin resolution"),
     _e("repo list", None, CompatStatus.IMPLEMENTED, "Owner argument defaults to the authenticated user"),
@@ -667,9 +791,14 @@ ENTRIES: list[CompatEntry] = [
     _e(
         "repo set-default",
         None,
-        CompatStatus.NOT_IN_CLI,
-        "gc resolves repositories from the git origin remote instead of a per-directory default",
+        CompatStatus.IMPLEMENTED,
+        "Partial: direct repo view/read-file/read-dir only; no writes, picker or fork discovery.",
+        proxy_allowed=False,
     ),
+    *[
+        _e("repo set-default", flag, CompatStatus.IMPLEMENTED, proxy_allowed=False)
+        for flag in ("-v/--view", "-u/--unset")
+    ],
     _e("repo autolink", None, CompatStatus.NOT_IN_CLI),
     _e("repo gitignore", None, CompatStatus.NOT_IN_CLI),
     _e("repo license", None, CompatStatus.NOT_IN_CLI),
@@ -694,18 +823,16 @@ ENTRIES: list[CompatEntry] = [
     _e("repo list", "-l/--language", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--fork", CompatStatus.IMPLEMENTED, "Client-side filter"),
     _e("repo list", "--source", CompatStatus.IMPLEMENTED, "Client-side filter (non-forks)"),
-    _e(
-        "repo list",
-        "--archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
-    _e(
-        "repo list",
-        "--no-archived",
-        CompatStatus.NOT_IN_CLI,
-        "GitCode does not expose archive state reliably in list responses",
-    ),
+    *[
+        _e(
+            "repo list",
+            flag,
+            CompatStatus.IMPLEMENTED,
+            "Direct gc only: filter list rows before the limit; fail on unverified archive state.",
+            proxy_allowed=False,
+        )
+        for flag in ("--archived", "--no-archived")
+    ],
     _e("repo list", "--topic", CompatStatus.NOT_IN_CLI, "GitCode v5 has no repository topics API"),
     _e("repo create", "-d/--description", CompatStatus.IMPLEMENTED),
     _e("repo create", "--add-readme", CompatStatus.IMPLEMENTED, "Maps to auto_init"),
@@ -735,7 +862,13 @@ ENTRIES: list[CompatEntry] = [
         CompatStatus.NOT_IN_CLI,
         "Template repositories have no GitCode v5 equivalent",
     ),
-    _e("repo clone", "--no-upstream", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"),
+    _e(
+        "repo clone",
+        "--no-upstream",
+        CompatStatus.IMPLEMENTED,
+        "Direct gc only; ordinary Git clone, without fork-parent discovery or registration.",
+        proxy_allowed=False,
+    ),
     _e(
         "repo clone", "-u/--upstream-remote-name", CompatStatus.NOT_IN_CLI, "Upstream remote management not implemented"
     ),
@@ -817,6 +950,15 @@ ENTRIES: list[CompatEntry] = [
     _e("repo sync", "--force", CompatStatus.NOT_IN_CLI, "GitCode fork sync has no force mode"),
     _e("repo sync", "-s/--source", CompatStatus.NOT_IN_CLI, "GitCode fork sync always uses the upstream parent"),
     # --- release subcommands and flags (GitCode semantics are direct-only) ---
+    _e(
+        "release check-digest",
+        None,
+        CompatStatus.IMPLEMENTED,
+        "GitCode-only local byte comparison; not a signed publisher attestation.",
+        gc_extension=True,
+        proxy_allowed=False,
+    ),
+    _e("release check-digest", "-R/--repo", CompatStatus.IMPLEMENTED, gc_extension=True, proxy_allowed=False),
     _e("release list", None, CompatStatus.IMPLEMENTED, "Ordered paginated list; aliases: ls.", proxy_allowed=False),
     _e(
         "release view",

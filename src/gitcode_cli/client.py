@@ -8,8 +8,33 @@ import httpx
 
 from ._redact import redact, redacted_transport
 from .errors import APIError, NetworkError
+from .rest_api import validate_bearer_target
 
 BASE_URL = "https://api.gitcode.com/api/v5/"
+ISSUE_STATUS_PAGE_SIZE = 50
+ISSUE_STATUS_MAX_PAGE = 11  # Ten data pages plus the terminal probe.
+_STATUS_ROUTE = re.compile(
+    r"/user|/repos/[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}(?P<queue>/issues)?"
+)
+_STATUS_PAGE_FIELDS = frozenset({"state", "page", "per_page"})
+ISSUE_STATUS_LOGIN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}")
+
+
+def _valid_status_query(params: dict[str, str]) -> bool:
+    filters = params.keys() - _STATUS_PAGE_FIELDS
+    if len(filters) != 1 or not _STATUS_PAGE_FIELDS.issubset(params):
+        return False
+    actor = filters.pop()
+    if actor not in {"assignee", "creator"}:
+        return False
+    page = params["page"]
+    return (
+        params["state"] == "open"
+        and params["per_page"] == str(ISSUE_STATUS_PAGE_SIZE)
+        and re.fullmatch(r"[1-9][0-9]?", page) is not None
+        and int(page) <= ISSUE_STATUS_MAX_PAGE
+        and ISSUE_STATUS_LOGIN.fullmatch(params[actor]) is not None
+    )
 
 
 def _requires_private_token(method: str, path: str) -> bool:
@@ -31,10 +56,12 @@ def _requires_private_token(method: str, path: str) -> bool:
 
 
 class GitCodeClient:
-    def __init__(self, token: str, base_url: str = BASE_URL):
+    def __init__(self, token: str, base_url: str = BASE_URL, *, transport: httpx.BaseTransport | None = None):
         self.token = token
         self.base_url = base_url
-        self._client = httpx.Client(timeout=30.0)
+        self._client = (
+            httpx.Client(timeout=30.0) if transport is None else httpx.Client(timeout=30.0, transport=transport)
+        )
 
     def close(self) -> None:
         """Release transport resources for long-lived service consumers."""
@@ -52,10 +79,13 @@ class GitCodeClient:
     ) -> Any | None:
         merged_params: dict[str, Any] = {k: v for k, v in (params or {}).items() if v is not None}
         headers = {"Accept": accept}
-        # Typed global search supports anonymous requests and, when configured,
-        # uses the documented bearer header without putting a token in the URL.
-        if method.upper() == "GET" and path == "/search":
-            merged_params.pop("access_token", None)
+        url = urljoin(self.base_url, path.lstrip("/"))
+        repo_search = method.upper() == "GET" and path == "/search/repositories"
+        if method.upper() == "GET" and (repo_search or path == "/search"):
+            if repo_search:
+                validate_bearer_target(url, httpx.QueryParams(merged_params).multi_items(), self.token)
+            else:
+                merged_params.pop("access_token", None)
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
         else:
@@ -68,14 +98,19 @@ class GitCodeClient:
         form_label = method.upper() == "POST" and re.fullmatch(r"/repos/[^/]+/[^/]+/labels", path) is not None
         try:
             with redacted_transport(self.token):
-                response = self._client.request(
-                    method,
-                    urljoin(self.base_url, path.lstrip("/")),
-                    params=merged_params,
-                    data=json if form_label else None,
-                    json=None if form_label else json,
-                    headers=headers,
-                )
+                if repo_search:
+                    # Never merge session cookies/auth or follow a redirect, even on later pages.
+                    request = httpx.Request(method, url, params=merged_params, headers=headers)
+                    response = self._client.send(request, auth=None, follow_redirects=False)
+                else:
+                    response = self._client.request(
+                        method,
+                        url,
+                        params=merged_params,
+                        data=json if form_label else None,
+                        json=None if form_label else json,
+                        headers=headers,
+                    )
         except httpx.HTTPError as exc:
             label = "Network error"
             if isinstance(exc, httpx.TimeoutException):
@@ -120,6 +155,23 @@ class GitCodeClient:
 
     def get(self, path: str, *, params: dict[str, Any] | None = None) -> Any | None:
         return self.request("GET", path, params=params)
+
+    def read_issue_status_page(self, endpoint: str, params: dict[str, str]) -> tuple[Any, httpx.Headers, httpx.URL]:
+        """Bounded bearer-only SDK read using this client's existing HTTP transport."""
+        from .repo_read import bounded_json_response  # noqa: PLC0415 - repo_read shares the canonical BASE_URL.
+
+        route = _STATUS_ROUTE.fullmatch(endpoint)
+        if self.base_url.rstrip("/") != BASE_URL.rstrip("/") or route is None:
+            raise APIError("Bounded issue status requires the standard GitCode API and an issue status endpoint.")
+        if (
+            not isinstance(params, dict)
+            or any(not isinstance(value, str) for value in params.values())
+            or (not _valid_status_query(params) if route["queue"] else bool(params))
+        ):
+            raise APIError("Invalid query parameters for the bounded issue status endpoint.")
+        return bounded_json_response(
+            "Issue status", endpoint, params, self.token, (endpoint, *params, *params.values()), client=self._client
+        )
 
     def post(
         self, path: str, *, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None

@@ -49,6 +49,10 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | `pr comment --edit-last`, `--create-if-none`, `--delete-last`, and `--yes` | Supported for the current user's ordinary PR comments |
 | `pr diff --patch` | Supported; returns per-commit mail-format patches |
 
+### Create an organization repository
+
+`gc repo create ORG/NAME` requests a **private** repository unless you specify `--public`. The [organization endpoint](https://docs.gitcode.com/en/docs/apis/post-api-v-5-orgs-org-repos/) takes an integer `public` (0 private, 1 public); [personal creation](https://docs.gitcode.com/en/docs/apis/post-api-v-5-user-repos/) takes a Boolean `private`. The organization response must identify the requested repository and explicitly confirm its visibility before `gc` reports success or starts an explicitly requested clone. An opposite flag set to false is not enough, and any returned visibility flags must agree. An unconfirmed response may still have created a repository, so inspect it on GitCode before retrying or pushing. The command does not add a remote to an existing checkout or push local commits.
+
 ### Local accounts and structured authentication status
 
 `gc auth status --json hosts` verifies the listed accounts through the GitCode API and returns a `hosts` map for `gitcode.com`. Use `--active` to verify only the effective account. See [local GitCode accounts](auth-accounts.md) for PAT login and switching. Tokens are never included in this output. Unavailable scopes and Git protocol are omitted. A missing token returns `{"hosts": {}}`; an API or network authentication failure returns an entry with `state: "error"` and exit code 0. Invalid configuration, JSON fields, jq expressions, or formatting options still fail. JSON output stays machine-readable when the gh proxy is active.
@@ -66,6 +70,16 @@ gc pr checkout 42 --force
 
 PR checkout fetches from the verified source repository rather than assuming `origin` contains the source branch. `--detach` checks out the verified immutable head SHA without creating or resetting a local branch. `--force` resets an existing branch only when its upstream identifies that source repository and branch, discarding its local commits and tracked working-tree changes. Missing, unrelated or ambiguous upstreams are refused; remote names need not be `origin`. Without `--force`, an existing branch must already point to the verified SHA. New branches are created at that SHA. If exactly one existing remote has the canonical HTTPS/SSH source URL and standard branch fetch mapping, its upstream is retained; a missing tracking ref is created with a compare-and-swap guard, never overwriting an existing ref. Otherwise no upstream is invented: configure an unambiguous source remote/upstream before using `--force` later. Custom ports, embedded HTTPS credentials and remote helpers are not accepted as proof of upstream identity. No temporary routing remote is saved. All modes require a full API head SHA and reject a head changed between the API read and fetch before changing the local checkout. URL pinning addresses Git configuration rewrites; it does not disable native HTTPS redirects or replace Git authentication.
 
+### Exclude changed file names
+
+```bash
+gc pr diff 42 --name-only --exclude '*.yml' -e 'generated/*'
+```
+
+Direct `gc` filters the existing file list, in order, using the path it would print (the displayed name on a rename, not both names). Matches are case-sensitive, against the entire path or its basename, so a pattern without `/` can match a file at any depth. `*` can match zero or more characters within a component: `generated/*` excludes `generated/a.py` but keeps `generated/sub/a.py`. `**` does not recurse.
+
+Use one nonempty pattern per flag, with up to 32 patterns and at most 512 UTF-8 bytes per pattern. This is a subset of [gh v2.105.0](https://github.com/cli/cli/blob/v2.105.0/pkg/cmd/pr/diff/diff.go): `?`, bracket classes, backslash escapes, commas, double quotes and nonprintable characters are rejected before lookup. The GitCode-targeted `gh` proxy does not forward this flag. Plain diff and mail-format patch bodies cannot be filtered.
+
 ### PR comment history and patches
 
 ```bash
@@ -81,13 +95,35 @@ History flags cannot be combined with inline-comment, discussion, or web options
 
 Comment updates and deletion use GitCode's documented [edit](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-repo-pulls-comments-id) and [delete](https://docs.gitcode.com/docs/apis/delete-api-v-5-repos-owner-repo-pulls-comments-id) endpoints. `--patch` uses `GET /repos/{owner}/{repo}/pulls/{number}/patch`, observed to return a mail-format patch in a read-only probe against public `GitCode-official-team/GitCode-Docs` PR #1 on 2026-10-30. This patch endpoint is not listed in the public v5 reference; the CLI rejects non-patch responses and does not substitute an aggregate diff. `--patch` and `--name-only` are mutually exclusive. Redirect or pipe `--patch` output: it writes the returned text as UTF-8 bytes without stripping ANSI sequences, translating newlines, or adding a newline. Direct terminal output is rejected before writing any patch bytes so untrusted terminal control sequences cannot execute; ordinary `pr diff` remains the human-readable view.
 
+### Clone without adding a fork parent
+
+`gc repo clone --no-upstream owner/project work -- --depth 1` explicitly selects the existing direct-gc behavior: gc invokes native `git clone` without looking up the fork parent, fetching from it, or registering it. Omit `work` to use Git's default destination. Native Git transport, URL rewrites, branch tracking and exit status still apply. This is not a guarantee about where user-configured Git connects.
+
+In this mode, place native options after `--`. For example, `-- -u PROGRAM` is Git's **upload-pack**, not a remote name. Plain direct clone keeps its existing native option passthrough. gc does not support gh's `-u/--upstream-remote-name` for parent registration. The GitCode-targeted gh proxy still refuses both upstream options.
+
+## Default GitCode repository in a checkout
+
+```sh
+gc repo set-default upstream             # existing GitCode remote name
+gc repo set-default owner/repo            # exact name as written in one GitCode remote
+gc repo set-default --view
+gc repo set-default --unset
+```
+
+This is a **partial, read-only** approximation of `gh repo set-default`. The local Git setting is shared across linked worktrees. Setting, viewing and unsetting it do not require authentication or network access, and leave fetch/push URLs and native `gh` configuration unchanged. The pin uses one canonical GitCode **fetch** URL declared directly in this repository’s local config. Remotes provided only by includes or other config scopes cannot be pinned. Use the remote name if multiple remotes match an owner/repo. There is no interactive picker or lookup of fork parents.
+
+**Only direct `gc repo view`, `gc repo read-file`, and `gc repo read-dir` use this default.** A supplied repository argument or `-R` takes precedence; an empty selector is an error. With no pin these commands use origin. With a malformed pin, removed/repointed remote, ambiguous URL, or URL rewrite they stop instead of reading from origin. Set the default again, unset it, or select an explicit repository.
+
+**Do not assume a subsequent write uses the repository you just viewed.** Issues, PRs (including creation, branch inference and checkout), releases, Actions, label/discussion commands, raw API calls and all repository-management commands retain their existing targeting. To write to the repository you viewed, specify it explicitly with `-R` where supported. The optional `gh` proxy does not consult this pin or forward GitCode `repo set-default` commands.
+
 ## GitCode differences and limitations
 
 | Area | Difference in `gc` |
 | --- | --- |
 | Authentication | GitCode uses an `access_token` query parameter rather than GitHub's API authentication model. |
 | Issue create/update API | GitCode issue create/update sends `repo` in the request body. Updates also require `title`; close/reopen and partial edits preserve the fetched title and refuse to write if it is unavailable. |
-| PR status | Use `gc pr status -R OWNER/REPO -c` (`--conflict-status`) for the first page of open PRs, up to 20. It reads each [PR detail](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/) once and reports only GitCode’s `mergeable_state.conflict_passed` check: passed, not passed, or unknown when absent/non-boolean. This is not merge readiness. A failed detail request or inconsistent identity aborts the report; without `-c` no detail requests are made. The GitCode-targeted proxy refuses `gh pr status`: this repository view does not implement [gh’s personal status](https://cli.github.com/manual/gh_pr_status), current-branch group, or JSON contract. For scriptable authored PRs, use `gc pr list -s open -A @me --json number,title`. |
+| Personal Issue status | Direct `gc issue status -R OWNER/REPO` reads only [repository issues](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-issues/) assigned to or created by the active account, verifying repository and actor IDs as well as names. It never reads the account-wide issue feed. The API does not document mention filtering: text marks it unavailable, `--json mentioned` returns `null` (not an empty list), and `issue list --mention` is refused. The GitCode-targeted proxy refuses `gh issue status`. |
+| PR status | Use `gc pr status -R OWNER/REPO -c` (`--conflict-status`) for the first page of open PRs. Add `--page 2` (or any positive page number) to request a different [list page](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls/). Each invocation reads one page of up to 20 PRs; open PRs may move between pages as the repository changes. It reads each [PR detail](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/) once and reports only GitCode’s `mergeable_state.conflict_passed` check: passed, not passed, or unknown when absent/non-boolean. This is not merge readiness. A failed detail request or inconsistent identity aborts the report; without `-c` no detail requests are made. The GitCode-targeted proxy refuses `gh pr status`: this repository view does not implement [gh’s personal status](https://cli.github.com/manual/gh_pr_status), current-branch group, or JSON contract. For scriptable authored PRs, use `gc pr list -s open -A @me --json number,title`. |
 | Personal PR queues | `gc pr status --scope need_my_review` lists open PRs in that provider queue **across repositories**, even inside a checkout. Add `-R OWNER/REPO` to keep only that exact base repository. Choose one [GitCode scope](https://atomgit-api-doc.atomgit.com/10.users/185.list_authorized_users_pull_request_list.html): `created_by_me`, `assigned_to_me`, `need_my_approve` or `need_my_review`. The last two are distinct provider filters, not a local interpretation of assignees, approval decisions or merge readiness. This mode has no conflict checks, gh proxy, current-branch group or JSON output. |
 | PR squash | `--squash` sends `merge_method=merge` and the separate boolean `squash=true`, following the current GitCode contract. |
 | PR checkout and branch deletion | Require a fully qualified source repository identity and full head SHA. Fetch uses the source repository's canonical HTTPS URL and verifies the fetched commit. Deletion uses an explicit SHA lease so concurrent pushes are preserved. Missing/contradictory source metadata is rejected; a bare repository name or `head.ref` alone is insufficient. Native Git HTTPS credentials must be available. URL rewrites that change the effective fetch/push URL are refused; accepted operations pin a command-scoped target without changing saved Git configuration. |
@@ -95,17 +131,48 @@ Comment updates and deletion use GitCode's documented [edit](https://docs.gitcod
 | PR inline comments | GitCode uses `path + position`, where `position` is an absolute file line. `--line` validates against the PR diff and passes the line through; `--position` bypasses diff validation. `--side` only selects the validation side and is not sent to GitCode, so LEFT anchoring is best-effort. Selecting a commit is unsupported. |
 | PR review changes | `--approve` uses [native approval](https://docs.gitcode.com/en/docs/apis/post-api-v-5-repos-owner-repo-pulls-number-review/). Unlike older gc versions, `--request-changes` exits nonzero **without posting**: no equivalent blocking review action was verified. Use `--comment` only if ordinary feedback is intended. |
 | PR merge guards | The [merge request schema](https://docs.gitcode.com/en/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge/) does not document an expected head or per-PR auto-merge enable/disable. The returned SHA is not an input precondition. `--match-head-commit`, `--auto` and `--disable-auto` refuse; no read-then-unconditional merge or polling fallback. |
-| PR update/revert/lock | The [PR API index](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/) does not establish update-branch, revert-to-new-PR or conversation lock/unlock operations. A read-only locked flag or a web UI action does not verify a write contract. |
+| PR update/revert/lock | `gc pr update-plan NUMBER -R OWNER/REPO` is a **read-only** comparison for an open PR whose head and base are both explicitly identified as belonging to the selected repository. It reports the two recorded commit SHAs, their merge base and their relationship. It does not consult live branch tips, check conflicts/permissions or update a branch. It rejects a fork, incomplete or truncated evidence, or a PR that visibly changes during the reads. The [PR API index](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-pulls-number/) still does not establish source branch updates, revert-to-new-PR or conversation lock/unlock writes. The GitCode-targeted `gh` proxy does not route either `pr update-plan` or `pr update-branch`. |
 | Issue links, moderation and transfer | `gc issue develop N --list` [reads linked names](https://atomgit-api-doc.atomgit.com/3.issues/73.get_the_list_of_branches_associated_with_the_issue.html). The [branch setter](https://docs.gitcode.com/en/docs/apis/put-api-v-5-repos-owner-repo-issues-number-related-branches/) accepts a list, not an atomic create-and-append. The [Issue API index/update schema](https://docs.gitcode.com/en/docs/apis/patch-api-v-5-repos-owner-issues-number/) does not establish lock/unlock, pin/unpin, or transfer. No branch-list replacement, close-and-copy or label emulation is attempted. |
 | Issue deletion | `gc issue delete` relies on GitCode issue deletion behavior that is not documented in the public API and may change. |
 | Draft/readiness operations | `gc pr ready --undo` toggles draft state through the GitCode PR update capability; behavior may differ from GitHub draft PR semantics. |
 | Repository sync | `gc repo sync [-b BRANCH]` syncs one remote fork branch from its parent, never all branches. See [fork sync](repo-sync.md); arbitrary `--source`, `--force` and local sync are not supported. |
+| Filter repositories by archive state | Direct `gc repo list [OWNER] --archived` or `--no-archived` filters the existing [authenticated](https://docs.gitcode.com/docs/apis/get-api-v-5-user-repos/), [public user](https://docs.gitcode.com/en/docs/users/#5-get-the-public-repositories-of-a-user), or [organization](https://docs.gitcode.com/docs/apis/get-api-v-5-orgs-org-repos/) list. Status is a response field, not a query or visibility selector. Filters are applied before `--limit` without detail requests. Each fetched page is checked for malformed rows and missing or duplicate repository IDs before applying the limit. An unverified match, invalid pagination, or reaching the 100-page scan ceiling without determining the result fails without partial output. Omit both flags to keep unknown rows (`--json nameWithOwner,isArchived` reports `null`). The GitCode-targeted gh proxy refuses both flags. |
 | Repository archive | `gc repo view --json isArchived` reads the [repository status](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/) and reports `null` if the state is unknown or contradictory. GitCode documents an [organization-scoped status update](https://docs.gitcode.com/docs/apis/put-api-v-5-org-org-repo-repo-status/): integer `2` archives and `0` restores. Neither write is implemented in gc. |
 | Repository topics and deploy keys | GitCode v5 has no repository topics or deploy-key API, so `repo edit --add-topic/--remove-topic` and `repo deploy-key` are unavailable. |
 | Browser flows | `--web` opens the corresponding GitCode page; browser-created content depends on GitCode's web UI. |
 
-Personal status uses `GET /api/v5/user/pulls` with an explicit scope and `state=open`. GitCode does not document a repository parameter. Only with `-R`, gc first reads [repository metadata](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/) on the same API origin to resolve the numeric repository ID and canonical `full_name`, including accepted ASCII case variants of the requested path. It filters the account-wide results locally by both the PR's `base.repo.full_path` and `base.repo.id`, never the fork's head. Only base repository, PR number and title are printed. The command reads up to ten pages (100 PRs each) and verifies an empty last page, with a 16 MiB total response budget, including at most 1 MiB for the optional repository lookup. A failed request, missing identity, repeated row or limit hit fails the whole report instead of reporting zero or partial matches. It uses [Bearer header authentication](https://docs.gitcode.com/docs/apis/) only. The endpoint references describe a query token; header compatibility for these requests has not been verified against a live account. No query-token retry is attempted.
+Personal status uses `GET /api/v5/user/pulls` with an explicit scope and `state=open`. GitCode does not document a repository parameter. Only with `-R`, gc first reads [repository metadata](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo/) on the same API origin to resolve the numeric repository ID and canonical `full_name`, including accepted ASCII case variants of the requested path. It filters the account-wide results locally by both the PR's `base.repo.full_path` and `base.repo.id`, never the fork's head. Only base repository, PR number and title are printed. The command reads up to ten pages (100 PRs each) and verifies an empty last page, with a 16 MiB total response budget, including at most 1 MiB for the optional repository lookup. A failed request, missing identity, repeated row or limit hit fails the whole report instead of reporting zero or partial matches. It uses [Bearer header authentication](https://docs.gitcode.com/docs/apis/) only. The endpoint references describe a query token, but the Bearer-only requests passed live GitCode acceptance for all four scopes. No query-token retry is attempted.
+
+GitCode's English examples for the [authenticated user list](https://docs.gitcode.com/en/docs/apis/get-api-v-5-user-repos/), [organization list](https://docs.gitcode.com/en/docs/apis/get-api-v-5-orgs-org-repos/), and [repository detail](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo/) use `start` or `close` for the same repository IDs shown with Chinese labels. The new list filter and `isArchived` list projection recognize these exact literals alongside the documented 0/2 codes and existing Chinese labels. The [separate AtomGit API reference](https://atomgit-api-doc.atomgit.com/en/10.users/172.get_user_s_specific_repository.html) targets `api.atomgit.com` and uses different spellings; they are not assumed for GitCode. This is documentation and offline fixture evidence, not live validation. `repo view` parsing is unchanged.
 
 On POSIX, saved token configuration uses a private directory (`0700`), atomic file replacement (`0600`), and rejects linked storage. HTTP transport logs and raised errors redact the active token. Windows file privacy relies on the user's profile ACL.
 
 The squash/title contracts were checked against the [merge](https://docs.gitcode.com/docs/apis/put-api-v-5-repos-owner-repo-pulls-number-merge) and [Issue update](https://docs.gitcode.com/docs/apis/patch-api-v-5-repos-owner-issues-number) documentation on 2026-10-30. Offline contract checks do not establish live sandbox compatibility.
+
+### Repository-scoped issue status
+
+For scripts use `gc issue status -R owner/repo --json assigned,createdBy` or `--jq '.assigned[].title'`.
+Both queues return only issue summaries (id, number, state, title, created_at, label names), not raw bodies or URLs.
+Each queue is limited to ten pages of 50 issues and must reach an empty terminal page. A malformed or repeated row,
+an unconfirmed identity, a rate limit, or an unexhausted scan gives an error, without a partial report. These are
+sequential reads of open issues, not a transaction. Offline contracts are not live provider acceptance.
+
+The [list endpoint](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-issues/) describes
+`assignee` as an ID. In a read-only GitCode comparison the login returned the expected issues, while the
+opaque user ID returned 404. The command sends the authenticated login for both `assignee` and `creator`,
+then checks each returned actor against both login and ID. It does not retry with another selector.
+
+Provider pagination hints, including first, previous, next, and last links, must agree with
+the requested page, repository, and filters and with the pages actually
+received. The command never follows response links. Without `-R`, only an
+unambiguous GitCode origin is accepted.
+
+The SDK's `IssueAdapter.status` uses the same verified queues and retains the
+`AdapterActionResult` wrapper. The standard `GitCodeClient` reuses its own
+HTTP transport for bounded, bearer-only calls; a custom client must explicitly
+implement `read_issue_status_page(endpoint, params)`, returning the bounded
+JSON value, headers, and exact canonical request URL without retries or
+redirects. The standard client allows no query on account or repository
+metadata, and only the bounded open-issue pagination and exactly one author
+or assignee filter on repository queues. Unsupported clients fail before
+their token is read.

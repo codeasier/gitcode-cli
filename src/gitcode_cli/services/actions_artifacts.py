@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..actions_artifact_zip import MAX_ZIP_BYTES, verified_output
+from ..actions_artifact_zip import MAX_ZIP_BYTES, preflight_output, verified_output
 from ..actions_client import segment
 from ..errors import APIError
 from .actions import MAX_PAGE, SHA_RE, ActionsService, nonnegative, pick
@@ -24,11 +26,12 @@ _FIELDS = (
     "created_at",
     "updated_at",
 )
+_NULLABLE_TIMESTAMPS = ("expires_at", "created_at", "updated_at")
 _MAX_SCAN_PAGES = 20
 _DIGEST = re.compile(r"(?:sha256:)?([0-9a-fA-F]{64})\Z")
 
 
-def _identity(row: dict, run: dict) -> dict:
+def _identity(row: dict, run: dict, *, from_list: bool = False) -> dict:
     artifact_id = row.get("id")
     if (
         not isinstance(artifact_id, str)
@@ -39,14 +42,21 @@ def _identity(row: dict, run: dict) -> dict:
     ):
         raise APIError("Cannot verify artifact identity against this workflow/run.")
     segment(artifact_id)
+    if (
+        not nonnegative(row.get("size_bytes"))
+        or not isinstance(row.get("digest"), str)
+        or any(
+            (from_list and key not in row) or (row.get(key) is not None and not isinstance(row[key], str))
+            for key in _NULLABLE_TIMESTAMPS
+        )
+    ):
+        raise APIError("Invalid Actions artifact metadata: expected a byte count, digest and nullable timestamps.")
     return pick(row, _FIELDS)
 
 
 def _expiry_millis(value: Any) -> float | None:
     if value is None or value == "":
         return None
-    if type(value) is int and 0 <= value <= 9999999999999:
-        return float(value)
     if isinstance(value, str):
         if re.fullmatch(r"[0-9]{1,13}", value):
             return float(value)
@@ -112,7 +122,7 @@ class ActionsArtifactService:
             or len(rows) != min(limit, max(0, total - offset))
         ):
             raise APIError("Invalid or incomplete Actions artifact page.")
-        artifacts = [_identity(row, run) for row in rows]
+        artifacts = [_identity(row, run, from_list=True) for row in rows]
         if len({row["id"] for row in artifacts}) != len(artifacts):
             raise APIError("Duplicate artifact ID in one Actions page.")
         return {
@@ -130,8 +140,10 @@ class ActionsArtifactService:
         # first attempt lets us correlate the returned rows without guessing.
         return {"run": run, "artifact_attempt": 1 if run["attempt"] == 1 else None, **result}
 
-    def _find(self, run: dict, artifact_id: str) -> dict:
-        seen = set()
+    def _find(self, run: dict, selector: str, *, by_name: bool = False) -> tuple[dict, dict[str, bytes]]:
+        # Bound memory across pages. Name selection compares both complete observations;
+        # key by ID rather than relying on the provider's ordering for tied creation times.
+        seen: dict[str, bytes] = {}
         selected = None
         total = None
         for page in range(1, _MAX_SCAN_PAGES + 1):
@@ -139,19 +151,21 @@ class ActionsArtifactService:
             if total is None:
                 total = result["total_count"]
             if total is None or total != result["total_count"] or total > _MAX_SCAN_PAGES * MAX_PAGE:
-                raise APIError("Artifact list changed or exceeded the bounded scan; download was not started.")
+                raise APIError("Artifact list changed or exceeded the bounded scan; no archive was installed.")
             for item in result["artifacts"]:
                 identity = item["id"]
                 if identity in seen:
                     raise APIError("Artifact list has overlapping pages; repeat the read.")
-                seen.add(identity)
-                if identity == artifact_id:
+                seen[identity] = hashlib.sha256(json.dumps(item, sort_keys=True).encode()).digest() if by_name else b""
+                if (item["name"] if by_name else identity) == selector:
+                    if selected is not None:
+                        raise APIError("More than one artifact has the exact name on this run; use --artifact-id.")
                     selected = item
             if result["next_page"] is None:
                 if selected is None:
-                    raise APIError("The exact artifact ID is not present on this run.")
-                return selected
-        raise APIError("Artifact list exceeded the bounded scan; download was not started.")
+                    raise APIError("The exact artifact selector is not present on this run.")
+                return selected, seen
+        raise APIError("Artifact list exceeded the bounded scan; no archive was installed.")
 
     def _detail(self, run: dict, artifact_id: str, listed: dict) -> tuple[int, str]:
         result = self.svc.client.call("artifact", self.svc.owner, self.svc.repo, ids={"artifact_id": artifact_id})
@@ -161,21 +175,39 @@ class ActionsArtifactService:
             raise APIError("Artifact list and detail disagree; no archive was installed.")
         return observed
 
-    def download(self, run_id: str, artifact_id: str, attempt: int, commit: str, output: Path) -> dict:
-        segment(artifact_id)
-        if attempt != 1:
+    def download(
+        self, run_id: str, artifact_id: str | None, attempt: int, commit: str, output: Path, *, name: str | None = None
+    ) -> dict:
+        if name is not None:
+            if artifact_id is not None or not name.strip() or len(name) > 1024 or not name.isprintable():
+                raise APIError("Use one nonempty printable exact artifact name (at most 1024 characters), or an ID.")
+            selector = name
+        elif artifact_id is not None:
+            segment(artifact_id)
+            selector = artifact_id
+        else:
+            raise APIError("Specify an exact artifact ID or name.")
+        if not isinstance(commit, str) or not SHA_RE.fullmatch(commit):
+            raise APIError("Specify a full 40- or 64-hex commit SHA.")
+        if type(attempt) is not int or attempt != 1:
             raise APIError("GitCode artifacts have no attempt field; download is limited to a verified first attempt.")
-        with verified_output(output) as stage:
+        with preflight_output(output) as (absolute, directory):
             run = self._pin(run_id, attempt, commit)
-            listed = self._find(run, artifact_id)
-            size, sha256 = self._detail(run, artifact_id, listed)
+            listed, observed = self._find(run, selector, by_name=name is not None)
+            selected_id = listed["id"]
+            size, sha256 = self._detail(run, selected_id, listed)
             self._repin(run)
-            self.svc.client.artifact_zip(self.svc.owner, self.svc.repo, artifact_id, stage, size, sha256)
-            self._detail(run, artifact_id, listed)
-            self._repin(run)
+            with verified_output(absolute, directory) as stage:
+                self.svc.client.artifact_zip(self.svc.owner, self.svc.repo, selected_id, stage, size, sha256)
+                if name is not None:
+                    _, latest = self._find(run, name, by_name=True)
+                    if latest != observed:
+                        raise APIError("Artifact listing changed during name selection; no archive was installed.")
+                self._detail(run, selected_id, listed)
+                self._repin(run)
         return {
             "run": run,
-            "artifact_id": artifact_id,
+            "artifact_id": selected_id,
             "artifact_attempt": attempt,
             "size_bytes": size,
             "sha256": sha256,

@@ -16,3 +16,5 @@
 - [组织与讨论](community-commands.md)
 
 - [不克隆仓库读取指定文件](../en/repo-read-file.md)
+- [按页浏览仓库目录或校验完整 Git 目录树（英文指南）](../en/repo-read-dir.md)
+- [观察指定的 GitCode 流水线运行（英文指南）](../en/actions-evidence.md#watch-one-run-without-changing-it)

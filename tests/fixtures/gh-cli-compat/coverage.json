@@ -3,7 +3,7 @@
     "auth": ["logout", "status", "switch", "token"],
     "issue": ["list", "view", "create", "close", "comment", "edit", "reopen"],
     "pr": ["list", "view", "create", "close", "merge", "comment", "review", "reopen", "diff", "checkout", "status"],
-    "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync"],
+    "repo": ["view", "list", "create", "clone", "fork", "edit", "rename", "delete", "sync", "set-default"],
     "release": ["create", "list", "delete-asset", "download", "edit", "upload", "view"]
   },
   "exclude_flags": {
@@ -111,7 +111,6 @@
       ],
       "diff": [
         {"name": "--color", "reason": "diff color rendering is outside the selected #86 placeholder set"},
-        {"name": "-e", "reason": "diff exclude filtering is outside the selected #86 placeholder set"},
         {"name": "--web", "reason": "opening PR diff in browser is outside the selected #86 placeholder set"}
       ],
       "list": [
@@ -124,7 +123,6 @@
     },
     "repo": {
       "clone": [
-        {"name": "--no-upstream", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "-u", "reason": "upstream remote management is not implemented by gc repo clone"},
         {"name": "--upstream-remote-name", "reason": "upstream remote management is not implemented by gc repo clone"}
       ],
@@ -166,8 +164,6 @@
         {"name": "--remote-name", "reason": "local remote rewiring is not implemented by gc repo fork"}
       ],
       "list": [
-        {"name": "--archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
-        {"name": "--no-archived", "reason": "GitCode does not expose archive state reliably in repository list responses"},
         {"name": "--topic", "reason": "GitCode v5 has no repository topics API"}
       ],
       "sync": [
@@ -485,6 +481,11 @@
             "category": "extension",
             "reason": "gc provides GitCode-specific R1–R4 merge-readiness auditing.",
             "value": "Audit pull requests against merge-readiness rules"
+          },
+          "update-plan": {
+            "category": "extension",
+            "reason": "gc compares immutable same-repository PR snapshot commits without updating either branch.",
+            "value": "Compare the recorded SHAs of a same-repository open PR (read-only)"
           }
         },
         "changed_commands": {
@@ -573,6 +574,16 @@
         }
       },
       "pr status": {
+        "additional_flags": {
+          "--page": {
+            "category": "extension",
+            "reason": "Direct gc can select one page of repository conflict checks; gh personal status cannot.",
+            "value": {
+              "target": "--page",
+              "takes_value": true
+            }
+          }
+        },
         "gc_invariants": {
           "usage": "cli pr status [flags]",
           "aliases": []

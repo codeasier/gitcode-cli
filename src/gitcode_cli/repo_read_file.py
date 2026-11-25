@@ -7,70 +7,41 @@ import binascii
 import hashlib
 import json
 import os
-import re
 import unicodedata
 from pathlib import Path
 from typing import Any, BinaryIO
+from urllib.parse import quote
 
 import click
-import httpx
 
-from ._redact import redacted_transport
-from .client import BASE_URL
-from .errors import APIError, GCError, NetworkError
+from ._redact import redact
+from .errors import APIError, GCError
 from .release_files import directory, save_verified
-from .repo import is_single_ref
+from .repo_read import MAX_RESPONSE, bounded_json, origin_target, validate_path, validate_target
 from .services.files import contents_path
-from .transport import ResponseTooLargeError, read_response_bytes
+
+__all__ = [
+    "JSON_FIELDS",
+    "MAX_FILE",
+    "MAX_RESPONSE",
+    "METADATA_FIELDS",
+    "encode_file",
+    "fetch_file",
+    "origin_target",
+    "write_file",
+    "write_stdout",
+]
 
 MAX_FILE = 1024 * 1024
-MAX_RESPONSE = 2 * 1024 * 1024
+METADATA_FIELDS = ("name", "path", "gitSHA", "size", "type", "encoding")
+JSON_FIELDS = (*METADATA_FIELDS, "content")
 
 
-def origin_target(origin: str) -> str:
-    # The common remote parser drops ports and userinfo. Only infer a target
-    # from canonical GitCode spellings; ambiguous origins require explicit -R.
-    prefixes = (
-        "https://gitcode.com/",
-        "git@gitcode.com:",
-        "ssh://git@gitcode.com/",
-        "git@ssh.gitcode.com:",
-        "ssh://git@ssh.gitcode.com/",
-        "ssh://git@ssh.gitcode.com:443/",
-    )
-    for prefix in prefixes:
-        if origin.startswith(prefix):
-            target = origin[len(prefix) :].removesuffix(".git")
-            if target.count("/") == 1:
-                return target
-    raise GCError("Cannot identify an exact GitCode origin; use -R OWNER/REPO.")
+def _blob_sha(raw: bytes) -> str:
+    return hashlib.sha1(f"blob {len(raw)}\0".encode("ascii") + raw, usedforsecurity=False).hexdigest()
 
 
-def _target(owner: str, repo: str, path: str, ref: str | None) -> str:
-    if not all(re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}", name) for name in (owner, repo)):
-        raise GCError("Expected literal GitCode owner and repository names.")
-    if not path or len(path) > 4096 or not path.isprintable() or re.match(r"^[a-zA-Z]:", path):
-        raise GCError("Expected a printable, repository-relative file path.")
-    if ref is not None and (not is_single_ref(ref) or ref == "@" or len(ref) > 1024):
-        raise GCError("Expected a single literal branch, tag, or commit for --ref.")
-    try:
-        return BASE_URL.rstrip("/") + contents_path(owner, repo, path)
-    except ValueError as exc:
-        raise GCError(str(exc)) from None
-
-
-def _unique_fields(pairs: list[tuple[str, Any]]) -> dict:
-    result = dict(pairs)
-    if len(result) != len(pairs):
-        raise ValueError
-    return result
-
-
-def _decode(blob: bytes, path: str) -> bytes:
-    try:
-        row = json.loads(blob, object_pairs_hook=_unique_fields)
-    except (ValueError, RecursionError):
-        raise APIError("Invalid Contents JSON response.") from None
+def _decode(row: Any, path: str) -> bytes:
     if not isinstance(row, dict) or row.get("type") != "file":
         raise APIError("Expected one regular file in the Contents response.")
     if row.get("path") != path or row.get("name") != path.rsplit("/", 1)[-1] or row.get("encoding") != "base64":
@@ -87,38 +58,38 @@ def _decode(blob: bytes, path: str) -> bytes:
         raise APIError("Invalid Base64 file content.") from None
     if len(raw) != size or base64.b64encode(raw).decode("ascii") != content:
         raise APIError("Contents response contained invalid Base64 or the wrong number of bytes.")
-    sha = hashlib.sha1(f"blob {size}\0".encode("ascii") + raw, usedforsecurity=False).hexdigest()
-    if row.get("sha") != sha:
+    if row.get("sha") != _blob_sha(raw):
         raise APIError("File bytes do not match the Git blob SHA in the Contents response.")
     return raw
 
 
 def fetch_file(owner: str, repo: str, path: str, ref: str | None, token: str) -> bytes:
-    url = _target(owner, repo, path, ref)
+    validate_target(owner, repo, ref)
+    validate_path(path)
     params = {"ref": ref} if ref is not None else {}
-    headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
-    if token:
-        if not token.isascii() or not token.isprintable() or any(c.isspace() for c in token):
-            raise APIError("Invalid GitCode authentication token.")
-        if any(token in value for value in (owner, repo, path, ref or "")):
-            raise APIError("Refusing to send the active GitCode token outside the authorization header.")
-        headers["Authorization"] = f"Bearer {token}"
-    try:
-        with (
-            httpx.Client(timeout=30, follow_redirects=False, trust_env=False) as client,
-            redacted_transport(token),
-            client.stream("GET", url, params=params, headers=headers) as response,
-        ):
-            if response.status_code != 200:
-                raise APIError(f"GitCode Contents API returned HTTP {response.status_code}.", response.status_code)
-            if response.headers.get("content-encoding", "identity").lower() != "identity":
-                raise APIError("Refusing a compressed Contents response.")
-            body = read_response_bytes(response, max_response_bytes=MAX_RESPONSE)
-    except ResponseTooLargeError:
-        raise APIError("Contents response exceeds the 2 MiB limit.") from None
-    except httpx.HTTPError:
-        raise NetworkError("Could not read the file from GitCode.") from None
-    return _decode(body, path)
+    row = bounded_json("Contents", contents_path(owner, repo, path), params, token, (owner, repo, path, ref or ""))
+    return _decode(row, path)
+
+
+def encode_file(path: str, raw: bytes, fields: tuple[str, ...], token: str) -> bytes:
+    """Project only the verified path and inline blob, never response URLs or extra fields."""
+    values: dict[str, str | int] = {
+        "name": path.rsplit("/", 1)[-1],
+        "path": path,
+        "size": len(raw),
+        "type": "file",
+        "encoding": "base64",
+    }
+    if "gitSHA" in fields:
+        values["gitSHA"] = _blob_sha(raw)
+    if "content" in fields:
+        if token and (token.encode("ascii") in raw or quote(token, safe="").encode("ascii") in raw):
+            raise APIError("Refusing to display the active GitCode token.")
+        values["content"] = base64.b64encode(raw).decode("ascii")
+    text = json.dumps({field: values[field] for field in fields}, ensure_ascii=False) + "\n"
+    if redact(text, token) != text:
+        raise APIError("Refusing to display the active GitCode token.")
+    return text.encode("utf-8")
 
 
 def write_stdout(raw: bytes) -> None:
@@ -131,19 +102,21 @@ def write_stdout(raw: bytes) -> None:
     click.open_file("-", "wb").write(raw)
 
 
-def write_file(path: Path, raw: bytes) -> None:
+def write_file(path: Path, raw: bytes, *, clobber: bool = False) -> None:
     def write(stream: BinaryIO) -> None:
         if stream.write(raw) != len(raw):
             raise OSError("Incomplete local write.")
         stream.flush()
         os.fsync(stream.fileno())
 
-    # Use no-follow parents and publish a complete file atomically via link.
-    # An existing destination, including one that races publication, is untouched.
+    # Publish only the verified staged file: create-if-absent by default,
+    # or replace the named entry (never write through a link) on explicit opt-in.
     try:
         with directory(path.parent, writable=True) as parent:
-            save_verified(path.parent, parent, path.name, write)
+            save_verified(path.parent, parent, path.name, write, clobber=clobber)
     except FileExistsError:
-        raise GCError("Output already exists; choose a new file.") from None
+        raise GCError("Output already exists; choose a new file or use --clobber.") from None
     except (OSError, GCError):
-        raise GCError("Cannot save output; use a new file in a trusted POSIX directory without symlinks.") from None
+        raise GCError(
+            "Cannot save output; use a regular file path in a trusted POSIX directory without symlinks."
+        ) from None

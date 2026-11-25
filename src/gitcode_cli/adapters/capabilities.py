@@ -15,9 +15,9 @@ CAPABILITY_MESSAGES = {
     "ISSUE_DEVELOP_BASE": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_DEVELOP_NAME": "--base and --name are not supported by 'gc issue develop'",
     "ISSUE_LIST_APP": "GitCode issue API does not support --app filtering.",
+    "ISSUE_LIST_MENTION": "GitCode has no verified repository issue mention filter; no issue request was sent.",
     "ISSUE_STATUS_GH_SEMANTICS": (
-        "GitCode-limited approximation of gh issue status: assigned and opened issues use user-level "
-        "GitCode results; mentioned issues use repository mention filtering."
+        "Open issues assigned to or created by you in this repository. Mentions are unavailable (JSON: null)."
     ),
     "PR_MERGE_AUTHOR_EMAIL": "GitCode merge API does not support --author-email.",
     "PR_COMMENT_OWNERSHIP_UNVERIFIABLE": (

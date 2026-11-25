@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import inspect
 import json
 
 import httpx
@@ -86,7 +87,8 @@ def invoke(monkeypatch, tmp_config_dir):
 
         monkeypatch.setattr(personal, "open_client", client)
         options = ["--token", token] if token else []
-        result = CliRunner().invoke(main, [*options, *global_args, "pr", "status", *args])
+        runner = CliRunner(mix_stderr=False) if "mix_stderr" in inspect.signature(CliRunner).parameters else CliRunner()
+        result = runner.invoke(main, [*options, *global_args, "pr", "status", *args])
         if result.exception is not None and not isinstance(result.exception, SystemExit):
             raise result.exception
         assert len(requests) == len(pages) + (lookup is not None)
@@ -183,9 +185,9 @@ def test_empty_after_filtering_is_distinct_from_failure(invoke):
 def test_late_unknown_never_becomes_success_partial_or_empty(invoke, bad):
     result = invoke(["--scope", SCOPES[0], "-R", "org/project"], [[row()], bad], lookup=("org/project", metadata()))
     assert result.exit_code == 1
-    assert "error:" in result.output
+    assert "error:" in result.stderr
     for private in (TOKEN, "private description", "org/project", "Change 7", "Open pull requests", "No open pull"):
-        assert private not in result.output
+        assert private not in (result.stdout + result.stderr)
 
 
 @pytest.mark.parametrize(
@@ -193,6 +195,7 @@ def test_late_unknown_never_becomes_success_partial_or_empty(invoke, bad):
     [
         (["--scope", "reviewer"], TOKEN),
         (["--scope", SCOPES[0], "-c"], TOKEN),
+        (["--scope", SCOPES[0], "--page", "2"], TOKEN),
         (["--scope", SCOPES[0], "--json", "number"], TOKEN),
         (["--scope", SCOPES[0], "--token", "unexpected"], TOKEN),
         (["--scope", SCOPES[0], "-R", "org/" + TOKEN], TOKEN),
@@ -210,19 +213,19 @@ def test_invalid_combinations_require_no_request(invoke, args, token):
 
 def test_conflicting_explicit_targets_rejected_before_read(invoke):
     result = invoke(["--scope", SCOPES[0], "-R", "other/repo"], global_args=("-R", "org/repo"))
-    assert result.exit_code != 0 and "Conflicting repository selectors" in result.output
+    assert result.exit_code != 0 and "Conflicting repository selectors" in result.stderr
 
 
 def test_page_and_combined_byte_caps_fail_closed(invoke, monkeypatch):
     monkeypatch.setattr(personal, "MAX_DATA_PAGES", 1)
     args = ["--scope", SCOPES[0]]
     result = invoke(args, [[row()], [row(number=8)]])
-    assert result.exit_code == 1 and "pagination limit" in result.output
+    assert result.exit_code == 1 and "pagination limit" in result.stderr
     assert "Change 7" not in result.output
     raw = json.dumps([row()]).encode()
     monkeypatch.setattr(personal, "MAX_BYTES", len(raw) + 1)
     result = invoke(args, [httpx.Response(200, content=raw), []])
-    assert result.exit_code == 1 and "byte limit" in result.output and "Change 7" not in result.output
+    assert result.exit_code == 1 and "byte limit" in result.stderr and "Change 7" not in result.output
 
 
 @pytest.mark.parametrize("target", ["Ascend/msinsight", "ascend/msinsight", "Ascend/MSInsight"])
@@ -296,7 +299,9 @@ def test_row_identity_conflicts_across_unrelated_results_are_not_reported_as_emp
 )
 def test_invalid_lookup_stops_before_reading_queue(invoke, reply):
     result = invoke(["--scope", SCOPES[0], "-R", "org/project"], lookup=("org/project", reply))
-    assert result.exit_code == 1 and TOKEN not in result.output and "Open pull requests" not in result.output
+    assert result.exit_code == 1
+    assert TOKEN not in (result.stdout + result.stderr)
+    assert "Open pull requests" not in result.stdout
 
 
 def test_lookup_quotes_segments_without_sending_encoded_token(invoke):
@@ -305,7 +310,7 @@ def test_lookup_quotes_segments_without_sending_encoded_token(invoke):
     )
     assert result.exit_code == 0 and "in org/仓库" in result.output
     result = invoke(["--scope", SCOPES[0], "-R", "org/仓库"], token="%E4%BB%93%E5%BA%93")
-    assert result.exit_code == 1 and "%E4%BB%93%E5%BA%93" not in result.output
+    assert result.exit_code == 1 and "%E4%BB%93%E5%BA%93" not in (result.stdout + result.stderr)
 
 
 def test_metadata_size_capped_and_charged_to_shared_budget(invoke, monkeypatch):
@@ -314,11 +319,11 @@ def test_metadata_size_capped_and_charged_to_shared_budget(invoke, monkeypatch):
     lookup = ("org/project", httpx.Response(200, content=data))
     monkeypatch.setattr(personal, "MAX_REPO_BYTES", len(data) - 1)
     result = invoke(args, lookup=lookup)
-    assert result.exit_code == 1 and "byte limit" in result.output
+    assert result.exit_code == 1 and "byte limit" in result.stderr
     monkeypatch.setattr(personal, "MAX_REPO_BYTES", len(data))
     monkeypatch.setattr(personal, "MAX_BYTES", len(data) + 1)
     result = invoke(args, [[]], lookup=("org/project", httpx.Response(200, content=data)))
-    assert result.exit_code == 1 and "byte limit" in result.output and "No open pull" not in result.output
+    assert result.exit_code == 1 and "byte limit" in result.stderr and "No open pull" not in result.output
 
 
 def test_proxy_still_declines_personal_extension(monkeypatch):

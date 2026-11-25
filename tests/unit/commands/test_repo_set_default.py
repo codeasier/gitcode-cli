@@ -15,6 +15,7 @@ from gitcode_cli.errors import RepoResolutionError
 from gitcode_cli.gh_proxy import ProxyError, dispatch, select_target
 from gitcode_cli.repo import resolve_repo
 from gitcode_cli.repo_default import configured_target
+from gitcode_cli.repo_read_dir import TreeEntry
 
 KEY = "gc.default-repository"
 
@@ -233,9 +234,12 @@ def test_pinned_file_and_directory_only_use_verified_default(monkeypatch):
     assert cli("repo", "set-default", "upstream").exit_code == 0
     seen = []
     monkeypatch.setattr(repo, "fetch_file", lambda o, n, *args: seen.append(("file", o, n)) or b"safe")
-    monkeypatch.setattr(repo, "fetch_page", lambda o, n, *args: seen.append(("dir", o, n)) or ["safe"])
+    entry = TreeEntry(name="safe", path="safe", mode="100644", kind="blob", sha="a" * 40)
+    monkeypatch.setattr(repo, "fetch_page", lambda o, n, *args: seen.append(("dir", o, n)) or [entry])
     assert cli("repo", "read-file", "README").exit_code == 0
     assert cli("repo", "read-dir", "--ref", "main").exit_code == 0
+    projected = cli("repo", "read-dir", "--ref", "main", "--json", "path")
+    assert (projected.exit_code, projected.stdout) == (0, '[{"path": "safe"}]\n')
     git("remote", "remove", "upstream")
     assert cli("repo", "read-dir", "--ref", "main").exit_code == 1
     assert cli("repo", "read-file", "README").exit_code == 1
@@ -243,6 +247,7 @@ def test_pinned_file_and_directory_only_use_verified_default(monkeypatch):
     assert cli("-R", "explicit/b", "repo", "read-dir", "--ref", "main").exit_code == 0
     assert seen == [
         ("file", "Project", "Repo.Name"),
+        ("dir", "Project", "Repo.Name"),
         ("dir", "Project", "Repo.Name"),
         ("file", "explicit", "a"),
         ("dir", "explicit", "b"),

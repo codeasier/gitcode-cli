@@ -11,6 +11,7 @@ gc workflow view ci.yml -R owner/repo
 gc run list -R owner/repo --pr 42 --event MR
 gc pr checks 42 -R owner/repo --scan-limit 100
 gc run view RUN_ID -R owner/repo
+gc run view RUN_ID -R owner/repo --with-steps --limit 10 --attempt 2 --commit FULL_SHA
 gc run view RUN_ID -R owner/repo --job JOB_ID --attempt 2 --commit FULL_SHA
 gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 --commit FULL_SHA --offset 0 --limit 20
 ```
@@ -27,7 +28,8 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   metadata, not YAML. The scan defaults to 100 definitions; use `--scan-limit` up to
   500 when needed. It does not claim a transactional snapshot.
 * `--attempt` guards the **current** attempt; the documented detail endpoint has no
-  historical-attempt selector. Commit and attempt are checked before and after fetching
+  historical-attempt selector. Except for the single-response `--with-steps` snapshot below,
+  commit and attempt are checked before and after fetching
   jobs/logs. A race discards the result instead of attributing it to the old attempt.
 * PR checks read the requested v5 PR's head and merge gates, separately inspect v8
   PR-number- and MR-event-filtered runs, then re-read the head. Within the bounded scan,
@@ -46,6 +48,78 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   `ci_state_passed` is **not** a v8 result. Exit 0 does not establish required-check
   coverage, permission to merge, or merge readiness. This is a bounded observation,
   not an atomic server snapshot.
+
+## Select PR check fields
+
+To print one row per observed workflow for a PR, use
+`gc pr checks 42 -R owner/repo --json workflow,state,event`. Select any subset, once.
+Fields come from the existing [run-detail snapshot](https://docs.gitcode.com/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/):
+`workflow` is its name, `state` is the native run status, and `event` is `MR`.
+Missing or non-string field values are null. These are not individual jobs or required
+checks. There is no `bucket`: a `COMPLETED` run alone does not establish a pass.
+The usual exit codes above still apply. Nonzero outcomes are named on stderr, even
+when all displayed runs completed but the v5 gate failed. A complete empty result
+prints `[]` (exit 3); stale, incomplete or inaccessible evidence prints no rows
+(no stdout). Omit `--json` for the full report including gates and diagnostics.
+
+## Inspect steps across jobs in one read
+
+Use `--with-steps` to see which steps GitCode reported in each job without first
+looking up every job ID. This direct `gc` mode uses only the documented
+[run detail](https://docs.gitcode.com/en/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/).
+The run ID, current attempt and full head SHA are checked against the same response
+as the jobs. No separate job, log or workflow request is made. The default view
+and the single-job `--job` view are unchanged.
+
+The result contains `run` (ID, attempt and SHA), `jobs`, `total_count` (job records
+in this response) and `next_offset`. Each job includes its enclosing `stage` and
+`steps`. At all three levels only the native `id`, `name` and `status` strings are
+shown. This is not GitHub's `--json jobs`: there is no inferred conclusion,
+execution ID, retry selector, execution order or merge decision. For example,
+`COMPLETED` is reported as-is, not as success. Stage-level pre/post hooks are not job steps.
+
+`--offset` and `--limit` count jobs in returned array order across stages.
+Use the returned offset with the same commit and attempt; the contents can still
+change between reads. The entire response must fit the existing 2 MiB transport
+cap. At most 100 steps **in total** may be shown on one page; an oversized page
+fails without partial results. Lower the job limit, or use `--job JOB_ID` to page
+through a single large job. The entire response hierarchy is validated, including
+off-page rows. Stage IDs must be unique across stages, job IDs across the run,
+and step IDs within each job. IDs use the native Actions resource ID grammar.
+Missing/invalid metadata, including lone surrogates or terminal/format controls
+in names, IDs or states, fails without emitting a partial result. Identity and
+status are not rewritten to placeholders if they cannot be safely shown. Input,
+environment, messages, logs and execution configuration are not exported.
+
+## Watch one run without changing it
+
+```console
+gc run watch RUN_ID -R owner/repo
+gc run watch RUN_ID -R owner/repo --interval 5 --timeout 600 --exit-status
+```
+
+Watch reads only the [run-detail GET](https://docs.gitcode.com/docs/apis/get-api-v-8-repos-owner-repo-actions-runs-run-id/).
+The first read pins the explicit ID, full head SHA and current attempt. A rerun before that
+first read may already be the current attempt; a change during the watch stops it. Watch
+does not select a run interactively, enumerate jobs/steps, support `--compact`, or route via
+the `gh` proxy.
+
+Changes between `RUNNING`, `PAUSED` and `SUSPEND` appear on stderr. A recognized terminal
+state produces a single JSON object on stdout with `workflow_run_id`, `head_sha`, `attempt`
+and `status`. Default exit 0 means **observed** `COMPLETED`, `FAILED` or `CANCELED`, not
+that the run passed. With `--exit-status`, `FAILED` and `CANCELED` exit 1. `IGNORED` exits
+3 in both modes: a skipped run is not a passing result. Even `COMPLETED` reports only
+provider-level execution completion, **not** success of all jobs, PR required checks or
+merge readiness.
+
+`-i/--interval` waits 1–60 seconds between reads (default 3). `--timeout` is a monotonic
+local deadline of 1–900 seconds (default 300), including any in-flight read. A timeout,
+HTTP error, unknown or missing state, or unverifiable identity exits nonzero without a
+terminal result. Ctrl-C exits 130. No late response is accepted. The watcher stops
+admitting polls when it observes shutdown or expiry. A GET already admitted may still
+unwind after local exit; neither timeout nor interruption sends a remote cancel.
+Offline contracts use a synthetic transport; verification in an authorized GitCode
+environment is still pending.
 
 ## Explicit writes
 

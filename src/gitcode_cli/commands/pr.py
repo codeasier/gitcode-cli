@@ -1080,6 +1080,15 @@ def pr_update_plan(ctx: click.Context, repo_name: str | None, number: int) -> No
     )
 
 
+def _personal_status_target(repo_name: str | None, configured_repo: str | None) -> str | None:
+    if "" in (repo_name, configured_repo):
+        raise click.UsageError("Expected a repository after --repo.")
+    targets = {resolve_repo(value) for value in (repo_name, configured_repo) if value is not None}
+    if len(targets) > 1:
+        raise click.UsageError("Conflicting repository selectors for personal PR status.")
+    return "/".join(targets.pop()) if targets else None
+
+
 @pr_group.command("status")
 @click.option("-R", "--repo", "repo_name", help="Select another repository using the [HOST/]OWNER/REPO format.")
 @click.option("-c", "--conflict-status", is_flag=True, help="Read the GitCode conflict check for up to 20 open PRs.")
@@ -1100,12 +1109,7 @@ def pr_status(
     if scope is not None:
         if conflict_status:
             raise click.UsageError("--scope cannot be combined with --conflict-status.")
-        if "" in (repo_name, app.repo):
-            raise click.UsageError("Expected a repository after --repo.")
-        targets = {resolve_repo(value) for value in (repo_name, app.repo) if value is not None}
-        if len(targets) > 1:
-            raise click.UsageError("Conflicting repository selectors for personal PR status.")
-        target = "/".join(targets.pop()) if targets else None
+        target = _personal_status_target(repo_name, app.repo)
         canonical, rows = personal_status(app.token, scope, target)
         where = f"in {canonical}" if canonical is not None else "across repositories"
         safe_echo(f"Open pull requests {where} (GitCode scope: {scope})")

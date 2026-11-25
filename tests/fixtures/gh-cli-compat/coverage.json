@@ -582,18 +582,16 @@
               "target": "--page",
               "takes_value": true
             }
-          }
-        },
-        "gc_invariants": {
-          "usage": "cli pr status [flags]",
-          "aliases": []
-        },
-        "additional_flags": {
+          },
           "--scope": {
             "category": "extension",
             "reason": "Direct gc can select one GitCode personal PR queue.",
             "value": {"target": "--scope", "takes_value": true}
           }
+        },
+        "gc_invariants": {
+          "usage": "cli pr status [flags]",
+          "aliases": []
         },
         "missing_flags": {
           "--json": {

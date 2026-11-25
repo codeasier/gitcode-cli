@@ -159,6 +159,39 @@ def _confirmed_fork_full_name(item: Any, organization: str, repo: str) -> str:
     return f"{organization}/{name}"
 
 
+def _org_visibility_matches(item: dict[str, Any], private: bool) -> bool:
+    expected = "private" if private else "public"
+    # Negating an opposite flag is not affirmative proof; an internal
+    # repository can be neither public nor private.
+    if expected not in item and "visibility" not in item:
+        return False
+    if item.get("visibility", expected) != expected:
+        return False
+    for key, flag in (("private", private), ("public", not private), ("internal", False)):
+        if key in item:
+            value = item[key]
+            if type(value) not in (bool, int) or value != int(flag):
+                return False
+    return True
+
+
+def _confirm_org_creation(item: Any, owner: str, name: str, private: bool) -> None:
+    """Require the exact destination and affirmative, consistent visibility evidence."""
+    if isinstance(item, dict) and item.get("full_name") == f"{owner}/{name}" and item.get("path", name) == name:
+        namespace = item.get("namespace", {})
+        if (
+            isinstance(namespace, dict)
+            and all(namespace.get(key, owner) == owner for key in ("path", "full_path"))
+            and _org_visibility_matches(item, private)
+        ):
+            return
+    raise click.ClickException(
+        "A repository may have been created, but the response did not confirm the requested organization, "
+        "repository name and visibility. Verify the actual repository owner and visibility in GitCode before "
+        "retrying or pushing. No clone was attempted."
+    )
+
+
 class RepoAdapter:
     def __init__(self, service: RepoService):
         self.service = service
@@ -293,7 +326,11 @@ class RepoAdapter:
         payload: dict[str, Any] = {"name": name}
         if description is not None:
             payload["description"] = description
-        if private is not None:
+        if owner:
+            # /orgs/:org/repos and /user/repos have different request contracts.
+            # Never hand the organization's default visibility to the provider.
+            payload["public"] = 1 if private is False else 0
+        elif private is not None:
             payload["private"] = private
         if auto_init:
             payload["auto_init"] = True
@@ -308,7 +345,9 @@ class RepoAdapter:
         if license_template is not None:
             payload["license_template"] = license_template
         if owner:
-            return self.service.create_org(owner, **payload)
+            item = self.service.create_org(owner, **payload)
+            _confirm_org_creation(item, owner, name, private=private is not False)
+            return item
         return self.service.create_personal(**payload)
 
     def fork_repo(self, owner: str, repo: str, *, org: str | None = None) -> AdapterActionResult:

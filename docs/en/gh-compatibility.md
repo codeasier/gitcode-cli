@@ -49,6 +49,10 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 | `pr comment --edit-last`, `--create-if-none`, `--delete-last`, and `--yes` | Supported for the current user's ordinary PR comments |
 | `pr diff --patch` | Supported; returns per-commit mail-format patches |
 
+### Create an organization repository
+
+`gc repo create ORG/NAME` requests a **private** repository unless you specify `--public`. The [organization endpoint](https://docs.gitcode.com/en/docs/apis/post-api-v-5-orgs-org-repos/) takes an integer `public` (0 private, 1 public); [personal creation](https://docs.gitcode.com/en/docs/apis/post-api-v-5-user-repos/) takes a Boolean `private`. The organization response must identify the requested repository and explicitly confirm its visibility before `gc` reports success or starts an explicitly requested clone. An opposite flag set to false is not enough, and any returned visibility flags must agree. An unconfirmed response may still have created a repository, so inspect it on GitCode before retrying or pushing. The command does not add a remote to an existing checkout or push local commits.
+
 ### Local accounts and structured authentication status
 
 `gc auth status --json hosts` verifies the listed accounts through the GitCode API and returns a `hosts` map for `gitcode.com`. Use `--active` to verify only the effective account. See [local GitCode accounts](auth-accounts.md) for PAT login and switching. Tokens are never included in this output. Unavailable scopes and Git protocol are omitted. A missing token returns `{"hosts": {}}`; an API or network authentication failure returns an entry with `state: "error"` and exit code 0. Invalid configuration, JSON fields, jq expressions, or formatting options still fail. JSON output stays machine-readable when the gh proxy is active.

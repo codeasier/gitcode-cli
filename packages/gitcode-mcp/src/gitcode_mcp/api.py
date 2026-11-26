@@ -203,9 +203,9 @@ class GitCodeAPI(GitCodeClient):
         url = API_BASE_URL + path.lstrip("/")
         query = {key: value for key, value in (params or {}).items() if value is not None}
         try:
-            # Build outside the client so a previous Set-Cookie can never
-            # add an implicit credential to a later repository request.
-            outbound = httpx.Request(
+            # Keep existing client defaults, but never forward credentials
+            # implicitly learned via an earlier upstream Set-Cookie.
+            outbound = self._client.build_request(
                 method,
                 url,
                 params=query,
@@ -217,6 +217,7 @@ class GitCodeAPI(GitCodeClient):
                     **({"Accept-Encoding": "identity"} if _strict_identity_json else {}),
                 },
             )
+            outbound.headers.pop("cookie", None)
             with closing(
                 self._client.send(outbound, stream=True, auth=None, follow_redirects=False)
             ) as response:

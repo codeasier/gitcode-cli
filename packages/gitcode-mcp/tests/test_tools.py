@@ -559,6 +559,8 @@ def test_fork_sync_status_does_not_send_cookies_from_previous_upstream_response(
         tools.call("gitcode_get_repository", REPOSITORY)
         tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, "branch": "main"})
     assert len(requests) == 2
+    assert "gzip" in requests[0].headers["accept-encoding"]
+    assert requests[1].headers["accept-encoding"] == "identity"
     assert "cookie" not in requests[1].headers
     assert requests[1].headers["authorization"] == f"Bearer {TOKEN}"
 

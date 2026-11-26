@@ -561,3 +561,14 @@ def test_fork_sync_status_does_not_send_cookies_from_previous_upstream_response(
     assert len(requests) == 2
     assert "cookie" not in requests[1].headers
     assert requests[1].headers["authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize("field", ["owner", "repo", "branch"])
+def test_fork_sync_status_never_sends_a_configured_bearer_in_target(field):
+    with catalog() as (tools, requests):
+        args = {**REPOSITORY, "branch": "main", field: f"valid-{TOKEN}"}
+        with pytest.raises(GitCodeError) as raised:
+            tools.call("gitcode_get_fork_sync_status", args)
+    assert raised.value.code == "invalid_arguments"
+    assert TOKEN not in str(raised.value)
+    assert requests == []

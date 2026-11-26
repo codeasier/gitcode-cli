@@ -644,6 +644,12 @@ class GitCodeTools:
         if action == "get_branch":
             return self.api.get(f"{prefix}/branches/{segment(data['branch'])}")
         if action == "get_fork_sync_status":
+            if self.api.token and any(
+                self.api.token in value for value in (owner, repo, data["branch"])
+            ):
+                raise GitCodeError(
+                    "invalid_arguments", "Fork sync status target must not contain credentials."
+                )
             return _fork_sync_status(self.api.get(f"{prefix}/sync_repo", params=data))
         if action == "get_file_contents":
             return self.api.files.get(owner, repo, data.pop("path"), **data)

@@ -935,7 +935,8 @@ def pr_close(
     multiple=True,
     metavar="PATTERN",
     help="With --name-only, omit matching paths or basenames. Use * or ? per component (? matches one code point); "
-    "up to 32 patterns, each at most 512 UTF-8 bytes.",
+    "backslash quotes *, ?, [ or ] literally. No character classes or CSV. "
+    "Up to 32 patterns, each at most 512 UTF-8 bytes.",
 )
 @click.option("--patch", is_flag=True, help="Write the mail-format patch to redirected stdout (not a terminal).")
 @click.pass_context

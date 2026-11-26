@@ -12,6 +12,38 @@ _ComponentPattern = tuple[tuple[int, re.Pattern[str]], ...]
 _PathPattern = tuple[_ComponentPattern, ...]
 
 
+_PATTERN_USAGE = (
+    "--exclude accepts nonempty printable paths, '*' or '?' per component, and a backslash "
+    "before '*', '?', '[' or ']' to match that character literally. "
+    "No character classes, other escapes, commas or double quotes. Repeat the flag for multiple patterns."
+)
+
+
+def _compile_component(part: str) -> _ComponentPattern:
+    # Only fixed-width chunks become regexes; handle '*' separately. Count
+    # filename code points, not pattern characters (an escape consumes two).
+    chunks: list[tuple[int, re.Pattern[str]]] = []
+    tokens: list[str] = []
+    chars = iter(part)
+    for ch in chars:
+        if ch == "*":
+            chunks.append((len(tokens), re.compile("".join(tokens))))
+            tokens.clear()
+        elif ch == "?":
+            tokens.append("[^/]")
+        elif ch == "\\":
+            literal = next(chars, None)
+            if literal not in ("*", "?", "[", "]"):
+                raise click.UsageError(_PATTERN_USAGE)
+            tokens.append(re.escape(literal))
+        elif ch == "[":
+            raise click.UsageError(_PATTERN_USAGE)
+        else:
+            tokens.append(re.escape(ch))
+    chunks.append((len(tokens), re.compile("".join(tokens))))
+    return tuple(chunks)
+
+
 def _parse_pattern(value: str) -> _PathPattern:
     try:
         too_long = len(value) > _MAX_PATTERN_BYTES or len(value.encode("utf-8")) > _MAX_PATTERN_BYTES
@@ -19,19 +51,9 @@ def _parse_pattern(value: str) -> _PathPattern:
         raise click.UsageError("--exclude patterns must be valid UTF-8.") from None
     if too_long:
         raise click.UsageError(f"Each --exclude pattern must be at most {_MAX_PATTERN_BYTES} UTF-8 bytes.")
-    # Don't guess at Go path.Match's classes/escapes or pflag's CSV grammar.
-    if not value or not value.isprintable() or any(ch in '[\\,"' for ch in value):
-        raise click.UsageError(
-            "--exclude accepts nonempty printable text and '*' or '?' within path components. "
-            "No classes, escapes, commas or double quotes. "
-            "Repeat the flag for multiple patterns."
-        )
-    # Compile fixed-width chunks only. '*' is handled separately; arbitrary
-    # glob text never becomes a user-controlled regex.
-    return tuple(
-        tuple((len(chunk), re.compile(re.escape(chunk).replace(r"\?", "[^/]"))) for chunk in part.split("*"))
-        for part in value.split("/")
-    )
+    if not value or not value.isprintable() or "," in value or '"' in value:
+        raise click.UsageError(_PATTERN_USAGE)
+    return tuple(_compile_component(part) for part in value.split("/"))
 
 
 def exclude_patterns(values: tuple[str, ...]) -> tuple[_PathPattern, ...]:

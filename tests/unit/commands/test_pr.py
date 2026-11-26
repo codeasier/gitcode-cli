@@ -1523,6 +1523,29 @@ class TestPrDiff:
         assert result.output.splitlines() == keep
         assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
 
+    @pytest.mark.parametrize(
+        ("pattern", "names", "keep"),
+        [
+            (
+                r"pages/\[id\].tsx",
+                ["pages/[id].tsx", "pages/i.tsx", "sub/pages/[id].tsx"],
+                ["pages/i.tsx", "sub/pages/[id].tsx"],
+            ),
+            (r"\[id].tsx", ["a/b/[id].tsx", "a/b/d.tsx", "[ID].tsx"], ["a/b/d.tsx", "[ID].tsx"]),
+            (r"\*", ["*", "dir/*", "ab", "x*y"], ["ab", "x*y"]),
+            (r"a\?b", ["dir/a?b", "a育b", "a/b", "ab"], ["a育b", "a/b", "ab"]),
+            (r"*\**", ["a*b", "dir/*", "无星号", "a/b"], ["无星号", "a/b"]),
+            (r"\**?\?", ["*x?", "*🙂?", "*?", "*a/b?"], ["*?", "*a/b?"]),
+            (r"*\[*\]*", ["dir/x[y]z", "x]y[z", "[x", "x]"], ["x]y[z", "[x", "x]"]),
+        ],
+    )
+    def test_exclude_literal_glob_metacharacters(self, runner, mock_client, mock_repo, pattern, names, keep):
+        mock_client.get.return_value = [{"filename": name} for name in names]
+        result = runner.invoke(main, ["pr", "diff", "42", "--name-only", "-e", pattern])
+        assert result.exit_code == 0, result.output
+        assert result.output.splitlines() == keep
+        assert mock_client.mock_calls == [call.get("/repos/owner/repo/pulls/42/files")]
+
     def test_exclude_uses_go_basename_for_trailing_slashes(self, runner, mock_client, mock_repo):
         mock_client.get.return_value = [{"filename": "nested/file.txt///"}, {"filename": "//"}, {"filename": "keep.py"}]
 
@@ -1554,7 +1577,9 @@ class TestPrDiff:
                 "[ab]",
                 "[",
                 "?[ab]",
-                "\\*",
+                r"\/",
+                r"\a",
+                r"\\",
                 "tail\\",
                 "a,b",
                 '"a"',

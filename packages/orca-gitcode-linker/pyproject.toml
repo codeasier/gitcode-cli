@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "orca-gitcode-linker"
+version = "0.1.0"
+description = "Expose GitCode merge request state to Orca through a local Gitea-compatible API"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Codeasier" }]
+keywords = ["gitcode", "orca", "gitea", "pull-request", "developer-tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Version Control :: Git",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<10", "ruff>=0.11,<1", "build>=1.2,<2"]
+
+[project.scripts]
+orca-gitcode-linker = "orca_gitcode_linker.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/codeasier/gitcode-cli"
+Documentation = "https://github.com/codeasier/gitcode-cli/tree/main/packages/orca-gitcode-linker"
+Repository = "https://github.com/codeasier/gitcode-cli.git"
+Issues = "https://github.com/codeasier/gitcode-cli/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orca_gitcode_linker"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "scripts", "README.md", "CHANGELOG.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "ARG", "PL"]
+ignore = ["PLR2004", "PLR0913", "PLR0917"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG", "PLC0415", "SIM117"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

@@ -277,7 +277,7 @@ def test_complete_http_oauth_and_mcp_flow(harness):
     )
     assert notified.status_code == 202
     tools = rpc(client, tokens["access_token"]).json()["result"]["tools"]
-    assert len(tools) == 36
+    assert len(tools) == 37
     assert all(tool["_meta"]["securitySchemes"][0]["type"] == "oauth2" for tool in tools)
     result = repository(client, tokens["access_token"])
     assert result.json()["result"]["structuredContent"]["data"]["id"] == "user-a"
@@ -359,8 +359,8 @@ def test_consent_denial_and_account_allowlist(harness):
 def test_two_accounts_and_read_write_scopes_are_isolated_under_concurrency(harness):
     alice = connect(harness, "user-a")
     bob = connect(harness, "user-b", scope="gitcode:read")
-    assert len(rpc(harness.client, bob["access_token"]).json()["result"]["tools"]) == 19
-    assert len(rpc(harness.client, alice["access_token"]).json()["result"]["tools"]) == 36
+    assert len(rpc(harness.client, bob["access_token"]).json()["result"]["tools"]) == 20
+    assert len(rpc(harness.client, alice["access_token"]).json()["result"]["tools"]) == 37
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(
@@ -522,7 +522,7 @@ def test_refresh_rotation_replay_and_revocation(harness):
     assert second_response.status_code == 200, second_response.text
     second = second_response.json()
     assert second["refresh_token"] != first["refresh_token"]
-    assert len(rpc(client, second["access_token"]).json()["result"]["tools"]) == 19
+    assert len(rpc(client, second["access_token"]).json()["result"]["tools"]) == 20
     assert token_request(client, refresh=first["refresh_token"]).json()["error"] == "invalid_grant"
     assert rpc(client, second["access_token"]).status_code == 401
     assert token_request(client, refresh=second["refresh_token"]).json()["error"] == "invalid_grant"

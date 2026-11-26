@@ -53,6 +53,15 @@ class GitCodeError(Exception):
         return result
 
 
+def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON field")
+        result[key] = value
+    return result
+
+
 def segment(value: str) -> str:
     """Encode a validated resource name as exactly one URL path segment."""
     return quote(value, safe="")
@@ -164,10 +173,17 @@ class GitCodeAPI(GitCodeClient):
         json: dict[str, Any] | None = None,
         accept: str = "application/json",
         response_format: Literal["json", "text"] = "json",
+        _strict_identity_json: bool = False,
     ) -> Any:
         """Issue a bounded request using pygitcode's public request signature."""
         payload, _ = self._bounded_request(
-            method, path, params=params, json=json, accept=accept, response_format=response_format
+            method,
+            path,
+            params=params,
+            json=json,
+            accept=accept,
+            response_format=response_format,
+            _strict_identity_json=_strict_identity_json,
         )
         return payload
 
@@ -228,7 +244,12 @@ class GitCodeAPI(GitCodeClient):
         accept: str = "application/json",
         response_format: Literal["json", "text"] = "json",
         statuses: set[int] | None = None,
+        _strict_identity_json: bool = False,
     ) -> tuple[Any, httpx.Headers]:
+        if _strict_identity_json and (
+            method != "GET" or json is not None or form is not None or response_format != "json"
+        ):
+            raise GitCodeError("invalid_arguments", "Invalid strict GitCode request.")
         mutation = method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
         if not self.token:
             raise GitCodeError(
@@ -253,10 +274,10 @@ class GitCodeAPI(GitCodeClient):
         url = API_BASE_URL + path.lstrip("/")
         query = {key: value for key, value in (params or {}).items() if value is not None}
         try:
-            # Do not allow an upstream Set-Cookie to become implicit authentication
-            # between a target check and a write (or on any other repository call).
+            # Keep existing client defaults, but never forward credentials
+            # implicitly learned via an earlier upstream Set-Cookie.
             body = {"data": form} if form is not None else {"json": json}
-            outbound = httpx.Request(
+            outbound = self._client.build_request(
                 method,
                 url,
                 params=query,
@@ -264,9 +285,11 @@ class GitCodeAPI(GitCodeClient):
                     "Accept": accept,
                     "Authorization": f"Bearer {self.token}",
                     "User-Agent": "codeasier-gitcode-mcp",
+                    **({"Accept-Encoding": "identity"} if _strict_identity_json else {}),
                 },
                 **body,
             )
+            outbound.headers.pop("cookie", None)
             with closing(
                 self._client.send(outbound, stream=True, auth=None, follow_redirects=False)
             ) as response:
@@ -285,10 +308,26 @@ class GitCodeAPI(GitCodeClient):
                         "Unexpected GitCode response status.",
                         operation_may_have_completed=True if mutation else None,
                     )
-                content = bytearray()
-                for chunk in response.iter_bytes(
-                    chunk_size=min(65_536, self.max_response_bytes + 1)
+                if _strict_identity_json and (
+                    response.status_code != 200
+                    or response.headers.get("Content-Encoding", "identity").strip().lower()
+                    != "identity"
                 ):
+                    raise GitCodeError(
+                        "invalid_response", "GitCode returned an invalid fork sync response."
+                    )
+                content = bytearray()
+                chunk_size = min(65_536, self.max_response_bytes + 1)
+                if _strict_identity_json:
+                    # Buffered mock responses have already consumed their stream.
+                    stream = (
+                        (response.content,)
+                        if response.is_stream_consumed
+                        else response.iter_raw(chunk_size=chunk_size)
+                    )
+                else:
+                    stream = response.iter_bytes(chunk_size=chunk_size)
+                for chunk in stream:
                     content.extend(chunk)
                     if len(content) > self.max_response_bytes:
                         raise GitCodeError(
@@ -323,7 +362,10 @@ class GitCodeAPI(GitCodeClient):
         try:
             if response_format == "text":
                 return self._redact(content.decode("utf-8")), response.headers
-            parsed = json_module.loads(content)
+            if _strict_identity_json:
+                parsed = json_module.loads(content, object_pairs_hook=unique_object)
+            else:
+                parsed = json_module.loads(content)
             if statuses is not None and parsed is None:
                 raise GitCodeError(
                     "invalid_response",

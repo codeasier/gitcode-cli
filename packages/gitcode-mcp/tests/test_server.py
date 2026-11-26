@@ -30,7 +30,7 @@ async def test_protocol_lists_schema_and_calls_api():
     with GitCodeAPI("secret", transport=httpx.MockTransport(handler)) as api:
         async with Client(create_server(Settings(), api=api)) as client:
             tools = (await client.list_tools()).tools
-            assert len(tools) == 36
+            assert len(tools) == 37
             assert all(tool.input_schema["type"] == "object" for tool in tools)
             response = await client.call_tool(
                 "gitcode_get_repository", {"owner": "owner", "repo": "repo"}
@@ -111,7 +111,7 @@ def test_streamable_http_auth_host_validation_and_jsonrpc():
             catalog = client.post(
                 "/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=headers
             )
-            assert len(catalog.json()["result"]["tools"]) == 36
+            assert len(catalog.json()["result"]["tools"]) == 37
             bad_host = client.post(
                 "/mcp", json=payload, headers={**headers, "Host": "attacker.example"}
             )

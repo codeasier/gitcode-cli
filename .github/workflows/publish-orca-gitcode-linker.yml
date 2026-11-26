@@ -1,0 +1,79 @@
+name: Publish Orca GitCode Linker
+
+on:
+  push:
+    tags:
+      - "linker-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    name: Build and publish orca-gitcode-linker
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/orca-gitcode-linker
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Extract and validate version
+        id: version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          import tomllib
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not tag.startswith("linker-v"):
+              raise SystemExit(f"Unexpected tag: {tag}")
+          version = tag[len("linker-v") :]
+          project = tomllib.loads(Path("packages/orca-gitcode-linker/pyproject.toml").read_text())
+          if project["project"]["version"] != version:
+              raise SystemExit(
+                  f"pyproject version {project['project']['version']} does not match tag {version}"
+              )
+          init = Path("packages/orca-gitcode-linker/src/orca_gitcode_linker/__init__.py").read_text()
+          match = re.search(r'^__version__ = "([^"]+)"$', init, re.MULTILINE)
+          if match is None or match.group(1) != version:
+              raise SystemExit("__init__.py __version__ does not match the tag")
+          changelog = Path("packages/orca-gitcode-linker/CHANGELOG.md").read_text(
+              encoding="utf-8"
+          ).splitlines()
+          pattern = re.compile(rf"^## \[{re.escape(version)}\](?:\s|$)")
+          start = next((i for i, line in enumerate(changelog) if pattern.match(line)), None)
+          if start is None:
+              raise SystemExit(f"Version {version} not found in CHANGELOG.md")
+          end = next(
+              (i for i in range(start + 1, len(changelog)) if changelog[i].startswith("## ")),
+              len(changelog),
+          )
+          body = "\n".join(changelog[start + 1 : end]).strip()
+          if not body:
+              raise SystemExit(f"No release notes found for version {version} in CHANGELOG.md")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+          PY
+
+      - name: Install build dependencies
+        run: python -m pip install build
+
+      - name: Build package
+        working-directory: packages/orca-gitcode-linker
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/orca-gitcode-linker/dist

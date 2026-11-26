@@ -94,33 +94,38 @@ def test_entry_point_selects_legacy_only_for_seed(
 
 
 @pytest.mark.parametrize(
-    ("phase", "expected_size"),
-    [("initial", 31), ("upgrade", 36), ("rollback", 31)],
+    ("phase", "expected_size", "expected_read_size"),
+    [("initial", 31, 19), ("upgrade", 37, 20), ("rollback", 31, 19)],
 )
-def test_volume_phase_requires_exact_tool_inventory(phase, expected_size):
+def test_volume_phase_requires_exact_tool_inventory(phase, expected_size, expected_read_size):
     volume_script = SCRIPT.with_name("volume_acceptance.py")
     spec = importlib.util.spec_from_file_location("volume_acceptance", volume_script)
     volume = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(volume)
     legacy = volume.legacy_catalog_for_phase(phase)
 
-    def inventory(writes):
+    def inventory(reads, writes):
         return [
             {
                 "name": f"gitcode_{name}",
-                "annotations": {"readOnlyHint": name in acceptance.READ_TOOLS},
+                "annotations": {"readOnlyHint": name in reads},
                 "inputSchema": {"type": "object"},
             }
-            for name in sorted(acceptance.READ_TOOLS | writes)
+            for name in sorted(reads | writes)
         ]
 
-    old = inventory(acceptance.LEGACY_WRITE_TOOLS)
-    new = inventory(acceptance.CANDIDATE_WRITE_TOOLS)
-    assert len(old) == 31 and len(new) == 36
-    correct, wrong = (old, new) if expected_size == 31 else (new, old)
+    old = inventory(acceptance.LEGACY_READ_TOOLS, acceptance.LEGACY_WRITE_TOOLS)
+    new = inventory(acceptance.READ_TOOLS, acceptance.CANDIDATE_WRITE_TOOLS)
+    correct, wrong = (old, new) if legacy else (new, old)
+    assert len(correct) == expected_size
     acceptance.check_catalog(correct, legacy=legacy)
     with pytest.raises(AssertionError):
         acceptance.check_catalog(wrong, legacy=legacy)
     with pytest.raises(AssertionError):
         acceptance.check_catalog(correct[:-1] + correct[:1], legacy=legacy)
-    acceptance.check_catalog(inventory(set()), read_only=True, legacy=legacy)
+    correct_read_only = [tool for tool in correct if tool["annotations"]["readOnlyHint"]]
+    wrong_read_only = [tool for tool in wrong if tool["annotations"]["readOnlyHint"]]
+    assert len(correct_read_only) == expected_read_size
+    acceptance.check_catalog(correct_read_only, read_only=True, legacy=legacy)
+    with pytest.raises(AssertionError):
+        acceptance.check_catalog(wrong_read_only, read_only=True, legacy=legacy)

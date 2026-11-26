@@ -47,6 +47,30 @@ def accounts_cli(tmp_config_dir, cli_runner, monkeypatch):
     return run, responses, requests
 
 
+def test_login_hostname_keeps_named_verification_and_override_precedence(accounts_cli, monkeypatch):
+    run, _, requests = accounts_cli
+    monkeypatch.setenv("GC_TOKEN", "environment-override")
+    output = run(
+        "--token",
+        "explicit-override",
+        "auth",
+        "login",
+        "-h",
+        "gitcode.com",
+        "--account",
+        "--with-token",
+        token="fixture-A",
+    )
+    assert "--token still overrides" in output
+    assert "explicit-override" not in output and "environment-override" not in output
+    assert requests == ["fixture-A"]
+    assert config.get_token("explicit-override") == "explicit-override"
+    assert config.get_token() == "environment-override"
+    monkeypatch.delenv("GC_TOKEN")
+    assert config.get_token() == "fixture-A"
+    assert config.load_config() == {"accounts": {"alice": "fixture-A"}, "active_account": "alice"}
+
+
 def test_named_login_switch_legacy_roundtrip(accounts_cli):
     run, _, requests = accounts_cli
     config.save_config({"token": "fixture-L", "unrelated": ["kept"]})

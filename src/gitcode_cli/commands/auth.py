@@ -80,10 +80,15 @@ def auth_group() -> None:
 
 
 @auth_group.command("login", short_help="Authenticate with a GitCode token", help="Authenticate with a GitCode token.")
+@click.option("-h", "--hostname", "hostnames", multiple=True, metavar="HOST", help="Login host (gitcode.com only).")
 @click.option("--with-token", is_flag=True, help="Read token from stdin.")
 @click.option("--account", is_flag=True, help="Verify this token and save it under its GitCode login.")
 @click.pass_context
-def auth_login(ctx: click.Context, with_token: bool, account: bool) -> None:
+def auth_login(ctx: click.Context, hostnames: tuple[str, ...], with_token: bool, account: bool) -> None:
+    # Check every occurrence before reading stdin or prompting. Host input is
+    # never interpolated into an endpoint, config key, or diagnostic.
+    if any(not host.isascii() or host.lower() != "gitcode.com" for host in hostnames):
+        raise click.UsageError("Only gitcode.com is supported by gc auth login.")
     if with_token:
         token = sys.stdin.read().strip()
         if not token:

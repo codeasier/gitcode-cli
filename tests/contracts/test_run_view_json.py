@@ -67,6 +67,40 @@ def test_run_single_field_no_unselected_workflow_name_dependency(call):
     assert len(requests) == 1
 
 
+@pytest.mark.parametrize("status", ["COMPLETED", "FAILED", "CANCELED", "IGNORED", "RUNNING", "PAUSED", "SUSPEND"])
+def test_run_status_from_the_same_pinned_snapshot(call, status):
+    invoke, requests, reply = call
+    reply["json"] = {**RUN, "status": status, "conclusion": "success", "stages": [{"jobs": []}]}
+    result = invoke("--attempt", "0", "--commit", SHA, "--json", "headSha,status,attempt")
+    assert result.exit_code == 0 and result.stderr == "" and len(requests) == 1
+    assert json.loads(result.stdout, object_pairs_hook=list) == [("headSha", SHA), ("status", status), ("attempt", 0)]
+
+
+def test_run_status_only_preserves_unrecognized_provider_status(call):
+    invoke, requests, reply = call
+    reply["json"] = {key: value for key, value in RUN.items() if key != "workflow_name"}
+    reply["json"]["status"] = "FUTURE_PROVIDER_STATE"
+    result = invoke("--json", "status")
+    assert result.exit_code == 0 and json.loads(result.stdout) == {"status": "FUTURE_PROVIDER_STATE"}
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "status",
+    [{}, *({"status": value} for value in [None, True, 1, [], "", " \t", TOKEN, "access_token=private-fixture"])],
+)
+def test_bad_run_status_only_fails_if_selected(call, status):
+    invoke, requests, reply = call
+    reply["json"] = {**RUN, **status}
+    result = invoke("--json", "attempt,status")
+    assert result.exit_code == 1 and result.stdout == "" and result.stderr and len(requests) == 1
+    assert TOKEN not in result.stderr and "private-fixture" not in result.stderr
+
+    result = invoke("--json", "attempt,headSha,workflowName")
+    assert result.exit_code == 0 and result.stderr == "" and len(requests) == 2
+    assert json.loads(result.stdout) == {"attempt": 0, "headSha": SHA, "workflowName": RUN["workflow_name"]}
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -109,10 +143,11 @@ def test_incompatible_options_fail_before_request(call, args):
         ({}, ("--commit", "1" * 40)),
     ],
 )
-def test_required_identity_checked_even_if_not_selected(call, changes, args):
+@pytest.mark.parametrize("field", ["workflowName", "status"])
+def test_required_identity_checked_even_if_not_selected(call, changes, args, field):
     invoke, requests, reply = call
-    reply["json"] = {**RUN, **changes}
-    result = invoke("--json", "workflowName", *args)
+    reply["json"] = {**RUN, "status": "COMPLETED", **changes}
+    result = invoke("--json", field, *args)
     assert result.exit_code == 1 and result.stdout == "" and result.stderr and len(requests) == 1
 
 
@@ -129,5 +164,5 @@ def test_help_does_not_fetch(call):
     invoke, requests, _ = call
     result = invoke("--help")
     assert result.exit_code == 0 and "JSON FIELDS" in result.stdout and not requests
-    for field in ("attempt", "headSha", "workflowName"):
+    for field in ("attempt", "headSha", "workflowName", "status"):
         assert field in result.stdout

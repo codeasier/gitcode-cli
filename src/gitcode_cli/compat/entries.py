@@ -135,7 +135,7 @@ ENTRIES: list[CompatEntry] = [
         "run view",
         "--json",
         CompatStatus.IMPLEMENTED,
-        "Current GitCode run detail only: attempt, headSha, workflowName; no job fields or historical attempts.",
+        "Current run: attempt, headSha, workflowName, native status; no conclusion, job fields, or history.",
         proxy_allowed=False,
     ),
     _e(

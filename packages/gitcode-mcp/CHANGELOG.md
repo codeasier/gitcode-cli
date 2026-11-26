@@ -5,6 +5,12 @@ A source entry is not evidence that the version has been published to PyPI.
 
 ## [Unreleased]
 
+- Add immediate PR inline comments and discussion replies, with target checks
+  before one native write; neither is an atomic HEAD-bound review.
+- Add repository task-label definition creation, update and deletion using
+  the current authorization; existing Issue label assignment is unchanged.
+- Record GitHub MCP parity, remaining upstream contracts, and acceptance gates.
+
 ## [0.3.0]
 
 - Preserve the migrated 31-tool runtime (19 read, 12 write tools), OAuth state

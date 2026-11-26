@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json as json_module
+import re
+from contextlib import closing
 from typing import Any, Literal
 from urllib.parse import quote, unquote
 
@@ -164,6 +166,69 @@ class GitCodeAPI(GitCodeClient):
         response_format: Literal["json", "text"] = "json",
     ) -> Any:
         """Issue a bounded request using pygitcode's public request signature."""
+        payload, _ = self._bounded_request(
+            method, path, params=params, json=json, accept=accept, response_format=response_format
+        )
+        return payload
+
+    def task_label_request(
+        self,
+        method: Literal["GET", "POST", "PATCH", "DELETE"],
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        form: dict[str, str] | None = None,
+    ) -> tuple[Any, httpx.Headers]:
+        """Task-label wire contracts: POST form only, PATCH query, synchronous receipts."""
+        collection = re.fullmatch(r"/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/labels", path)
+        member = re.fullmatch(r"/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/labels/[^/]+", path)
+        if not (
+            (
+                method == "GET"
+                and collection
+                and form is None
+                and set(params or {}) == {"page", "per_page"}
+            )
+            or (
+                method == "POST"
+                and collection
+                and params is None
+                and set(form or {}) == {"name", "color"}
+            )
+            or (
+                method == "PATCH"
+                and member
+                and form is None
+                and bool(params)
+                and set(params) <= {"name", "color"}
+            )
+            or (method == "DELETE" and member and params is None and form is None)
+        ):
+            raise GitCodeError("invalid_arguments", "Invalid repository task-label operation.")
+        return self._bounded_request(
+            method,
+            path,
+            params=params,
+            form=form,
+            statuses={200, 204}
+            if method == "DELETE"
+            else {200, 201}
+            if method == "POST"
+            else {200},
+        )
+
+    def _bounded_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        form: dict[str, str] | None = None,
+        accept: str = "application/json",
+        response_format: Literal["json", "text"] = "json",
+        statuses: set[int] | None = None,
+    ) -> tuple[Any, httpx.Headers]:
         mutation = method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
         if not self.token:
             raise GitCodeError(
@@ -188,8 +253,22 @@ class GitCodeAPI(GitCodeClient):
         url = API_BASE_URL + path.lstrip("/")
         query = {key: value for key, value in (params or {}).items() if value is not None}
         try:
-            with self._client.stream(
-                method, url, params=query, json=json, headers={"Accept": accept}
+            # Do not allow an upstream Set-Cookie to become implicit authentication
+            # between a target check and a write (or on any other repository call).
+            body = {"data": form} if form is not None else {"json": json}
+            outbound = httpx.Request(
+                method,
+                url,
+                params=query,
+                headers={
+                    "Accept": accept,
+                    "Authorization": f"Bearer {self.token}",
+                    "User-Agent": "codeasier-gitcode-mcp",
+                },
+                **body,
+            )
+            with closing(
+                self._client.send(outbound, stream=True, auth=None, follow_redirects=False)
             ) as response:
                 if 300 <= response.status_code < 400:
                     raise GitCodeError(
@@ -200,6 +279,12 @@ class GitCodeAPI(GitCodeClient):
                     )
                 if response.status_code >= 400:
                     raise self._status_error(response, mutation=mutation)
+                if statuses is not None and response.status_code not in statuses:
+                    raise GitCodeError(
+                        "invalid_response",
+                        "Unexpected GitCode response status.",
+                        operation_may_have_completed=True if mutation else None,
+                    )
                 content = bytearray()
                 for chunk in response.iter_bytes(
                     chunk_size=min(65_536, self.max_response_bytes + 1)
@@ -228,11 +313,24 @@ class GitCodeAPI(GitCodeClient):
                 operation_may_have_completed=True if mutation else None,
             ) from None
         if not content:
-            return None
+            if statuses is not None and response.status_code != 204:
+                raise GitCodeError(
+                    "invalid_response",
+                    "Expected a task-label response body.",
+                    operation_may_have_completed=True if mutation else None,
+                )
+            return None, response.headers
         try:
             if response_format == "text":
-                return self._redact(content.decode("utf-8"))
-            return self._redact(json_module.loads(content))
+                return self._redact(content.decode("utf-8")), response.headers
+            parsed = json_module.loads(content)
+            if statuses is not None and parsed is None:
+                raise GitCodeError(
+                    "invalid_response",
+                    "Invalid null task-label response.",
+                    operation_may_have_completed=True if mutation else None,
+                )
+            return self._redact(parsed), response.headers
         except (ValueError, UnicodeError):
             raise GitCodeError(
                 "invalid_response",

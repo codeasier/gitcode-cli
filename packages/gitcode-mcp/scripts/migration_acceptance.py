@@ -70,6 +70,11 @@ WRITE_TOOLS = {
     "add_pull_request_comment",
     "approve_pull_request",
     "merge_pull_request",
+    "add_pull_request_inline_comment",
+    "reply_to_pull_request_discussion",
+    "create_label",
+    "update_label",
+    "delete_label",
 }
 
 
@@ -125,8 +130,8 @@ def installed_metadata(*, legacy: bool = False, license_required: bool = False) 
 def check_catalog(tools: list[dict[str, Any]], read_only: bool = False) -> None:
     expected_read = {"gitcode_" + name for name in READ_TOOLS}
     expected_write = {"gitcode_" + name for name in WRITE_TOOLS}
-    assert len(expected_read) == 19 and len(expected_write) == 12
-    assert len(tools) == (19 if read_only else 31)
+    assert len(expected_read) == 19 and len(expected_write) == 17
+    assert len(tools) == (19 if read_only else 36)
     assert {tool["name"] for tool in tools} == expected_read | (
         set() if read_only else expected_write
     )
@@ -243,7 +248,7 @@ def smoke() -> None:
         anyio.run(stdio_smoke, read_only)
         http_smoke(read_only)
     print(
-        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 31/19/12 passed (offline)"
+        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 36/19/17 passed (offline)"
     )
 
 

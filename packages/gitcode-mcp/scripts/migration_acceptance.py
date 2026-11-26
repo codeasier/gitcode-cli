@@ -57,7 +57,7 @@ READ_TOOLS = {
     "list_pull_request_comments",
     "list_pull_request_commits",
 }
-WRITE_TOOLS = {
+LEGACY_WRITE_TOOLS = {
     "create_branch",
     "create_file",
     "update_file",
@@ -70,6 +70,8 @@ WRITE_TOOLS = {
     "add_pull_request_comment",
     "approve_pull_request",
     "merge_pull_request",
+}
+CANDIDATE_WRITE_TOOLS = LEGACY_WRITE_TOOLS | {
     "add_pull_request_inline_comment",
     "reply_to_pull_request_discussion",
     "create_label",
@@ -127,11 +129,15 @@ def installed_metadata(*, legacy: bool = False, license_required: bool = False) 
         )
 
 
-def check_catalog(tools: list[dict[str, Any]], read_only: bool = False) -> None:
+def check_catalog(
+    tools: list[dict[str, Any]], read_only: bool = False, *, legacy: bool = False
+) -> None:
     expected_read = {"gitcode_" + name for name in READ_TOOLS}
-    expected_write = {"gitcode_" + name for name in WRITE_TOOLS}
-    assert len(expected_read) == 19 and len(expected_write) == 17
-    assert len(tools) == (19 if read_only else 36)
+    write_tools = LEGACY_WRITE_TOOLS if legacy else CANDIDATE_WRITE_TOOLS
+    expected_write = {"gitcode_" + name for name in write_tools}
+    write_count = 12 if legacy else 17
+    assert len(expected_read) == 19 and len(expected_write) == write_count
+    assert len(tools) == (19 if read_only else 19 + write_count)
     assert {tool["name"] for tool in tools} == expected_read | (
         set() if read_only else expected_write
     )

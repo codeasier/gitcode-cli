@@ -91,3 +91,36 @@ def test_entry_point_selects_legacy_only_for_seed(
         with pytest.raises(AssertionError):
             acceptance.main()
         assert not completed
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected_size"),
+    [("initial", 31), ("upgrade", 36), ("rollback", 31)],
+)
+def test_volume_phase_requires_exact_tool_inventory(phase, expected_size):
+    volume_script = SCRIPT.with_name("volume_acceptance.py")
+    spec = importlib.util.spec_from_file_location("volume_acceptance", volume_script)
+    volume = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(volume)
+    legacy = volume.legacy_catalog_for_phase(phase)
+
+    def inventory(writes):
+        return [
+            {
+                "name": f"gitcode_{name}",
+                "annotations": {"readOnlyHint": name in acceptance.READ_TOOLS},
+                "inputSchema": {"type": "object"},
+            }
+            for name in sorted(acceptance.READ_TOOLS | writes)
+        ]
+
+    old = inventory(acceptance.LEGACY_WRITE_TOOLS)
+    new = inventory(acceptance.CANDIDATE_WRITE_TOOLS)
+    assert len(old) == 31 and len(new) == 36
+    correct, wrong = (old, new) if expected_size == 31 else (new, old)
+    acceptance.check_catalog(correct, legacy=legacy)
+    with pytest.raises(AssertionError):
+        acceptance.check_catalog(wrong, legacy=legacy)
+    with pytest.raises(AssertionError):
+        acceptance.check_catalog(correct[:-1] + correct[:1], legacy=legacy)
+    acceptance.check_catalog(inventory(set()), read_only=True, legacy=legacy)

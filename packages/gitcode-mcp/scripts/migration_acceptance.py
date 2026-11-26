@@ -36,7 +36,7 @@ VERSION = importlib.metadata.version(PACKAGE)
 LEGACY_SHA = "f93b67bb7048e556b44322d48664522f32651920"
 MARKER = b"codeasier-gitcode-mcp.oauth-store.v1"
 FIXTURE_FORMAT = "gitcode-mcp-migration-synthetic-v1"
-READ_TOOLS = {
+LEGACY_READ_TOOLS = {
     "get_repository",
     "get_clone_info",
     "list_branches",
@@ -57,6 +57,7 @@ READ_TOOLS = {
     "list_pull_request_comments",
     "list_pull_request_commits",
 }
+READ_TOOLS = LEGACY_READ_TOOLS | {"get_fork_sync_status"}
 WRITE_TOOLS = {
     "create_branch",
     "create_file",
@@ -122,11 +123,15 @@ def installed_metadata(*, legacy: bool = False, license_required: bool = False) 
         )
 
 
-def check_catalog(tools: list[dict[str, Any]], read_only: bool = False) -> None:
-    expected_read = {"gitcode_" + name for name in READ_TOOLS}
+def check_catalog(
+    tools: list[dict[str, Any]], read_only: bool = False, *, legacy: bool = False
+) -> None:
+    reads = LEGACY_READ_TOOLS if legacy else READ_TOOLS
+    expected_read = {"gitcode_" + name for name in reads}
     expected_write = {"gitcode_" + name for name in WRITE_TOOLS}
-    assert len(expected_read) == 19 and len(expected_write) == 12
-    assert len(tools) == (19 if read_only else 31)
+    read_count = 19 if legacy else 20
+    assert len(expected_read) == read_count and len(expected_write) == 12
+    assert len(tools) == (read_count if read_only else read_count + 12)
     assert {tool["name"] for tool in tools} == expected_read | (
         set() if read_only else expected_write
     )
@@ -243,7 +248,7 @@ def smoke() -> None:
         anyio.run(stdio_smoke, read_only)
         http_smoke(read_only)
     print(
-        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 31/19/12 passed (offline)"
+        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 32/20/12 passed (offline)"
     )
 
 

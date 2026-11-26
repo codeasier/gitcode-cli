@@ -572,3 +572,23 @@ def test_fork_sync_status_never_sends_a_configured_bearer_in_target(field):
     assert raised.value.code == "invalid_arguments"
     assert TOKEN not in str(raised.value)
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "raw"),
+    [
+        (206, {}, b'{"repo_sync_result":true}'),
+        (200, {"Content-Encoding": "gzip"}, b"fake-compressed"),
+        (200, {}, b'{"repo_sync_result":false,"repo_sync_result":true}'),
+    ],
+)
+def test_fork_sync_status_rejects_partial_compressed_and_duplicate_receipts(status, headers, raw):
+    def upstream(request):
+        assert request.headers["accept-encoding"] == "identity"
+        return httpx.Response(status, headers=headers, stream=httpx.ByteStream(raw))
+
+    with catalog(upstream) as (tools, requests):
+        with pytest.raises(GitCodeError) as raised:
+            tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, "branch": "main"})
+    assert raised.value.code == "invalid_response"
+    assert len(requests) == 1

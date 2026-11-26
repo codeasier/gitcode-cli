@@ -650,7 +650,11 @@ class GitCodeTools:
                 raise GitCodeError(
                     "invalid_arguments", "Fork sync status target must not contain credentials."
                 )
-            return _fork_sync_status(self.api.get(f"{prefix}/sync_repo", params=data))
+            return _fork_sync_status(
+                self.api.request(
+                    "GET", f"{prefix}/sync_repo", params=data, _strict_identity_json=True
+                )
+            )
         if action == "get_file_contents":
             return self.api.files.get(owner, repo, data.pop("path"), **data)
         if action == "get_repository_tree":

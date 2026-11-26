@@ -5,23 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-26
+
+本次发布大幅扩展直连 GitCode 的命令面，新增 `gc api`、`gc release`、Actions 查看与运行、全站搜索、任务标签、组织与讨论、仓库文件/目录读取等命令，并补齐多项 `gh` 兼容参数与结构化 JSON 投影；同时收紧写操作的目标校验、附件完整性检查和代理/鉴权失败路径。
 
 ### Added
 
-- Fix Windows CLI help in pipes and files without changing the redirected stream encoding (#191).
-- Add direct `gc api` for fixed-origin GitCode JSON REST v5/v8, without GraphQL or transparent proxy routing.
-- Add direct `gc release` list/view/create/edit and attachment download/upload/delete-asset, with verified metadata writes and guarded transfers.
-- 新增直连命令：仓库、Issue、PR 和用户全站关键词搜索，仓库任务标签管理与复制，组织列表，以及仓库讨论的列表、查看、创建、编辑与顶层评论。
-- Add direct GitCode Actions inspection, scoped retry/rerun and dispatch, plus PR checks that separate v5 gates from exact-head v8 observations.
-- Add direct `gc workflow view` for bounded definition lookup and `gc run cancel` for confirmed GitCode stops.
+- 新增 `gc api`，直连固定 origin 的 GitCode REST v5/v8 JSON 接口，不提供 GraphQL、重定向或透明代理路由 ([#192](https://github.com/codeasier/gitcode-cli/pull/192))
+- 新增 `gc release` 的 list/view/create/edit、下载与附件 upload/delete-asset，写入前后验证元数据，并按 SHA-256 比对本地附件 ([#194](https://github.com/codeasier/gitcode-cli/pull/194), [#226](https://github.com/codeasier/gitcode-cli/pull/226))
+- 新增 GitCode Actions 命令：`gc workflow list/view/run`、`gc run list/view/watch/rerun/cancel/artifacts/download` 与 `gc pr checks`，区分 v5 门禁与 exact-head v8 证据，并支持 run/workflow 的选定 JSON 字段 ([#193](https://github.com/codeasier/gitcode-cli/pull/193), [#204](https://github.com/codeasier/gitcode-cli/pull/204), [#208](https://github.com/codeasier/gitcode-cli/pull/208), [#213](https://github.com/codeasier/gitcode-cli/pull/213), [#217](https://github.com/codeasier/gitcode-cli/pull/217), [#224](https://github.com/codeasier/gitcode-cli/pull/224), [#225](https://github.com/codeasier/gitcode-cli/pull/225), [#229](https://github.com/codeasier/gitcode-cli/pull/229), [#230](https://github.com/codeasier/gitcode-cli/pull/230), [#238](https://github.com/codeasier/gitcode-cli/pull/238))
+- 新增全站搜索 `gc search repos/issues/prs/users`，并验证 fork 与隐私过滤语义 ([#195](https://github.com/codeasier/gitcode-cli/pull/195), [#214](https://github.com/codeasier/gitcode-cli/pull/214), [#222](https://github.com/codeasier/gitcode-cli/pull/222), [#234](https://github.com/codeasier/gitcode-cli/pull/234))
+- 新增仓库任务标签 `gc label list/create/edit/clone/delete`（支持按名称排序）、组织列表 `gc org list`，以及仓库讨论的 list/view/replies/create/edit/comment ([#195](https://github.com/codeasier/gitcode-cli/pull/195), [#205](https://github.com/codeasier/gitcode-cli/pull/205), [#209](https://github.com/codeasier/gitcode-cli/pull/209), [#239](https://github.com/codeasier/gitcode-cli/pull/239))
+- 新增 `gc repo read-file` 与 `gc repo read-dir`：单请求读取文件、分页读取目录、固定 tree 校验、选定 JSON 字段与 `--clobber` 原子本地替换 ([#199](https://github.com/codeasier/gitcode-cli/pull/199), [#202](https://github.com/codeasier/gitcode-cli/pull/202), [#206](https://github.com/codeasier/gitcode-cli/pull/206), [#207](https://github.com/codeasier/gitcode-cli/pull/207), [#212](https://github.com/codeasier/gitcode-cli/pull/212), [#219](https://github.com/codeasier/gitcode-cli/pull/219), [#223](https://github.com/codeasier/gitcode-cli/pull/223), [#235](https://github.com/codeasier/gitcode-cli/pull/235))
+- 新增 `repo sync-status`、`repo clone --no-upstream`、`repo list` 归档状态过滤，并在 `repo status` 中报告 PR 冲突 ([#197](https://github.com/codeasier/gitcode-cli/pull/197), [#215](https://github.com/codeasier/gitcode-cli/pull/215), [#218](https://github.com/codeasier/gitcode-cli/pull/218), [#220](https://github.com/codeasier/gitcode-cli/pull/220))
+- `gc pr` 新增个人状态范围、只读提交更新计划与冲突检查分页 ([#203](https://github.com/codeasier/gitcode-cli/pull/203), [#211](https://github.com/codeasier/gitcode-cli/pull/211), [#224](https://github.com/codeasier/gitcode-cli/pull/224))
+- PR 人员编辑改用原生 assignee/approval reviewer 端点，标签编辑改用定向增删端点，并支持用编号或标题设置 milestone ([#176](https://github.com/codeasier/gitcode-cli/pull/176), [#179](https://github.com/codeasier/gitcode-cli/pull/179), [#180](https://github.com/codeasier/gitcode-cli/pull/180))
+- 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试 ([#166](https://github.com/codeasier/gitcode-cli/pull/166))
+- 补齐剩余 5 项占位参数：`pr comment --edit-last/--create-if-none/--delete-last/--yes` 仅管理当前用户最新普通评论，验证完整历史与归属并默认确认删除；`pr diff --patch` 返回服务端按提交划分的邮件格式补丁，拒绝非补丁响应 ([#166](https://github.com/codeasier/gitcode-cli/pull/166))
+- `gc auth` 新增可选命名账号（`login --account`、`switch`、按账号 logout），默认单 token 行为保持不变 ([#196](https://github.com/codeasier/gitcode-cli/pull/196))
+- `@me` 在 issue/PR 列表过滤与 issue 指派中解析为已验证的当前账号登录名 ([#181](https://github.com/codeasier/gitcode-cli/pull/181))
+- issue/PR 的创建、列表与查看统一响应式 JSON 投影，`issue view --json comments` 返回已验证的评论行 ([#172](https://github.com/codeasier/gitcode-cli/pull/172), [#177](https://github.com/codeasier/gitcode-cli/pull/177), [#231](https://github.com/codeasier/gitcode-cli/pull/231))
 
-- 补齐 7 项 gh 兼容参数：`auth status --json/--jq/--template`（单 host 验证且不导出 token）、`pr reopen --comment`、`pr diff --name-only` 与 `pr checkout --detach/--force`；同步兼容性登记表、中英文说明及离线回归测试。
-- 补齐剩余 5 项占位参数：`pr comment --edit-last/--create-if-none/--delete-last/--yes` 仅管理当前用户最新普通评论，验证完整历史与归属并默认确认删除；`pr diff --patch` 返回服务端按提交划分的邮件格式补丁，拒绝非补丁响应。
+### Changed
+
+- 未验证契约的 `gc issue close --reason` 与 `gc pr edit --remove-milestone` 在发请求前失败关闭；`repo sync` 在写入前要求目标确为 fork，且请求始终显式携带分支 ([#182](https://github.com/codeasier/gitcode-cli/pull/182), [#183](https://github.com/codeasier/gitcode-cli/pull/183))
+- `gc issue list` 默认只列 open issue，与 `gh` 默认一致 ([#237](https://github.com/codeasier/gitcode-cli/pull/237))
+- `gc issue status` 只读取仓库范围内指派或创建的 issue，不再读取全站 feed；mention 过滤按不可用处理 ([#210](https://github.com/codeasier/gitcode-cli/pull/210))
 
 ### Fixed
 
-- PR 文件变更集合改为按官方契约单次读取，避免 `pr diff --name-only` 与审计在返回 100 个或更多文件时误判为重复分页而失败。
+- 修复 Windows 管道与文件重定向下 CLI 帮助输出的编码问题 ([#198](https://github.com/codeasier/gitcode-cli/pull/198))
+- 修复 gh 代理在显式 host/位置参数下的目标路由，以及无效 HTTP 代理配置引发的非预期异常 ([#200](https://github.com/codeasier/gitcode-cli/pull/200), [#241](https://github.com/codeasier/gitcode-cli/pull/241))
+- 修复 `repo view` 归档状态回读、组织仓库创建可见性确认、`repo fork --org` 目标组织校验与 repository search 的 Bearer-only 鉴权 ([#173](https://github.com/codeasier/gitcode-cli/pull/173), [#201](https://github.com/codeasier/gitcode-cli/pull/201), [#221](https://github.com/codeasier/gitcode-cli/pull/221), [#228](https://github.com/codeasier/gitcode-cli/pull/228))
+- 修复 `pr checkout`/分支删除未绑定已验证源仓库与 head SHA 的问题，并拒绝改写远端 URL 的 Git 配置 ([#172](https://github.com/codeasier/gitcode-cli/pull/172))
+- 修复 PR 文件变更集合在返回 100 个或更多文件时误判为重复分页而失败，并为 `pr diff` 增加排除模式（含单字符模式） ([#170](https://github.com/codeasier/gitcode-cli/pull/170), [#216](https://github.com/codeasier/gitcode-cli/pull/216), [#236](https://github.com/codeasier/gitcode-cli/pull/236))
+- 修复 `pr merge --delete-branch` 在未确认合并成功时清理分支、`pr ready` 非幂等以及最终标签删除失败的问题 ([#169](https://github.com/codeasier/gitcode-cli/pull/169), [#174](https://github.com/codeasier/gitcode-cli/pull/174), [#175](https://github.com/codeasier/gitcode-cli/pull/175))
+- 修复 issue/PR JSON 投影在状态、milestone 与 URL 字段上的不一致，回读失败时不再用请求值伪造输出 ([#172](https://github.com/codeasier/gitcode-cli/pull/172), [#176](https://github.com/codeasier/gitcode-cli/pull/176), [#177](https://github.com/codeasier/gitcode-cli/pull/177))
 
 ## [0.1.7] - 2026-10-29
 

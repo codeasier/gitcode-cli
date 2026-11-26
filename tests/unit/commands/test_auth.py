@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from unittest.mock import MagicMock
 
@@ -13,6 +14,14 @@ from gitcode_cli.errors import APIError, NetworkError
 @pytest.fixture
 def runner():
     return CliRunner()
+
+
+@pytest.fixture
+def separate_stream_runner():
+    # Click 8.0/8.1 mix stderr into stdout by default; 8.2+ always
+    # captures both separately and removed the mix_stderr constructor option.
+    kwargs = {"mix_stderr": False} if "mix_stderr" in inspect.signature(CliRunner).parameters else {}
+    return CliRunner(**kwargs)
 
 
 class TestAuthLogin:
@@ -37,7 +46,9 @@ class TestAuthLogin:
             ["-h", "elsewhere.invalid", "--hostname=gitcode.com"],
         ],
     )
-    def test_login_rejects_host_before_credential_use(self, runner, tmp_config_dir, monkeypatch, selector, with_token):
+    def test_login_rejects_host_before_credential_use(
+        self, separate_stream_runner, tmp_config_dir, monkeypatch, selector, with_token
+    ):
         config_path = tmp_config_dir / "config.json"
         original = b'{"token":"inert-existing-fixture"}'
         config_path.write_bytes(original)
@@ -47,7 +58,7 @@ class TestAuthLogin:
         monkeypatch.setattr("click.prompt", prompt)
         verify = MagicMock()
         monkeypatch.setattr("gitcode_cli.commands.auth._verified_login", verify)
-        result = runner.invoke(
+        result = separate_stream_runner.invoke(
             main, ["auth", "login", "--account", *selector, *(["--with-token"] if with_token else [])]
         )
         assert result.exit_code == 2

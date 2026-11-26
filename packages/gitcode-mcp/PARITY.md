@@ -4,7 +4,7 @@ Baselines: [GitHub MCP Server v2.3.0](https://github.com/github/github-mcp-serve
 
 | Workflow | GitCode MCP status | Follow-up / limit |
 | --- | --- | --- |
-| Read repositories, branches, files, commits and trees; create branches | Covered | Repository allowlist and bounded responses apply. A normalized directory page and explicit fork sync status remain separate candidates. |
+| Read repositories, branches, files, commits and trees; create branches | Covered | Repository allowlist and bounded responses apply. A normalized directory page remains a candidate; explicit fork sync status is a read-only GET. |
 | Create, update or delete a single file | Covered | Not a multi-file commit. A prior blob SHA is not a branch HEAD precondition. |
 | Publish a multi-file commit | Platform contract unverified | Do not simulate with sequential single-file writes. A native Git alternative requires proven delegated write authentication and authenticated actor, one commit and one ref update, expected old HEAD, server-enforced non-force update, branch protection, and readback. The local clone helper is not a push transport. |
 | Repository creation and fork; repository deletion | CLI available, MCP gap | Use dedicated tools and validate target and authorization. Deletion should not share the same tool as ordinary repository modification. |

@@ -160,6 +160,8 @@ def http_probe(phase: str) -> None:
     """Never opens SQLite or creates a second provider alongside a running server."""
     import httpx
 
+    require(phase in {"initial", "upgrade", "rollback"}, "Unexpected HTTP probe phase")
+    legacy = phase != "upgrade"
     manifest = read_manifest()
     configuration = manifest["configuration"]
     public = configuration["GITCODE_MCP_PUBLIC_URL"]
@@ -220,7 +222,7 @@ def http_probe(phase: str) -> None:
                 json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
             )
             require(response.status_code == 200, "Authenticated tools/list failed")
-            helper.check_catalog(response.json()["result"]["tools"])
+            helper.check_catalog(response.json()["result"]["tools"], legacy=legacy)
 
         def refresh(token: str) -> dict[str, Any]:
             response = client.post(
@@ -253,8 +255,6 @@ def http_probe(phase: str) -> None:
             catalog(tokens["upgrade"]["access_token"])
             tokens["rollback"] = refresh(tokens["upgrade"]["refresh_token"])
             private_json(DATA / HTTP_TOKENS, tokens)
-        else:
-            require(phase == "initial", "Unexpected HTTP probe phase")
 
 
 class Docker:

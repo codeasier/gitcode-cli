@@ -44,8 +44,8 @@ def repo_get_calls(monkeypatch):
 def test_catalog_has_focused_schemas_and_explicit_annotations():
     with catalog() as (tools, _):
         definitions = tools.list_tools()
-    assert len(definitions) == 31
-    assert len({tool.name for tool in definitions}) == 31
+    assert len(definitions) == 32
+    assert len({tool.name for tool in definitions}) == 32
     for tool in definitions:
         assert tool.name.startswith("gitcode_")
         assert tool.input_schema["additionalProperties"] is False
@@ -61,7 +61,7 @@ def test_catalog_has_focused_schemas_and_explicit_annotations():
 
 def test_read_only_mode_hides_and_refuses_write_calls():
     with catalog(read_only=True) as (tools, requests):
-        assert len(tools.list_tools()) == 19
+        assert len(tools.list_tools()) == 20
         assert all(tool.annotations.read_only_hint for tool in tools.list_tools())
         with pytest.raises(GitCodeError) as raised:
             tools.call("gitcode_create_issue", {**REPOSITORY, "title": "Should not write"})
@@ -485,3 +485,63 @@ def test_file_contents_preserves_encoding_and_literal_path(path, ref, monkeypatc
     assert calls == [("team", "project", path, expected)]
     assert "private-token" not in requests[0].headers
     assert result["data"] == response
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        ({"repo_sync_result": True}, {"repo_sync_result": True, "repo_sync_message": None}),
+        (
+            {"repo_sync_result": False, "repo_sync_message": "Branch is behind", "details": {}},
+            {"repo_sync_result": False, "repo_sync_message": "Branch is behind"},
+        ),
+        (
+            {"repo_sync_result": True, "repo_sync_message": TOKEN},
+            {"repo_sync_result": True, "repo_sync_message": "[message withheld]"},
+        ),
+        (
+            {"repo_sync_result": True, "repo_sync_message": "https://example.invalid/"},
+            {"repo_sync_result": True, "repo_sync_message": "[message withheld]"},
+        ),
+    ],
+)
+def test_fork_sync_status_uses_read_only_repo_scoped_bearer_get(response, expected):
+    with catalog(response, read_only=True, allowed=["team/project"]) as (tools, requests):
+        result = tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, "branch": "release/v1"})
+    assert result == {"repository": "team/project", "data": expected}
+    [request] = requests
+    assert request.method == "GET"
+    assert request.url.host == "api.gitcode.com"
+    assert request.url.path == "/api/v5/repos/team/project/sync_repo"
+    assert dict(request.url.params) == {"branch": "release/v1"}
+    assert request.headers["authorization"] == f"Bearer {TOKEN}"
+    assert "private-token" not in request.headers
+
+
+@pytest.mark.parametrize(
+    "response", [{}, {"repo_sync_result": 1}, {"repo_sync_result": True, "repo_sync_message": {}}]
+)
+def test_fork_sync_status_rejects_bad_receipts(response):
+    with catalog(response) as (tools, requests):
+        with pytest.raises(GitCodeError, match="GitCode"):
+            tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, "branch": "main"})
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("args", "code"),
+    [
+        ({"branch": "HEAD"}, "invalid_arguments"),
+        ({"branch": "main~1"}, "invalid_arguments"),
+        ({"branch": "refs/heads/main"}, "invalid_arguments"),
+        ({"branch": "v1%2fother"}, "invalid_arguments"),
+        ({"branch": "main", "repo": "other"}, "repository_not_allowed"),
+        ({}, "invalid_arguments"),
+    ],
+)
+def test_fork_sync_status_refuses_invalid_target_without_io(args, code):
+    with catalog(allowed=["team/project"]) as (tools, requests):
+        with pytest.raises(GitCodeError) as raised:
+            tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, **args})
+    assert raised.value.code == code
+    assert requests == []

@@ -4,14 +4,15 @@ Guidance for coding agents working in this repository. Language: the repo's prim
 
 ## What this repository is
 
-This repository contains two independently installable Python distributions:
+This repository contains three independently installable Python distributions:
 
 | Distribution | Source / configuration | Runtime boundary |
 |---|---|---|
 | `pygitcode` | `src/gitcode_cli/`, root `pyproject.toml` | Python >= 3.9; `click` and `httpx`; provides `gc` / `gitcode`, modeled after GitHub's `gh` CLI. |
 | `codeasier-gitcode-mcp` | `packages/gitcode-mcp/` and its own `pyproject.toml` | Python >= 3.11; provides `gitcode-mcp` / `gitcode-clone`; separately versioned and currently pins the published `pygitcode==0.1.7`. |
+| `orca-gitcode-linker` | `packages/orca-gitcode-linker/` and its own `pyproject.toml` | Python >= 3.9; no runtime dependencies; provides `orca-gitcode-linker`, a localhost Gitea-compatible adapter that lets Orca display GitCode PR state. Independently versioned and released under `linker-v*` tags. |
 
-A root editable install or root test run does not install or validate the MCP package. Do not assume MCP imports the sibling CLI checkout: its API layer subclasses `GitCodeClient` and reuses `IssueService` / `PullRequestService` / `FileService` / `RepoService` from its installed dependency. MCP retains its stricter file-path validation, content/result policies and bounded bearer-only transport; services receive decoded paths and quote them once. Keep transport signatures compatible with downstream overrides when changing the CLI client.
+A root editable install or root test run does not install or validate the MCP or linker package. Do not assume MCP imports the sibling CLI checkout: its API layer subclasses `GitCodeClient` and reuses `IssueService` / `PullRequestService` / `FileService` / `RepoService` from its installed dependency. MCP retains its stricter file-path validation, content/result policies and bounded bearer-only transport; services receive decoded paths and quote them once. Keep transport signatures compatible with downstream overrides when changing the CLI client.
 
 ## Architecture and data flow
 
@@ -71,13 +72,23 @@ Use the package directory and its configuration, as `.github/workflows/gitcode-m
 - The published-dependency workflow's Python 3.11–3.13 jobs lint, test, build wheel/sdist, clean-install both distributions and verify offline migration compatibility against the immutable legacy source. The separate named-volume job checks Compose volume reuse and rollback with synthetic state.
 - Acceptance script paths are `packages/gitcode-mcp/scripts/migration_acceptance.py` and `volume_acceptance.py`; see [migration guidance](docs/gitcode/migration.md). The immutable legacy seed remains MCP 0.3.0 with `pygitcode==0.1.6`; candidate checks require `pygitcode==0.1.7`. These roles cannot be inferred from the MCP version, which remains 0.3.0. CI acceptance is not a production deployment or live OAuth connection test. Do not use real credentials, production state or volumes for it.
 
+### Linker validation is separate
+
+Use the linker package directory and its configuration, as `.github/workflows/orca-gitcode-linker.yml` does: install `.[dev]` there, run `python -I -m pytest -c pyproject.toml tests`, and use `python -m ruff check --config pyproject.toml .` / `python -m ruff format --check --config pyproject.toml .`. Clear inherited `PYTEST_ADDOPTS`; do not apply the CLI coverage gate or its Python 3.9 settings to the linker. The linker has no runtime dependencies and does not import `gitcode_cli` or the MCP package.
+
+- `orca-gitcode-linker` is a localhost, read-only compatibility adapter for Orca's Gitea hosted-review provider. It is not an Orca plugin and cannot replace Orca's built-in provider, checks, PR creation or merge paths.
+- Installers under `packages/orca-gitcode-linker/scripts/` are platform service helpers, not a second runtime. macOS uses LaunchAgents; a Linux paired Orca runtime uses a systemd user service plus `~/.pam_environment` so SSH-launched `orcad` inherits `ORCA_GITEA_*`.
+- Never put a real GitCode token in Orca's environment or in a committed file. The adapter reads `gc` config, `GC_TOKEN`, or an explicit token file; Orca receives only a dummy `ORCA_GITEA_TOKEN`.
+- The adapter binds to `127.0.0.1` and intentionally has no local authentication. Do not expose its port.
+
 ## Release lifecycle and operational boundaries
 
 - The CLI version is dynamic (`pyproject.toml` reads `gitcode_cli.__version__`, which is `0.0.0-dev` in-tree). Do not hand-bump it for releases: `.github/workflows/publish.yml` rewrites it from `v*` tags at build time, publishes to PyPI, and creates a GitHub Release.
 - A `v*` tag fails to publish unless `CHANGELOG.md` contains a non-empty `## [x.y.z]` section for that version — the workflow validates it.
 - `dev<commit-hash>` tags build `{base}.devYYYYMMDD+{hash}` versions to TestPyPI (`publish-dev.yml`), deriving the base from the latest `v*` tag.
 
-- These `v*` / `dev*` tag workflows publish the CLI, not the MCP distribution. MCP publication preparation lives in `.github/workflows/publish-mcp.yml` for separately authorized `mcp-vX.Y.Z` tag creation. It reuses full MCP acceptance and requires an opt-in, pre-existing `mcp-pypi` environment with a tag-only policy, exact source/ref identity and the verified producer's immutable artifact ID/checksums. Multi-maintainer releases additionally require an independent reviewer; a solo-maintainer repository may omit required reviewers, making tag creation permission the controlling authorization. Manual runs validate only; publication remains disabled unless an operator separately configures the documented prerequisites. Package version and dependency pin stay independent. Follow the [MCP release guide](docs/gitcode/releases.md), [package guidance](packages/gitcode-mcp/README.md) and [deployment guidance](docs/gitcode/deployment.md); code review or CI does not authorize tagging, publishing, credential/security-setting changes or a production switch.
+- These `v*` / `dev*` tag workflows publish the CLI, not the MCP or linker distributions. MCP publication preparation lives in `.github/workflows/publish-mcp.yml` for separately authorized `mcp-vX.Y.Z` tag creation. It reuses full MCP acceptance and requires an opt-in, pre-existing `mcp-pypi` environment with a tag-only policy, exact source/ref identity and the verified producer's immutable artifact ID/checksums. Multi-maintainer releases additionally require an independent reviewer; a solo-maintainer repository may omit required reviewers, making tag creation permission the controlling authorization. Manual runs validate only; publication remains disabled unless an operator separately configures the documented prerequisites. Package version and dependency pin stay independent. Follow the [MCP release guide](docs/gitcode/releases.md), [package guidance](packages/gitcode-mcp/README.md) and [deployment guidance](docs/gitcode/deployment.md); code review or CI does not authorize tagging, publishing, credential/security-setting changes or a production switch.
+- `linker-vX.Y.Z` tags publish only `orca-gitcode-linker` via `.github/workflows/publish-orca-gitcode-linker.yml`. The workflow validates the package version and a non-empty `packages/orca-gitcode-linker/CHANGELOG.md` section, builds independently, and uses PyPI trusted publishing through the pre-configured `pypi` environment. It does not publish or validate `pygitcode` or MCP, and CI or code review does not authorize tagging or publication.
 
 ## Known misleading artifacts
 
@@ -92,4 +103,5 @@ Use the package directory and its configuration, as `.github/workflows/gitcode-m
 | Adapter layer | [src/gitcode_cli/adapters/AGENTS.md](src/gitcode_cli/adapters/AGENTS.md) | gh-semantics translation, capability keys, `AdapterActionResult` protocol, pagination |
 | CLI tests | [tests/AGENTS.md](tests/AGENTS.md) | Test layers, focusing commands, fixtures, coverage gate, conftest contracts |
 | MCP package and operations | [packages/gitcode-mcp/README.md](packages/gitcode-mcp/README.md), [docs/gitcode/README.md](docs/gitcode/README.md) | Independent installation, authentication, migration and deployment boundaries |
+| Orca GitCode linker | [packages/orca-gitcode-linker/README.md](packages/orca-gitcode-linker/README.md) | Independent packaging, Orca Gitea-provider compatibility, macOS/Linux service installers and localhost-only token handling |
 

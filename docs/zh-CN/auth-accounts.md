@@ -11,6 +11,8 @@ gc auth status --active --json hosts
 gc auth logout --user bob
 ```
 
+如需显式指定主机，使用 `gc auth login --hostname gitcode.com`（或 `-h gitcode.com`）。仅接受该裸主机名，不区分英文大小写；API 地址、存储方式和 PAT 登录流程不变。查看登录帮助请用 `gc auth login --help`。
+
 两次登录分别在隐藏输入框输入各自账号的个人访问令牌。脚本可通过 `--with-token` 从标准输入读取，不要把令牌写在命令行、示例文件或日志里。具名登录使用本次输入的令牌访问 `GET /user`，仅采用响应中的 login；核验失败不保存。再次登录同名账号只替换该账号的本地令牌。
 
 - 全局 `--token` 优先于 `GC_TOKEN`，二者都优先于本地选中的账号。临时覆盖不自动落盘；登录只保存明确输入的值。有覆盖时，status 只报告实际生效的凭据；如需 switch、logout 或 `auth token --user`，请先取消覆盖。

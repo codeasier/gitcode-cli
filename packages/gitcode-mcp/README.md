@@ -28,7 +28,8 @@ GitCode identity and receives separate MCP access tokens. It supports PKCE,
 explicit consent, refresh and revocation, with a fixed authorization lifetime.
 The environment-file and Compose examples are in `deploy/gitcode-mcp`.
 
-The server exposes 31 tools: 19 reads and 12 writes. `gitcode_create_file`,
+The server exposes 32 tools: 20 reads and 12 writes.
+`gitcode_get_fork_sync_status` reads an explicit fork branch through one GitCode GET; it never performs synchronization. Missing provider messages are returned as null. `gitcode_create_file`,
 `gitcode_update_file` and `gitcode_delete_file` publish a single file change to an
 explicit remote branch using GitCode's Contents API. Updates and deletions require
 the current file Blob SHA. Each call creates a separate commit; there is no atomic

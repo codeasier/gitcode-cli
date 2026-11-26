@@ -50,6 +50,10 @@ Use `gitcode` instead of `gc` on Windows PowerShell because `gc` is a built-in a
 
 This repository also maintains the independently installable [`codeasier-gitcode-mcp`](packages/gitcode-mcp) runtime (Python 3.11+), with stdio, Streamable HTTP, OAuth, and 31 GitCode tools. It is a separate distribution: installing `pygitcode` does not install MCP, ASGI, or cryptography dependencies. See the [MCP documentation](docs/gitcode/README.md) and [migration guide](docs/gitcode/migration.md). Codex-specific plugin integration remains in [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode).
 
+## Orca GitCode Linker
+
+The independently installable [`orca-gitcode-linker`](packages/orca-gitcode-linker) distribution (Python 3.9+, no runtime dependencies) lets Orca display GitCode pull-request state by serving a localhost Gitea-compatible API to Orca's Gitea hosted-review provider. It is released under `linker-v*` tags and does not depend on `pygitcode` or MCP. See the [linker guide](packages/orca-gitcode-linker/README.md).
+
 ## Documentation
 
 - [Documentation index](docs/en/index.md)

@@ -545,3 +545,19 @@ def test_fork_sync_status_refuses_invalid_target_without_io(args, code):
             tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, **args})
     assert raised.value.code == code
     assert requests == []
+
+
+def test_fork_sync_status_does_not_send_cookies_from_previous_upstream_response():
+    def upstream(request):
+        if request.url.path.endswith("/sync_repo"):
+            return httpx.Response(200, json={"repo_sync_result": True})
+        return httpx.Response(
+            200, json={"name": "project"}, headers={"Set-Cookie": "fixture=marker; Path=/; Secure"}
+        )
+
+    with catalog(upstream, read_only=True) as (tools, requests):
+        tools.call("gitcode_get_repository", REPOSITORY)
+        tools.call("gitcode_get_fork_sync_status", {**REPOSITORY, "branch": "main"})
+    assert len(requests) == 2
+    assert "cookie" not in requests[1].headers
+    assert requests[1].headers["authorization"] == f"Bearer {TOKEN}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as json_module
+from contextlib import closing
 from typing import Any, Literal
 from urllib.parse import quote, unquote
 
@@ -188,8 +189,21 @@ class GitCodeAPI(GitCodeClient):
         url = API_BASE_URL + path.lstrip("/")
         query = {key: value for key, value in (params or {}).items() if value is not None}
         try:
-            with self._client.stream(
-                method, url, params=query, json=json, headers={"Accept": accept}
+            # Build outside the client so a previous Set-Cookie can never
+            # add an implicit credential to a later repository request.
+            outbound = httpx.Request(
+                method,
+                url,
+                params=query,
+                json=json,
+                headers={
+                    "Accept": accept,
+                    "Authorization": f"Bearer {self.token}",
+                    "User-Agent": "codeasier-gitcode-mcp",
+                },
+            )
+            with closing(
+                self._client.send(outbound, stream=True, auth=None, follow_redirects=False)
             ) as response:
                 if 300 <= response.status_code < 400:
                     raise GitCodeError(

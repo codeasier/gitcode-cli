@@ -34,6 +34,8 @@ In a GitCode repository, `gh --version` identifies itself as the pygitcode proxy
 
 `gc issue view 42 -R OWNER/REPO --json number,comments` returns an array of visible comments, not the issue detail's integer counter. The [issue-scoped GitCode endpoint](https://docs.gitcode.com/en/docs/apis/get-api-v-5-repos-owner-repo-issues-number-comments/) is read until an empty page: at most ten data pages of 50 and one final probe. Each comment must identify the requested issue. An inaccessible, oversized, inconsistent or incomplete response produces no JSON; concurrent edits are not an atomic snapshot. The array retains GitCode's documented fields (numeric ID, body, user, target and timestamps) and adds `author.login`, `createdAt` and `updatedAt` when supplied; no GitHub-only viewer, reaction or moderation attributes are inferred. The structured path uses no credentials in URLs and also works without configuring a token when the provider permits anonymous access. Ordinary detail/text output and `issue list` are unchanged.
 
+`gc issue list/view --json closed` derives a boolean from the Issue’s native state: closed is true, open/opened is false, and unknown or missing state is null. This adds no request and does not change unselected fields.
+
 | Capability | Status in `gc` |
 | --- | --- |
 | Issue and PR list/view/create/comment/edit/close flows | Supported |

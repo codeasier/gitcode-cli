@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -18,7 +19,7 @@ from .. import repo_read
 from ..errors import GCError
 from ..formatters import output_result
 from ..helptext import GCSectionGroup, set_gc_help
-from ..repo import resolve_repo
+from ..repo import is_single_ref, resolve_repo
 from ..services.releases import ReleaseService, release_record, tag_segment
 from ..utils import open_in_browser, safe_echo
 
@@ -45,6 +46,10 @@ FIELDS = [
     "targetCommitish",
     "url",
 ]
+_ARCHIVE_FIELDS = {"tarballUrl": "tar.gz", "zipballUrl": "zip"}
+VIEW_FIELDS = [*FIELDS, *_ARCHIVE_FIELDS]
+_ARCHIVE_SEGMENT = r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}"
+_ARCHIVE_REPO = re.compile(rf"https://gitcode\.com/{_ARCHIVE_SEGMENT}/({_ARCHIVE_SEGMENT})")
 
 
 @contextmanager
@@ -70,7 +75,7 @@ def _web(base: str, row: dict) -> str | None:
     return value
 
 
-def _project(row: dict, base: str) -> dict:
+def _project(row: dict, base: str, *, with_assets: bool = True) -> dict:
     status = row.get("release_status")
     author = row.get("author")
     return {
@@ -89,14 +94,52 @@ def _project(row: dict, base: str) -> dict:
             for a in binary.asset_map(row).values()
             if not binary.is_archive(a)
         ]
-        if isinstance(row.get("assets"), list)
+        if with_assets and isinstance(row.get("assets"), list)
         else None,
     }
 
 
-def _check_fields(fields):
-    if fields and any(s.strip() not in FIELDS for s in fields.split(",")):
-        raise click.UsageError("Available JSON fields: " + ", ".join(FIELDS))
+def _source_archive_urls(row: dict, base: str, fields: set[str], token: str) -> dict[str, str | None]:
+    result: dict[str, str | None] = dict.fromkeys(fields)
+    identity = _ARCHIVE_REPO.fullmatch(base)
+    tag, assets = row["tag_name"], row.get("assets")
+    if identity is None or not re.fullmatch(_ARCHIVE_SEGMENT, tag) or not is_single_ref(tag):
+        return result
+    if not isinstance(assets, list):
+        return result
+    for field in fields:
+        suffix = _ARCHIVE_FIELDS[field]
+        name = f"{identity[1]}-{tag}.{suffix}"
+        key = binary.filename_key(name)
+        matches = [
+            a
+            for a in assets
+            if isinstance(a, dict) and isinstance(a.get("name"), str) and binary.filename_key(a["name"]) == key
+        ]
+        if len(matches) != 1:
+            continue
+        asset = matches[0]
+        # Accept only the documented, unambiguous source route for this release.
+        # Exact equality excludes URL aliases, encoded components and signed
+        # query strings. The constructed URL is not used as a fallback.
+        expected = f"{base}/-/archive/{tag}/{name}"
+        url = asset.get("browser_download_url")
+        if (
+            asset["name"] == name
+            and asset.get("type") in (None, "SOURCE", suffix)
+            and isinstance(url, str)
+            and url == expected
+            and (not token or token not in url)
+        ):
+            result[field] = url
+    return result
+
+
+def _check_fields(fields: str | None, allowed: list[str] = FIELDS) -> set[str]:
+    selected = {s.strip() for s in fields.split(",")} if fields else set()
+    if selected.difference(allowed):
+        raise click.UsageError("Available JSON fields: " + ", ".join(allowed))
+    return selected
 
 
 @click.group("release", cls=GCSectionGroup, help="Manage GitCode releases and release attachments.")
@@ -155,11 +198,15 @@ def release_list(ctx, repo_name, limit, order, exclude_pre_releases, fields, jq,
 @template_option
 @click.pass_context
 def release_view(ctx, tag, repo_name, web, fields, jq, template):
-    _check_fields(fields)
+    selected = _check_fields(fields, VIEW_FIELDS)
+    archive_fields = selected.intersection(_ARCHIVE_FIELDS)
     if web and (fields or jq or template):
         raise click.UsageError("--web cannot be combined with output formatting")
     with _service(ctx, repo_name) as (svc, base):
-        row = _project(svc.get(tag), base)
+        raw = svc.get(tag)
+        row = _project(raw, base, with_assets=not archive_fields or "assets" in selected)
+        if archive_fields:
+            row.update(_source_archive_urls(raw, base, archive_fields, ctx.obj["app"].token))
     if web:
         if not row["url"]:
             safe_echo("No individual release page returned; opening the repository releases list.", err=True)
@@ -418,4 +465,4 @@ set_gc_help(
 )
 set_gc_help(release_create, gc_aliases=["new"])
 set_gc_help(release_list, gc_json_fields=FIELDS, gc_aliases=["ls"])
-set_gc_help(release_view, gc_json_fields=FIELDS)
+set_gc_help(release_view, gc_json_fields=VIEW_FIELDS)

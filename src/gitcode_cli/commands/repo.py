@@ -38,6 +38,7 @@ REPO_VIEW_JSON_FIELDS = [
     "isFork",
     "isArchived",
     "stargazers",
+    "stargazerCount",
     "forks",
     "openIssues",
     "license",
@@ -48,7 +49,9 @@ REPO_VIEW_JSON_FIELDS = [
     "pushedAt",
 ]
 
-REPO_LIST_JSON_FIELDS = [field for field in REPO_VIEW_JSON_FIELDS if field not in {"createdAt", "pushedAt"}]
+REPO_LIST_JSON_FIELDS = [
+    field for field in REPO_VIEW_JSON_FIELDS if field not in {"createdAt", "pushedAt", "stargazerCount"}
+]
 
 
 def _is_gitcode_host(host: str) -> bool:
@@ -305,7 +308,12 @@ def repo_view(
     service = RepoService(app.client())
     adapter = RepoAdapter(service)
     item = adapter.view(owner, repo)
-    output_item = _normalize_repo_fields(item) if item and (json_fields or jq_query or template) else item
+    output_item = item
+    if item and (json_fields or jq_query or template):
+        output_item = _normalize_repo_fields(item)
+        if json_fields and "stargazerCount" in map(str.strip, json_fields.split(",")):
+            count = item.get("stargazers_count")
+            output_item["stargazerCount"] = count if type(count) is int and count >= 0 else None
 
     def default_formatter(data: dict) -> None:
         safe_echo(format_repo_detail(data))
@@ -819,6 +827,7 @@ set_gc_help(
 repo_view.short_help = "View a repository"
 repo_view.help = (
     "View a repository. With no explicit target, use the configured gc default if set, otherwise the git origin remote."
+    " Use --json stargazerCount for the repository's star count (null when unavailable)."
 )
 set_gc_help(
     repo_view,

@@ -1,0 +1,65 @@
+name: Orca GitCode Linker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/orca-gitcode-linker/**
+      - .github/workflows/orca-gitcode-linker.yml
+      - .github/workflows/publish-orca-gitcode-linker.yml
+  pull_request:
+    paths:
+      - packages/orca-gitcode-linker/**
+      - .github/workflows/orca-gitcode-linker.yml
+      - .github/workflows/publish-orca-gitcode-linker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orca-gitcode-linker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linker:
+    name: Linker / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/orca-gitcode-linker
+    env:
+      PYTEST_ADDOPTS: ''
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install linker test dependencies only
+        run: python -m pip install -e '.[dev]'
+      - name: Lint linker independently
+        run: |
+          python -m ruff check --config pyproject.toml .
+          python -m ruff format --check --config pyproject.toml .
+      - name: Test linker independently
+        run: python -I -m pytest -c pyproject.toml tests
+      - name: Check installer shell syntax
+        run: bash -n scripts/install_macos.sh scripts/install_remote_linux.sh
+      - name: Build wheel and sdist
+        run: python -m build
+      - name: Clean-install the wheel
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/linker-venv"
+          "$RUNNER_TEMP/linker-venv/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/linker-venv/bin/orca-gitcode-linker" --version
+          "$RUNNER_TEMP/linker-venv/bin/orca-gitcode-linker" --help >/dev/null

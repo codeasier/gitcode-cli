@@ -48,7 +48,11 @@ gc repo clone owner/repo
 
 ## GitCode MCP
 
-本仓库同时维护独立安装的 [`codeasier-gitcode-mcp`](packages/gitcode-mcp) 运行时（Python 3.11+），提供 stdio、Streamable HTTP、OAuth 和 31 个 GitCode 工具。CLI 与 MCP 是两个独立分发包：安装 `pygitcode` 不会引入 MCP、ASGI 或加密依赖。请参阅 [MCP 文档](docs/gitcode/README.md)和[迁移指南](docs/gitcode/migration.md)；Codex 专属插件桥接仍由 [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode) 维护。
+本仓库同时维护独立安装的 [`codeasier-gitcode-mcp`](packages/gitcode-mcp) 运行时（Python 3.11+），提供 stdio、Streamable HTTP、OAuth 和 31 个 GitCode 工具。CLI、MCP 与 Orca linker 是三个独立分发包：安装 `pygitcode` 不会引入 MCP、ASGI 或加密依赖，也不会安装 linker。请参阅 [MCP 文档](docs/gitcode/README.md)和[迁移指南](docs/gitcode/migration.md)；Codex 专属插件桥接仍由 [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode) 维护。
+
+## Orca GitCode Linker
+
+独立分发的 [`orca-gitcode-linker`](packages/orca-gitcode-linker)（Python 3.9+，无运行时依赖）通过本机 Gitea 兼容 API，让 Orca 的 Gitea hosted-review provider 显示 GitCode PR 状态。该包使用独立的 `linker-v*` 标签发布，不依赖 `pygitcode` 或 MCP。详见 [linker 指南](packages/orca-gitcode-linker/README.md)。
 
 ## 文档
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
@@ -78,6 +79,39 @@ class BranchArgs(RepoArgs):
     @classmethod
     def validate_branch(cls, value: str) -> str:
         return _safe_reference(value)
+
+
+class ForkSyncStatusArgs(RepoArgs):
+    branch: Reference = Field(description="Explicit short branch name on the fork.")
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, value: str) -> str:
+        return validate_write_branch(value)
+
+
+_FORK_SYNC_SENSITIVE = re.compile(
+    r"://|[=@%]|\b(?:bearer|basic|authorization|cookie|token|password|secret|credential|signature|api[-_ ]?key)\b"
+    r"|(?:access|private|refresh|id|session)[-_]?token|-----BEGIN |\b(?:gh[pousr]_|github_pat_|glpat-)",
+    re.IGNORECASE,
+)
+
+
+def _fork_sync_status(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict) or type(result.get("repo_sync_result")) is not bool:
+        raise GitCodeError("invalid_response", "GitCode did not return a boolean fork sync result.")
+    message = result.get("repo_sync_message")
+    if message is not None:
+        if not isinstance(message, str):
+            raise GitCodeError("invalid_response", "GitCode returned an invalid fork sync message.")
+        if (
+            len(message) > 512
+            or not message.isprintable()
+            or "[REDACTED]" in message
+            or _FORK_SYNC_SENSITIVE.search(message)
+        ):
+            message = "[message withheld]"
+    return {"repo_sync_result": result["repo_sync_result"], "repo_sync_message": message}
 
 
 class FileArgs(RepoArgs):
@@ -362,6 +396,11 @@ SPECS = (
     ToolSpec("list_branches", "Read one page of GitCode repository branches.", PageArgs),
     ToolSpec("get_branch", "Read a GitCode branch and its current commit.", BranchArgs),
     ToolSpec(
+        "get_fork_sync_status",
+        "Read the provider's fork synchronization status for an explicit branch. Does not synchronize or update the fork.",
+        ForkSyncStatusArgs,
+    ),
+    ToolSpec(
         "get_file_contents",
         "Read a repository file at a chosen ref; preserves the API content encoding.",
         FileArgs,
@@ -604,6 +643,18 @@ class GitCodeTools:
             return self.api.page(f"{prefix}/branches", **data)
         if action == "get_branch":
             return self.api.get(f"{prefix}/branches/{segment(data['branch'])}")
+        if action == "get_fork_sync_status":
+            if self.api.token and any(
+                self.api.token in value for value in (owner, repo, data["branch"])
+            ):
+                raise GitCodeError(
+                    "invalid_arguments", "Fork sync status target must not contain credentials."
+                )
+            return _fork_sync_status(
+                self.api.request(
+                    "GET", f"{prefix}/sync_repo", params=data, _strict_identity_json=True
+                )
+            )
         if action == "get_file_contents":
             return self.api.files.get(owner, repo, data.pop("path"), **data)
         if action == "get_repository_tree":

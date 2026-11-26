@@ -16,6 +16,57 @@ def runner():
 
 
 class TestAuthLogin:
+    @pytest.mark.parametrize("selector", [["--hostname", "gitcode.com"], ["--hostname=GitCode.COM"], ["-hgitcode.com"]])
+    def test_login_hostname_accepts_single_host_for_legacy_slot(self, runner, tmp_config_dir, selector):
+        result = runner.invoke(main, ["auth", "login", *selector, "--with-token"], input="fixture-host-only\n")
+        assert result.exit_code == 0, result.output
+        assert json.loads((tmp_config_dir / "config.json").read_text()) == {"token": "fixture-host-only"}
+        assert "fixture-host-only" not in result.output
+
+    @pytest.mark.parametrize("with_token", [False, True])
+    @pytest.mark.parametrize(
+        "selector",
+        [
+            ["--hostname="],
+            ["-h", "github.com"],
+            ["-h", "gitcode.com."],
+            ["--hostname", "ssh.gitcode.com"],
+            ["--hostname", "gitcode.com:443"],
+            ["--hostname", "https://userinfo@gitcode.com/sensitive-path"],
+            ["--hostname", " gitcode.com"],
+            ["-h", "elsewhere.invalid", "--hostname=gitcode.com"],
+        ],
+    )
+    def test_login_rejects_host_before_credential_use(self, runner, tmp_config_dir, monkeypatch, selector, with_token):
+        config_path = tmp_config_dir / "config.json"
+        original = b'{"token":"inert-existing-fixture"}'
+        config_path.write_bytes(original)
+        mock_sys = MagicMock()
+        monkeypatch.setattr("gitcode_cli.commands.auth.sys", mock_sys)
+        prompt = MagicMock()
+        monkeypatch.setattr("click.prompt", prompt)
+        verify = MagicMock()
+        monkeypatch.setattr("gitcode_cli.commands.auth._verified_login", verify)
+        result = runner.invoke(
+            main, ["auth", "login", "--account", *selector, *(["--with-token"] if with_token else [])]
+        )
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "Only gitcode.com is supported" in result.stderr
+        assert "sensitive-path" not in result.stderr and "userinfo" not in result.stderr
+        mock_sys.stdin.read.assert_not_called()
+        prompt.assert_not_called()
+        verify.assert_not_called()
+        assert config_path.read_bytes() == original
+
+    def test_login_short_host_requires_value_and_long_help_still_works(self, runner, tmp_config_dir):
+        missing = runner.invoke(main, ["auth", "login", "-h"])
+        assert missing.exit_code == 2
+        help_result = runner.invoke(main, ["auth", "login", "--help"])
+        assert help_result.exit_code == 0
+        assert "--hostname" in help_result.output and "--with-token" in help_result.output
+        assert not (tmp_config_dir / "config.json").exists()
+
     def test_auth_login_prompt(self, runner, tmp_config_dir):
         result = runner.invoke(main, ["auth", "login"], input="mytoken\n")
         assert result.exit_code == 0

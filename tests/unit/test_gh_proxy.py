@@ -518,7 +518,6 @@ def test_resource_and_repo_host_conflict_is_not_hidden_by_boolean_flag(monkeypat
     [
         ["api", "--hostname", "gitcode.com", "user"],
         ["api", "user", "--hostname=gitcode.com"],
-        ["auth", "login", "--hostname", "gitcode.com", "--with-token"],
         ["auth", "status", "-h", "gitcode.com"],
         ["auth", "token", "-hGitCode.com."],
         ["auth", "refresh", "--hostname", "gitcode.com"],
@@ -532,11 +531,25 @@ def test_explicit_native_hostname_for_gitcode_must_not_reach_either_backend(monk
         dispatch(argv, {})
 
 
+@pytest.mark.parametrize("selector", [["-h", "gitcode.com"], ["--hostname=gitcode.com"], ["-hGitCode.com"]])
+def test_explicit_gitcode_login_hostname_forwards_only_to_gc(monkeypatch, selector):
+    argv = ["auth", "login", *selector, "--with-token"]
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit host must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("native gh must not run"))
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls == [
+        (sys.executable, ["-m", "gitcode_cli.cli", *argv], {"GC_GH_PROXY_ACTIVE": "1", "GC_GH_PROXY_TARGET": "gitcode"})
+    ]
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["api", "--hostname=enterprise.example", "user"],
         ["auth", "status", "-h", "github.com"],
+        ["auth", "login", "--hostname", "github.com", "--with-token"],
         ["auth", "token", "--hostname", "github.com"],
     ],
 )

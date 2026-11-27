@@ -58,7 +58,7 @@ LEGACY_READ_TOOLS = {
     "list_pull_request_commits",
 }
 READ_TOOLS = LEGACY_READ_TOOLS | {"get_fork_sync_status"}
-WRITE_TOOLS = {
+LEGACY_WRITE_TOOLS = {
     "create_branch",
     "create_file",
     "update_file",
@@ -71,6 +71,13 @@ WRITE_TOOLS = {
     "add_pull_request_comment",
     "approve_pull_request",
     "merge_pull_request",
+}
+CANDIDATE_WRITE_TOOLS = LEGACY_WRITE_TOOLS | {
+    "add_pull_request_inline_comment",
+    "reply_to_pull_request_discussion",
+    "create_label",
+    "update_label",
+    "delete_label",
 }
 
 
@@ -127,11 +134,12 @@ def check_catalog(
     tools: list[dict[str, Any]], read_only: bool = False, *, legacy: bool = False
 ) -> None:
     reads = LEGACY_READ_TOOLS if legacy else READ_TOOLS
+    writes = LEGACY_WRITE_TOOLS if legacy else CANDIDATE_WRITE_TOOLS
     expected_read = {"gitcode_" + name for name in reads}
-    expected_write = {"gitcode_" + name for name in WRITE_TOOLS}
-    read_count = 19 if legacy else 20
-    assert len(expected_read) == read_count and len(expected_write) == 12
-    assert len(tools) == (read_count if read_only else read_count + 12)
+    expected_write = {"gitcode_" + name for name in writes}
+    read_count, write_count = (19, 12) if legacy else (20, 17)
+    assert len(expected_read) == read_count and len(expected_write) == write_count
+    assert len(tools) == (read_count if read_only else read_count + write_count)
     assert {tool["name"] for tool in tools} == expected_read | (
         set() if read_only else expected_write
     )
@@ -248,7 +256,7 @@ def smoke() -> None:
         anyio.run(stdio_smoke, read_only)
         http_smoke(read_only)
     print(
-        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 32/20/12 passed (offline)"
+        "Installed wheel/sdist: metadata, license, both CLIs, stdio/HTTP 37/20/17 passed (offline)"
     )
 
 

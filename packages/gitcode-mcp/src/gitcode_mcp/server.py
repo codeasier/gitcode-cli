@@ -83,17 +83,21 @@ def create_server(
         identity = None
         try:
             if oauth_provider is None:
-                payload = await anyio.to_thread.run_sync(
-                    catalog.call, params.name, params.arguments or {}, limiter=limiter
-                )
+                if params.name == "gitcode_list_labels":
+                    async with limiter:
+                        payload = await catalog.call_label_catalog(params.arguments)
+                else:
+                    payload = await anyio.to_thread.run_sync(
+                        catalog.call, params.name, params.arguments or {}, limiter=limiter
+                    )
             else:
                 from mcp.server.auth.middleware.auth_context import get_access_token
 
                 identity = get_access_token()
                 upstream_token = await oauth_provider.upstream_access_token(identity)
 
-                def authenticated_call() -> dict[str, Any]:
-                    request_api = (
+                def make_request_api() -> GitCodeAPI:
+                    return (
                         api_factory(upstream_token)
                         if api_factory
                         else GitCodeAPI(
@@ -102,15 +106,28 @@ def create_server(
                             max_response_bytes=settings.max_response_bytes,
                         )
                     )
-                    with request_api:
-                        request_catalog = GitCodeTools(
-                            request_api,
-                            allowed_repositories=settings.allowed_repositories,
-                            read_only=settings.read_only or "gitcode:write" not in identity.scopes,
-                        )
-                        return request_catalog.call(params.name, params.arguments or {})
 
-                payload = await anyio.to_thread.run_sync(authenticated_call, limiter=limiter)
+                def request_catalog(request_api: GitCodeAPI) -> GitCodeTools:
+                    return GitCodeTools(
+                        request_api,
+                        allowed_repositories=settings.allowed_repositories,
+                        read_only=settings.read_only or "gitcode:write" not in identity.scopes,
+                    )
+
+                def authenticated_call() -> dict[str, Any]:
+                    with make_request_api() as request_api:
+                        return request_catalog(request_api).call(
+                            params.name, params.arguments or {}
+                        )
+
+                if params.name == "gitcode_list_labels":
+                    async with limiter:
+                        with make_request_api() as request_api:
+                            payload = await request_catalog(request_api).call_label_catalog(
+                                params.arguments
+                            )
+                else:
+                    payload = await anyio.to_thread.run_sync(authenticated_call, limiter=limiter)
             return result(payload)
         except GitCodeError as exc:
             response = result({"error": exc.to_dict()}, error=True)

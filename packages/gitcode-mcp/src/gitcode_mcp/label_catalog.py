@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Generator
+from contextlib import closing
 from typing import Any
 
+import anyio
 import httpx
 
 from .api import API_BASE_URL, GitCodeAPI, GitCodeError
@@ -69,9 +72,13 @@ def _consistent(previous: int | None, claim: str | None, bound: int) -> int | No
     return value
 
 
-def label_page(api: GitCodeAPI, path: str, *, page: int, per_page: int) -> dict[str, Any]:
-    if api.token and api.token in path:
-        raise GitCodeError("invalid_arguments", "Label target must not contain credentials.")
+def _scan(
+    path: str,
+    *,
+    page: int,
+    per_page: int,
+    byte_limit: int,
+) -> Generator[tuple[int, int], tuple[Any, httpx.Headers, int], dict[str, Any]]:
     ids: set[int] = set()
     names: set[str] = set()
     data = []
@@ -80,12 +87,7 @@ def label_page(api: GitCodeAPI, path: str, *, page: int, per_page: int) -> dict[
     expect_more = ended = False
     used_bytes = 0
     for number in range(1, MAX_DATA_PAGES + 2):
-        rows, h, size = api.request(
-            "GET",
-            path,
-            params={"page": number, "per_page": PAGE_SIZE},
-            _page_budget=api.max_response_bytes - used_bytes,
-        )
+        rows, h, size = yield number, byte_limit - used_bytes
         used_bytes += size
         if (
             not isinstance(rows, list)
@@ -161,3 +163,62 @@ def label_page(api: GitCodeAPI, path: str, *, page: int, per_page: int) -> dict[
             raise _invalid()
         expect_more = has_next
     raise _invalid()
+
+
+def _check_target(api: GitCodeAPI, path: str) -> None:
+    if api.token and api.token in path:
+        raise GitCodeError("invalid_arguments", "Label target must not contain credentials.")
+
+
+def label_page(api: GitCodeAPI, path: str, *, page: int, per_page: int) -> dict[str, Any]:
+    """Compatibility helper for direct synchronous callers (not MCP dispatch)."""
+    _check_target(api, path)
+    with _closing_scan(api, path, page=page, per_page=per_page) as scan:
+        number, remaining = next(scan)
+        while True:
+            rows = api.request(
+                "GET",
+                path,
+                params={"page": number, "per_page": PAGE_SIZE},
+                _page_budget=remaining,
+            )
+            try:
+                number, remaining = scan.send(rows)
+            except StopIteration as done:
+                return done.value
+
+
+async def label_page_async(
+    api: GitCodeAPI, path: str, *, page: int, per_page: int
+) -> dict[str, Any]:
+    """One absolute budget for the label scan, with no abandoned network worker."""
+    _check_target(api, path)
+    try:
+        with anyio.fail_after(api.label_timeout) as clock:
+            async with api.label_scan_client() as client:
+                with _closing_scan(api, path, page=page, per_page=per_page) as scan:
+                    number, remaining = next(scan)
+                    while True:
+                        rows = await api.read_label_page(
+                            client,
+                            path,
+                            page=number,
+                            per_page=PAGE_SIZE,
+                            remaining=remaining,
+                        )
+                        try:
+                            number, remaining = scan.send(rows)
+                        except StopIteration as done:
+                            answer = done.value
+                            break
+                        if anyio.current_time() >= clock.deadline:
+                            raise TimeoutError
+            if anyio.current_time() >= clock.deadline:
+                raise TimeoutError
+            return answer
+    except TimeoutError:
+        raise GitCodeError("timeout", "GitCode did not respond in time.") from None
+
+
+def _closing_scan(api: GitCodeAPI, path: str, *, page: int, per_page: int):
+    return closing(_scan(path, page=page, per_page=per_page, byte_limit=api.max_response_bytes))

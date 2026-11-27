@@ -375,21 +375,58 @@ class OAuthStore:
                 "OAuth storage rollback failed; reopen the store before use."
             ) from None
 
+    @staticmethod
+    def _remaining(deadline: float) -> float:
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError("OAuth storage deadline expired.")
+        return seconds
+
     @contextmanager
-    def transaction(self) -> Iterator[OAuthTransaction]:
-        """Hold the lock and a write transaction; never await within this block."""
-        with self._lock:
+    def _transaction_lock(self, deadline: float | None) -> Iterator[None]:
+        if deadline is None:
+            with self._lock:
+                yield
+            return
+        if not self._lock.acquire(timeout=min(self._remaining(deadline), threading.TIMEOUT_MAX)):
+            raise TimeoutError("OAuth storage deadline expired.")
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    @contextmanager
+    def transaction(self, *, deadline: float | None = None) -> Iterator[OAuthTransaction]:
+        """Hold a write transaction; a monotonic deadline bounds admission and commit.
+
+        If supplied, reserve only the remaining budget for SQLite lock waits. A
+        synchronous commit already in progress is not cancellable by an HTTP timeout.
+        """
+        deadline = _expiry(deadline) if deadline is not None else None
+        with self._transaction_lock(deadline):
             connection = self._connection()
             if self._in_transaction:
                 raise OAuthStoreError("Nested OAuth storage transactions are not supported.")
             transaction: OAuthTransaction | None = None
+            original_busy: int | None = None
             try:
                 self._check_files()
+                if deadline is not None:
+                    original_busy = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+                    timeout_ms = int(min(original_busy / 1000, self._remaining(deadline)) * 1000)
+                    connection.execute(f"PRAGMA busy_timeout = {timeout_ms}")
                 connection.execute("BEGIN IMMEDIATE")
                 self._in_transaction = True
                 transaction = OAuthTransaction(self)
                 self._cleanup_expired(connection)
+                if deadline is not None:
+                    self._remaining(deadline)
                 yield transaction
+                if deadline is not None and original_busy is not None:
+                    timeout_ms = int(min(original_busy / 1000, self._remaining(deadline)) * 1000)
+                    connection.execute(f"PRAGMA busy_timeout = {timeout_ms}")
+                    # No expired request can start a commit, even after SQL mutation.
+                    self._remaining(deadline)
                 connection.commit()
             except (OSError, sqlite3.Error):
                 self._rollback()
@@ -401,6 +438,11 @@ class OAuthStore:
                 if transaction is not None:
                     transaction._active = False
                 self._in_transaction = False
+                if original_busy is not None and self._db is connection:
+                    try:
+                        connection.execute(f"PRAGMA busy_timeout = {original_busy}")
+                    except sqlite3.Error:
+                        raise OAuthStoreError("OAuth storage transaction failed.") from None
 
     def get(self, kind: str, key: str) -> dict[str, Any] | None:
         with self.transaction() as transaction:

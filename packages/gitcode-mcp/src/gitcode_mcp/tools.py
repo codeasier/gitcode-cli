@@ -21,7 +21,7 @@ from .file_writes import (
     validate_write_branch,
     write_file,
 )
-from .label_catalog import label_page
+from .label_catalog import label_page, label_page_async
 from .label_writes import LABEL_WRITE_METHODS, LabelColor, LabelName, write_label
 from .review_comments import write_inline_comment, write_review_reply
 
@@ -684,7 +684,11 @@ class GitCodeTools:
                 "repository_not_allowed", "This repository is outside the configured allowlist."
             )
 
-    def call(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+    def _parse_call(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None,
+    ) -> tuple[ToolSpec, str, str, dict[str, Any]]:
         spec = self._specs.get(name)
         if spec is None:
             raise GitCodeError("unknown_tool", "The requested GitCode tool does not exist.")
@@ -704,6 +708,15 @@ class GitCodeTools:
         if spec.name == "create_pull_request" and data.get("fork_path"):
             source_owner, source_repo = data["fork_path"].split("/")
             self._authorize_repository(source_owner, source_repo)
+        return spec, owner, repo, data
+
+    async def call_label_catalog(self, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        _, owner, repo, data = self._parse_call("gitcode_list_labels", arguments)
+        path = f"/repos/{segment(owner)}/{segment(repo)}/labels"
+        return {"repository": f"{owner}/{repo}", **(await label_page_async(self.api, path, **data))}
+
+    def call(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        spec, owner, repo, data = self._parse_call(name, arguments)
         result = self._execute(spec.name, owner, repo, data)
         if not isinstance(result, dict) or "data" not in result:
             result = {"data": result}

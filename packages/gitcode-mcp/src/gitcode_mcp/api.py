@@ -8,6 +8,7 @@ from contextlib import closing
 from typing import Any, Literal
 from urllib.parse import quote, unquote
 
+import anyio
 import httpx
 from gitcode_cli.client import GitCodeClient
 from gitcode_cli.services.files import FileService
@@ -114,6 +115,8 @@ class GitCodeAPI(GitCodeClient):
         self.token = token
         self.base_url = API_BASE_URL
         self.max_response_bytes = max_response_bytes
+        self.label_timeout = min(30.0, timeout)
+        self._transport = transport
         self._client = httpx.Client(
             timeout=timeout,
             follow_redirects=False,
@@ -208,6 +211,109 @@ class GitCodeAPI(GitCodeClient):
             _page_budget=_page_budget,
         )
         return result if _page_budget is not None else result[0]
+
+    def label_scan_client(self) -> httpx.AsyncClient:
+        """One independently cancellable client per read-only catalog scan."""
+        if self._transport is not None and not isinstance(
+            self._transport, httpx.AsyncBaseTransport
+        ):
+            raise GitCodeError("invalid_configuration", "Label scan requires an async transport.")
+        return httpx.AsyncClient(
+            timeout=self.label_timeout,
+            trust_env=False,
+            follow_redirects=False,
+            transport=self._transport,
+        )
+
+    async def read_label_page(
+        self,
+        client: httpx.AsyncClient,
+        path: str,
+        *,
+        page: int,
+        per_page: int,
+        remaining: int,
+    ) -> tuple[Any, httpx.Headers, int]:
+        """A fixed Bearer GET; no sync worker or provider-chosen targets."""
+        if not self.token:
+            raise GitCodeError(
+                "configuration_error", "Set GITCODE_TOKEN or GC_TOKEN before calling GitCode tools."
+            )
+        if (
+            not re.fullmatch(r"/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/labels", path)
+            or any(part in {".", ".."} for part in path.split("/"))
+            or self.token in path
+        ):
+            raise GitCodeError("invalid_path", "Only validated GitCode label paths are allowed.")
+        if remaining < 1:
+            raise GitCodeError(
+                "response_too_large", "The label catalog exceeds the configured size limit."
+            )
+        # A standalone request bypasses the client's retained response cookies.
+        outbound = httpx.Request(
+            "GET",
+            API_BASE_URL + path.lstrip("/"),
+            params={"page": page, "per_page": per_page},
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",
+                "Authorization": f"Bearer {self.token}",
+                "User-Agent": "codeasier-gitcode-mcp",
+            },
+        )
+        try:
+            response = await client.send(outbound, stream=True, auth=None, follow_redirects=False)
+            try:
+                status = response.status_code
+                if 300 <= status < 400:
+                    raise GitCodeError(
+                        "upstream_redirect",
+                        "GitCode returned a redirect; credentials were not forwarded.",
+                        status_code=status,
+                    )
+                if status >= 400:
+                    raise self._status_error(response)
+                if (
+                    status != 200
+                    or response.headers.get("Content-Encoding", "identity").strip().lower()
+                    != "identity"
+                ):
+                    raise GitCodeError(
+                        "invalid_response", "GitCode returned an invalid page response."
+                    )
+                length = _page_length(response.headers, remaining)
+                content = bytearray()
+                if response.is_stream_consumed:
+                    content.extend(response.content)
+                else:
+                    async for chunk in response.aiter_raw():
+                        if len(chunk) > remaining - len(content):
+                            raise GitCodeError(
+                                "response_too_large",
+                                "The label catalog exceeds the configured size limit.",
+                            )
+                        content.extend(chunk)
+                        await anyio.lowlevel.checkpoint()
+                if len(content) > remaining:
+                    raise GitCodeError(
+                        "response_too_large", "The label catalog exceeds the configured size limit."
+                    )
+                if not content or (length is not None and length != len(content)):
+                    raise GitCodeError(
+                        "invalid_response", "GitCode returned an incomplete JSON page."
+                    )
+                parsed = json_module.loads(content, object_pairs_hook=unique_object)
+                return self._redact(parsed), response.headers, len(content)
+            finally:
+                await response.aclose()
+        except httpx.TimeoutException:
+            raise GitCodeError("timeout", "GitCode did not respond in time.") from None
+        except httpx.HTTPError:
+            raise GitCodeError("network_error", "The GitCode request failed.") from None
+        except (ValueError, RecursionError):
+            raise GitCodeError(
+                "invalid_response", "GitCode returned an invalid JSON page."
+            ) from None
 
     def task_label_request(
         self,

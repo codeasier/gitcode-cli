@@ -185,9 +185,10 @@ def _validate_backward_links(links: dict[str, str], headers: httpx.Headers, url:
 
 
 class IssuePagination:
-    """Validate issue collection headers and links for consecutive 50-row page requests."""
+    """Validate pagination evidence for consecutive, fixed-size numbered page requests."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, page_size: int = PAGE_SIZE) -> None:
+        self.page_size = page_size
         self.seen_count = 0
         self.total: int | None = None
         self.total_pages: int | None = None
@@ -195,12 +196,12 @@ class IssuePagination:
         self.expects_data = False
 
     def validate(self, items: Any, headers: httpx.Headers, url: httpx.URL) -> None:
-        if not isinstance(items, list) or len(items) > PAGE_SIZE:
+        if not isinstance(items, list) or len(items) > self.page_size:
             raise APIError("Invalid issue status page.")
         page = int(url.params["page"])
         if _header(headers, "x-page") not in (None, str(page)) or _header(headers, "x-per-page") not in (
             None,
-            str(PAGE_SIZE),
+            str(self.page_size),
         ):
             raise APIError("GitCode did not confirm the requested issue status page.")
         advertised_next = _header(headers, "x-next-page")
@@ -251,7 +252,7 @@ class IssuePagination:
                 raise APIError("Issue status continuation disagrees with the reported total.")
         if self.total_pages is not None:
             if self.total is not None and not (
-                self.total_pages <= self.total <= self.total_pages * PAGE_SIZE
+                self.total_pages <= self.total <= self.total_pages * self.page_size
                 or self.total == 0
                 and self.total_pages == 1
             ):

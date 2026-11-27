@@ -212,7 +212,6 @@ def test_list_calls_are_bounded_to_one_page(name, extra, suffix):
 @pytest.mark.parametrize(
     ("name", "extra", "suffix"),
     [
-        ("list_labels", {}, "labels"),
         ("list_milestones", {}, "milestones"),
         ("list_pull_request_files", {"pull_number": 23}, "pulls/23/files"),
     ],

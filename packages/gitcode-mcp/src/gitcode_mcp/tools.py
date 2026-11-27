@@ -21,6 +21,7 @@ from .file_writes import (
     validate_write_branch,
     write_file,
 )
+from .label_catalog import label_page, label_page_async
 from .label_writes import LABEL_WRITE_METHODS, LabelColor, LabelName, write_label
 from .review_comments import write_inline_comment, write_review_reply
 
@@ -526,7 +527,7 @@ SPECS = (
     ),
     ToolSpec(
         "list_labels",
-        "Read a client-side page of labels after one size-bounded unpaged upstream fetch. Each page re-fetches the collection.",
+        "Read a client-side page of repository labels from a bounded scan of native pages. Each call verifies the total before returning.",
         PageArgs,
     ),
     ToolSpec(
@@ -683,7 +684,11 @@ class GitCodeTools:
                 "repository_not_allowed", "This repository is outside the configured allowlist."
             )
 
-    def call(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+    def _parse_call(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None,
+    ) -> tuple[ToolSpec, str, str, dict[str, Any]]:
         spec = self._specs.get(name)
         if spec is None:
             raise GitCodeError("unknown_tool", "The requested GitCode tool does not exist.")
@@ -703,6 +708,15 @@ class GitCodeTools:
         if spec.name == "create_pull_request" and data.get("fork_path"):
             source_owner, source_repo = data["fork_path"].split("/")
             self._authorize_repository(source_owner, source_repo)
+        return spec, owner, repo, data
+
+    async def call_label_catalog(self, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        _, owner, repo, data = self._parse_call("gitcode_list_labels", arguments)
+        path = f"/repos/{segment(owner)}/{segment(repo)}/labels"
+        return {"repository": f"{owner}/{repo}", **(await label_page_async(self.api, path, **data))}
+
+    def call(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        spec, owner, repo, data = self._parse_call(name, arguments)
         result = self._execute(spec.name, owner, repo, data)
         if not isinstance(result, dict) or "data" not in result:
             result = {"data": result}
@@ -793,8 +807,7 @@ class GitCodeTools:
         if action in LABEL_WRITE_METHODS:
             return write_label(self.api, prefix, action, data)
         if action == "list_labels":
-            items = self.api.issues.list_labels(owner, repo)
-            return self.api.collection_page_result(items, **data)
+            return label_page(self.api, f"{prefix}/labels", **data)
         if action == "list_milestones":
             items = self.api.issues.list_milestones(owner, repo)
             return self.api.collection_page_result(items, **data)

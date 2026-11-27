@@ -21,6 +21,7 @@ from .file_writes import (
     validate_write_branch,
     write_file,
 )
+from .label_catalog import label_page
 
 PositiveNumber = Annotated[int, Field(ge=1)]
 Name = Annotated[str, Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")]
@@ -467,7 +468,7 @@ SPECS = (
     ),
     ToolSpec(
         "list_labels",
-        "Read a client-side page of labels after one size-bounded unpaged upstream fetch. Each page re-fetches the collection.",
+        "Read a client-side page of repository labels from a bounded scan of native pages. Each call verifies the total before returning.",
         PageArgs,
     ),
     ToolSpec(
@@ -697,8 +698,7 @@ class GitCodeTools:
         if action == "add_issue_comment":
             return self.api.issues.comment(owner, repo, str(data["issue_number"]), data["body"])
         if action == "list_labels":
-            items = self.api.issues.list_labels(owner, repo)
-            return self.api.collection_page_result(items, **data)
+            return label_page(self.api, f"{prefix}/labels", **data)
         if action == "list_milestones":
             items = self.api.issues.list_milestones(owner, repo)
             return self.api.collection_page_result(items, **data)

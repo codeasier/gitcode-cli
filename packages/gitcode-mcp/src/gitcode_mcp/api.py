@@ -61,6 +61,26 @@ def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _page_length(headers: httpx.Headers, limit: int) -> int | None:
+    # Bound metadata before inspecting pagination links or consuming body bytes.
+    fields = headers.raw
+    if len(fields) > 128 or sum(len(k) + len(v) + 4 for k, v in fields) > 32_768:
+        raise GitCodeError("response_too_large", "GitCode page headers exceed the size limit.")
+    types = headers.get_list("content-type")
+    if len(types) != 1 or types[0].split(";", 1)[0].strip().lower() != "application/json":
+        raise GitCodeError("invalid_response", "GitCode did not return a JSON page.")
+    length = headers.get("content-length")
+    if length is None:
+        return None
+    if not (1 <= len(length) <= 19 and length.isascii() and length.isdigit()):
+        raise GitCodeError("invalid_response", "GitCode returned an invalid page length.")
+    if int(length) > limit:
+        raise GitCodeError(
+            "response_too_large", "The label catalog exceeds the configured size limit."
+        )
+    return int(length)
+
+
 def segment(value: str) -> str:
     """Encode a validated resource name as exactly one URL path segment."""
     return quote(value, safe="")
@@ -173,8 +193,19 @@ class GitCodeAPI(GitCodeClient):
         accept: str = "application/json",
         response_format: Literal["json", "text"] = "json",
         _strict_identity_json: bool = False,
+        _page_budget: int | None = None,
     ) -> Any:
         """Issue a bounded request using pygitcode's public request signature."""
+        # Native label scans need strict pages, their pagination headers and a
+        # cumulative byte budget. Never change default service request behavior.
+        limit = self.max_response_bytes
+        if _page_budget is not None:
+            _strict_identity_json = True
+            limit = min(limit, _page_budget)
+            if limit < 1:
+                raise GitCodeError(
+                    "response_too_large", "The label catalog exceeds the configured size limit."
+                )
         if _strict_identity_json and (
             method != "GET" or json is not None or response_format != "json"
         ):
@@ -236,10 +267,16 @@ class GitCodeAPI(GitCodeClient):
                     != "identity"
                 ):
                     raise GitCodeError(
-                        "invalid_response", "GitCode returned an invalid fork sync response."
+                        "invalid_response",
+                        "GitCode returned an invalid page response."
+                        if _page_budget is not None
+                        else "GitCode returned an invalid fork sync response.",
                     )
+                expected_length = (
+                    _page_length(response.headers, limit) if _page_budget is not None else None
+                )
                 content = bytearray()
-                chunk_size = min(65_536, self.max_response_bytes + 1)
+                chunk_size = min(65_536, limit + 1)
                 if _strict_identity_json:
                     # Buffered mock responses have already consumed their stream.
                     stream = (
@@ -251,7 +288,12 @@ class GitCodeAPI(GitCodeClient):
                     stream = response.iter_bytes(chunk_size=chunk_size)
                 for chunk in stream:
                     content.extend(chunk)
-                    if len(content) > self.max_response_bytes:
+                    if len(content) > limit:
+                        if _page_budget is not None:
+                            raise GitCodeError(
+                                "response_too_large",
+                                "The label catalog exceeds the configured size limit.",
+                            )
                         raise GitCodeError(
                             "response_too_large",
                             (
@@ -273,13 +315,20 @@ class GitCodeAPI(GitCodeClient):
                 "The GitCode request failed.",
                 operation_may_have_completed=True if mutation else None,
             ) from None
+        if _page_budget is not None and (
+            not content or (expected_length is not None and expected_length != len(content))
+        ):
+            raise GitCodeError("invalid_response", "GitCode returned an incomplete JSON page.")
         if not content:
             return None
         try:
             if response_format == "text":
                 return self._redact(content.decode("utf-8"))
             if _strict_identity_json:
-                return self._redact(json_module.loads(content, object_pairs_hook=unique_object))
+                payload = self._redact(json_module.loads(content, object_pairs_hook=unique_object))
+                if _page_budget is not None:
+                    return payload, response.headers, len(content)
+                return payload
             return self._redact(json_module.loads(content))
         except (ValueError, UnicodeError):
             raise GitCodeError(

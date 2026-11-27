@@ -213,12 +213,10 @@ def write_review_reply(
             "Find the discussion on this PR's current comment page before replying.",
         )
     reply = api.pulls.reply(owner, repo, pull_number, discussion_id, body)
-    if not (
-        isinstance(reply, dict)
-        and reply.get("id") == discussion_id
-        and type(reply.get("noteId")) is int
-        and reply["noteId"] > 0
-        and reply.get("body") == body
-    ):
+    if not isinstance(reply, dict) or reply.get("id") != discussion_id or reply.get("body") != body:
         raise _unknown_receipt()
-    return {"discussion_id": discussion_id, "note_id": reply["noteId"]}
+    # GitCode documents noteId but also returns note_id. Never pick one over a bad alias.
+    ids = [reply[key] for key in ("noteId", "note_id") if key in reply]
+    if not ids or any(type(value) is not int or value <= 0 or value != ids[0] for value in ids):
+        raise _unknown_receipt()
+    return {"discussion_id": discussion_id, "note_id": ids[0]}

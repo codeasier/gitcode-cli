@@ -148,8 +148,11 @@ def test_inline_ambiguity_malformed_or_truncated_diff_never_posts(transform, cod
     assert [r.method for r in requests] == ["GET", "GET"]
 
 
-def test_reply_reads_exact_prs_selected_page_before_one_post():
-    result, requests = run(REPLY, REPLY_ARGS, [ROWS, REPLY_NOTE])
+@pytest.mark.parametrize(
+    "note_ids", [{"noteId": 456}, {"note_id": 456}, {"noteId": 456, "note_id": 456}]
+)
+def test_reply_reads_exact_prs_selected_page_before_one_post(note_ids):
+    result, requests = run(REPLY, REPLY_ARGS, [ROWS, {**NOTE, **note_ids}])
     assert [r.method for r in requests] == ["GET", "POST"]
     assert [r.url.path for r in requests] == [
         SCOPE + "/comments",
@@ -159,6 +162,31 @@ def test_reply_reads_exact_prs_selected_page_before_one_post():
     assert not requests[1].url.params
     assert json.loads(requests[1].content) == {"body": BASE["body"]}
     assert result["data"] == {"discussion_id": DID, "note_id": 456}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"noteId": 1, "note_id": 2},
+        {"noteId": 1, "note_id": True},
+        {"noteId": True, "note_id": 1},
+        {"noteId": 1, "note_id": 1.0},
+        {"noteId": None, "note_id": 1},
+        {"noteId": 1, "note_id": None},
+        {"note_id": "1"},
+        {"note_id": 0},
+        {"note_id": -1},
+        {"note_id": True},
+        {"note_id": 1, "body": "different"},
+        {"note_id": 1, "id": "different"},
+    ],
+)
+def test_invalid_reply_receipt_is_uncertain_after_one_write(fields):
+    error, requests = run(REPLY, REPLY_ARGS, [ROWS, {**NOTE, **fields}])
+    assert isinstance(error, GitCodeError)
+    assert error.code == "invalid_response" and error.operation_may_have_completed
+    assert [r.method for r in requests] == ["GET", "POST"]
 
 
 @pytest.mark.parametrize(
@@ -273,7 +301,7 @@ async def test_review_writes_via_mcp_protocol(anyio_backend):
     from gitcode_mcp.server import create_server
 
     seen = []
-    answers = iter([PR, DIFF, NOTE, ROWS, REPLY_NOTE])
+    answers = iter([PR, DIFF, NOTE, ROWS, {**NOTE, "note_id": 456}])
 
     def handle(request):
         seen.append(request.method)
@@ -291,6 +319,11 @@ async def test_review_writes_via_mcp_protocol(anyio_backend):
                     not response.is_error
                     and response.structured_content["repository"] == "allowed/project"
                 )
+                if tool == REPLY:
+                    assert response.structured_content["data"] == {
+                        "discussion_id": DID,
+                        "note_id": 456,
+                    }
     assert seen == ["GET", "GET", "POST", "GET", "POST"]
 
 

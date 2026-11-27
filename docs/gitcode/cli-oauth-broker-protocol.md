@@ -61,3 +61,24 @@ Offline tests exercise genuine pairing and consent paths with a synthetic
 upstream, local encrypted storage, replay/concurrency, rejection and bounded
 failure. They do **not** establish live provider, browser, deployed broker,
 CLI command, refresh/revocation or credential-store acceptance.
+
+## Native CLI transport (internal, not an available login mode)
+
+The CLI's internal `oauth_broker_client.acquire_receipt` implements this wire
+protocol against a separately trusted canonical HTTPS origin. It has no default
+broker or environment/repository discovery. Its presentation callback receives
+the fixed clean browser URL and the terminal-only pairing value separately.
+Only an exact pending response can cause another request; cancellation, a
+redirect, transport failure, lost one-time receipt or invalid response stops the
+transaction. The five-minute bound includes presentation, and receipt values
+are never printed, logged or saved by this adapter.
+
+`gc auth login --web` is **not** enabled by this slice. The current account
+store is a local PAT configuration file, not a system credential store, and
+does not track expiry. Do not write OAuth access tokens there, overwrite a
+valid PAT, or fall back to its query-string API transport. The command still
+requires an expiry-aware secure store, independent fixed-host Bearer `/user`
+verification of subject and login, and OAuth-safe handling by commands that
+consume it. Only after storage and verification succeed can the CLI report
+login success. Refresh, operator deployment and real GitCode acceptance are
+separate gates; the MCP broker and its grants are unchanged.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryFile
@@ -47,6 +47,7 @@ FIELDS = [
     "url",
 ]
 _ARCHIVE_FIELDS = {"tarballUrl": "tar.gz", "zipballUrl": "zip"}
+_SOURCE_ARCHIVE_SUFFIXES = (*_ARCHIVE_FIELDS.values(), "tar.bz2", "tar")
 VIEW_FIELDS = [*FIELDS, *_ARCHIVE_FIELDS]
 _ARCHIVE_SEGMENT = r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}"
 _ARCHIVE_REPO = re.compile(rf"https://gitcode\.com/{_ARCHIVE_SEGMENT}/({_ARCHIVE_SEGMENT})")
@@ -75,7 +76,9 @@ def _web(base: str, row: dict) -> str | None:
     return value
 
 
-def _project(row: dict, base: str, *, with_assets: bool = True) -> dict:
+def _project(
+    row: dict, base: str, *, with_assets: bool = True, confirmed_source_names: frozenset[str] = frozenset()
+) -> dict:
     status = row.get("release_status")
     author = row.get("author")
     return {
@@ -91,24 +94,23 @@ def _project(row: dict, base: str, *, with_assets: bool = True) -> dict:
         # Never render temporary transfer URLs, callback headers or query credentials.
         "assets": [
             {k: a[k] for k in ("id", "name", "size", "digest") if k in a}
-            for a in binary.asset_map(row).values()
-            if not binary.is_archive(a)
+            for name, a in binary.asset_map(row).items()
+            if name not in confirmed_source_names and not binary.is_archive(a)
         ]
         if with_assets and isinstance(row.get("assets"), list)
         else None,
     }
 
 
-def _source_archive_urls(row: dict, base: str, fields: set[str], token: str) -> dict[str, str | None]:
-    result: dict[str, str | None] = dict.fromkeys(fields)
+def _source_archive_assets(row: dict, base: str, suffixes: Iterable[str], token: str) -> dict[str, dict]:
+    result: dict[str, dict] = {}
     identity = _ARCHIVE_REPO.fullmatch(base)
     tag, assets = row["tag_name"], row.get("assets")
     if identity is None or not re.fullmatch(_ARCHIVE_SEGMENT, tag) or not is_single_ref(tag):
         return result
     if not isinstance(assets, list):
         return result
-    for field in fields:
-        suffix = _ARCHIVE_FIELDS[field]
+    for suffix in suffixes:
         name = f"{identity[1]}-{tag}.{suffix}"
         key = binary.filename_key(name)
         matches = [
@@ -126,12 +128,12 @@ def _source_archive_urls(row: dict, base: str, fields: set[str], token: str) -> 
         url = asset.get("browser_download_url")
         if (
             asset["name"] == name
-            and asset.get("type") in (None, "SOURCE", suffix)
+            and asset.get("type") in (None, "SOURCE", "source", suffix)
             and isinstance(url, str)
             and url == expected
             and (not token or token not in url)
         ):
-            result[field] = url
+            result[suffix] = asset
     return result
 
 
@@ -204,9 +206,17 @@ def release_view(ctx, tag, repo_name, web, fields, jq, template):
         raise click.UsageError("--web cannot be combined with output formatting")
     with _service(ctx, repo_name) as (svc, base):
         raw = svc.get(tag)
-        row = _project(raw, base, with_assets=not archive_fields or "assets" in selected)
         if archive_fields:
-            row.update(_source_archive_urls(raw, base, archive_fields, ctx.obj["app"].token))
+            with_assets = "assets" in selected
+            # The attachment projection still validates every row not proven to be a source archive.
+            # Check all documented formats for mixed output, even when only one URL is requested.
+            suffixes = _SOURCE_ARCHIVE_SUFFIXES if with_assets else tuple(_ARCHIVE_FIELDS[f] for f in archive_fields)
+            archives = _source_archive_assets(raw, base, suffixes, ctx.obj["app"].token)
+            confirmed = frozenset(asset["name"] for asset in archives.values() if asset.get("type") == "source")
+            row = _project(raw, base, with_assets=with_assets, confirmed_source_names=confirmed)
+            row.update({f: archives.get(_ARCHIVE_FIELDS[f], {}).get("browser_download_url") for f in archive_fields})
+        else:
+            row = _project(raw, base)
     if web:
         if not row["url"]:
             safe_echo("No individual release page returned; opening the repository releases list.", err=True)

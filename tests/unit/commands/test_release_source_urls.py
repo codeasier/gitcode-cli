@@ -57,6 +57,89 @@ def test_view_reads_tag_or_latest_once_and_projects_source_urls(harness, tag_arg
 
 
 @pytest.mark.parametrize(
+    ("tag_args", "get"),
+    [(("v1",), call.get(BASE + "/tags/v1")), ((), call.get(BASE + "/latest", params={"type": "latest"}))],
+)
+def test_view_accepts_exact_lowercase_source_type(harness, tag_args, get):
+    run, client = harness
+    client.get.return_value = {
+        "tag_name": "v1",
+        "assets": [{**ZIP, "type": "source"}, {**TAR, "type": "source"}],
+    }
+    result = run("view", *tag_args, "--json", "tagName,zipballUrl,tarballUrl")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "tagName": "v1",
+        "zipballUrl": ZIP["browser_download_url"],
+        "tarballUrl": TAR["browser_download_url"],
+    }
+    assert client.mock_calls == [get, call.close()]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        ("zipballUrl", "assets"),
+        ("assets", "tarballUrl"),
+        ("tagName", "zipballUrl", "tarballUrl", "assets"),
+    ],
+)
+def test_view_mixed_source_and_assets_keep_attachments_only(harness, fields):
+    run, client = harness
+    other_archives = [
+        {"name": name, "type": "source", "browser_download_url": ARCHIVE + name}
+        for name in ("repo-v1.tar", "repo-v1.tar.bz2")
+    ]
+    client.get.return_value = {
+        "tag_name": "v1",
+        "assets": [
+            {**TAR, "type": "source"},
+            ATTACHMENT,
+            {**ZIP, "type": "source"},
+            *other_archives,
+        ],
+    }
+    result = run("view", "v1", "--json", ",".join(fields))
+    assert result.exit_code == 0, result.output
+    output = json.loads(result.output)
+    assert list(output) == list(fields)
+    expected = {
+        "tagName": "v1",
+        "zipballUrl": ZIP["browser_download_url"],
+        "tarballUrl": TAR["browser_download_url"],
+        "assets": [{"name": "build.zip", "id": 7}],
+    }
+    assert output == {field: expected[field] for field in fields}
+    assert client.mock_calls == [call.get(BASE + "/tags/v1"), call.close()]
+
+
+@pytest.mark.parametrize(
+    "archives",
+    [
+        [{**ZIP, "type": "source", "browser_download_url": ARCHIVE + ZIP_NAME + "?credential=synthetic"}],
+        [{**ZIP, "type": "source"}, {**ZIP, "name": ZIP_NAME.upper()}],
+        [{"name": "repo-v1.7z", "type": "source", "browser_download_url": ARCHIVE + "repo-v1.7z"}],
+    ],
+)
+def test_mixed_view_still_rejects_unconfirmed_type_source_rows(harness, archives):
+    run, client = harness
+    client.get.return_value = {"tag_name": "v1", "assets": [ATTACHMENT, *archives]}
+    result = run("view", "v1", "--json", "zipballUrl,assets")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert client.mock_calls == [call.get(BASE + "/tags/v1"), call.close()]
+
+
+def test_view_assets_only_does_not_change_legacy_type_validation(harness):
+    run, client = harness
+    client.get.return_value = {"tag_name": "v1", "assets": [{**ZIP, "type": "source"}, ATTACHMENT]}
+    result = run("view", "v1", "--json", "assets")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert client.mock_calls == [call.get(BASE + "/tags/v1"), call.close()]
+
+
+@pytest.mark.parametrize(
     "url",
     [
         ARCHIVE + ZIP_NAME + "?",
@@ -79,9 +162,10 @@ def test_view_reads_tag_or_latest_once_and_projects_source_urls(harness, tag_arg
         None,
     ],
 )
-def test_unconfirmed_urls_are_not_projected(harness, url):
+@pytest.mark.parametrize("kind", [None, "source"])
+def test_unconfirmed_urls_are_not_projected(harness, url, kind):
     run, client = harness
-    client.get.return_value = {"tag_name": "v1", "assets": [{**ZIP, "browser_download_url": url}, TAR]}
+    client.get.return_value = {"tag_name": "v1", "assets": [{**ZIP, "browser_download_url": url, "type": kind}, TAR]}
     result = run("view", "v1", "--json", "zipballUrl,tarballUrl")
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == {"zipballUrl": None, "tarballUrl": TAR["browser_download_url"]}
@@ -95,7 +179,9 @@ def test_unconfirmed_urls_are_not_projected(harness, url):
         [],
         [ZIP, ZIP],
         [ZIP, {**ZIP, "name": ZIP_NAME.upper()}],
+        [{**ZIP, "type": "source"}, {**ZIP, "name": ZIP_NAME.upper()}],
         [{**ZIP, "type": "ATTACH_FILE"}, {**TAR, "type": "zip"}],
+        [{**ZIP, "type": "Source"}, {**TAR, "type": "attach"}],
         [{**ZIP, "type": {"format": "zip"}}],
         [{"name": "repo-v1.tar", "browser_download_url": ARCHIVE + "repo-v1.tar"}],
         [{"name": "repo-v1.tar.bz2", "browser_download_url": ARCHIVE + "repo-v1.tar.bz2"}],

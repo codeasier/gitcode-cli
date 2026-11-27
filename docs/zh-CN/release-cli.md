@@ -33,4 +33,4 @@ gc release delete-asset v1.0 project.whl -R org/project
 
 [GitCode 的按标签查询定义](https://docs.gitcode.com/docs/apis/get-api-v-5-repos-owner-repo-releases-tags-tag/)将 `digest`（SHA-256）列为可选字段；[AtomGit 同端点的字段表](https://atomgit-api-doc.atomgit.com/14.release/222.get_repository_release_by_tag_name.html)没有列出摘要，响应示例也未返回 `type`。不能假定每个附件都有类型和摘要。此命令要求正整数 ID 和 GitCode 提供的 SHA-256，并接受 `ATTACH_FILE`；对 GitCode 返回的 `attach`，只在元数据中的地址与所选仓库、标签和文件名对应的 GitCode 下载路径完全匹配时接受。命令只比对地址，不会访问它。如果提供大小，也须一致。元数据缺失、源码归档、重名或不匹配均以非零退出。成功只描述本次比对，不代表标签或附件不可变。
 
-`gc release view --json zipballUrl,tarballUrl` 只投影 GitCode 已返回的源码归档链接；缺失、歧义或不能确认属于同一仓库和标签的 URL 返回 `null`。不下载、不改变附件语义、不猜测链接。
+`gc release view --json zipballUrl,tarballUrl` 只投影 GitCode 已返回的源码归档链接；小写 `source` 类型也可识别，但归档文件名和 URL 必须唯一、精确匹配同一仓库及标签。缺失、歧义或不匹配时返回 `null`。同时请求 `assets` 时，已确认的源码归档不会出现在附件列表中；其他记录仍按原规则校验。不下载、不猜测链接。

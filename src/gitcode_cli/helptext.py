@@ -150,7 +150,9 @@ def _flag_rows(command: click.Command, ctx: click.Context) -> list[tuple[str, st
     for param in command.get_params(ctx):
         if not isinstance(param, click.Option) or param.hidden:
             continue
-        if any(opt in inherited_option_names for opt in param.opts + param.secondary_opts):
+        # A subcommand may repurpose an inherited short alias (auth login -h).
+        # Keep the local flag visible if it adds its own spelling.
+        if all(opt in inherited_option_names for opt in param.opts + param.secondary_opts):
             continue
         record = param.get_help_record(ctx)
         if record is None:

@@ -330,3 +330,105 @@ def test_proxy_still_declines_personal_extension(monkeypatch):
     monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("must not dispatch"))
     with pytest.raises(ProxyError, match="use gc pr status directly"):
         dispatch(["pr", "status", "--scope", SCOPES[0]], {"GC_GH_TARGET": "gitcode"})
+
+
+def _reply(items, **headers):
+    return httpx.Response(200, json=items, headers=headers)
+
+
+def _link(page, rel="next", scope=SCOPES[0]):
+    return f'</api/v5/user/pulls?state=open&scope={scope}&per_page=100&page={page}>; rel="{rel}"'
+
+
+@pytest.mark.parametrize("scope", SCOPES)
+def test_scoped_pagination_hints_probe_exact_next_and_count_before_repo_filter(invoke, scope):
+    # Two short pages are valid, and rows outside -R count toward the queue's total.
+    first = _reply(
+        [row()],
+        **{
+            "X-Page": "1",
+            "X-Per-Page": "100",
+            "X-Next-Page": "2",
+            "X-Total": "2",
+            "X-Total-Pages": "2",
+            "Link": f"{_link(2, scope=scope)}, {_link(2, 'last', scope)}",
+        },
+    )
+    second = _reply([row(owner="fork", repo_id=502)], **{"X-Next-Page": "", "X-Prev-Page": "1"})
+    result = invoke(
+        ["--scope", scope, "-R", "org/project"], [first, second, []], scope=scope, lookup=("org/project", metadata())
+    )
+    assert result.exit_code == 0 and "org/project#7" in result.stdout and "fork/project" not in result.stdout
+
+
+@pytest.mark.parametrize("scope", SCOPES)
+def test_empty_probe_after_advertised_successor_cannot_yield_partial_report(invoke, scope):
+    first = _reply([row()], Link=_link(2, scope=scope))
+    result = invoke(["--scope", scope], [first, []], scope=scope)
+    assert result.exit_code == 1 and result.stdout == "" and "personal PR status" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "links",
+    [
+        _link(3),
+        _link(2, scope=SCOPES[1]),
+        _link(2).replace("/user/pulls?", "/user/issues?"),
+        _link(2).replace("</api", "<https://other.invalid/api"),
+        _link(2).replace("state=open", "state=closed"),
+        _link(2).replace("state=open", "state=open&extra=secret-value"),
+        _link(2).replace("scope=", "scope=need_my_review&scope="),
+        f"{_link(2)}, {_link(2)}",
+    ],
+)
+def test_link_cannot_retarget_or_skip_pages(invoke, links):
+    result = invoke(["--scope", SCOPES[0]], [_reply([row()], Link=links)])
+    assert result.exit_code == 1 and result.stdout == ""
+    assert "other.invalid" not in result.stderr and "secret-value" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Next-Page": "3"},
+        {"X-Next-Page": "", "Link": _link(2)},
+        {"X-Page": "2"},
+        {"X-Per-Page": "50"},
+        {"X-Total": "0"},
+        {"X-Total-Pages": "1", "Link": _link(2, "last")},
+        {"X-Truncated": "true"},
+        {"X-Incomplete-Results": "1"},
+        {"Content-Range": "items 0-0/2"},
+    ],
+)
+def test_contradictory_or_partial_page_one_aborts_without_another_get(invoke, headers):
+    result = invoke(["--scope", SCOPES[0]], [_reply([row()], **headers)])
+    assert result.exit_code == 1 and result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [_reply([row()], **{"X-Next-Page": ""}), [row(8)]],
+        [_reply([row()], **{"X-Total": "2"}), []],
+        [_reply([row()], **{"X-Total-Pages": "2"}), []],
+        [_reply([row()], **{"X-Total": "1"}), _reply([], **{"X-Total": "2"})],
+        [_reply([row()], Link=_link(1, "last")), _reply([], **{"X-Total-Pages": "2"})],
+        [[row()], [row(8)], _reply([], Link=_link(1, "last"))],
+    ],
+)
+def test_earlier_rows_not_exposed_on_late_contradiction(invoke, pages):
+    result = invoke(["--scope", SCOPES[0]], pages)
+    assert result.exit_code == 1 and result.stdout == ""
+
+
+@pytest.mark.parametrize("page_count", ["0", "1"])
+def test_empty_initial_page_allows_zero_or_one_page_convention(invoke, page_count):
+    result = invoke(["--scope", SCOPES[0]], [_reply([], **{"X-Total": "0", "X-Total-Pages": page_count})])
+    assert result.exit_code == 0 and "No open pull requests" in result.stdout
+
+
+def test_full_100_row_page_still_requires_an_empty_probe(invoke):
+    rows = [row(i) for i in range(1, 101)]
+    result = invoke(["--scope", SCOPES[0]], [_reply(rows, **{"X-Total": "100", "X-Total-Pages": "1"}), []])
+    assert result.exit_code == 0 and "org/project#100\t" in result.stdout

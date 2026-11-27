@@ -169,17 +169,44 @@ def _explicit_repo_hosts(argv: Sequence[str]) -> list[str]:
     return hosts
 
 
+def _valid_option_host(value: str) -> bool:
+    hostname, colon, port = value.partition(":")
+    if colon and (not re.fullmatch(r"[0-9]{1,5}", port) or not 1 <= int(port) <= 65535):
+        return False
+    hostname = hostname.removesuffix(".")
+    label_pattern = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    return len(hostname) <= 253 and all(re.fullmatch(label_pattern, label) for label in hostname.split("."))
+
+
 def _option_hosts(argv: Sequence[str]) -> list[str]:
-    """Recognize the native host selector without accepting it in gc."""
+    """Read native host selectors, strictly validating the auth login route."""
     command, tail, _ = _command_parts(argv)
     options = _HOST_SELECTOR_OPTIONS.get(command)
     if options is None:
         return []
-    return [
-        value
-        for option, value in _arguments(tail, _value_options(command))
-        if option in options and value and re.fullmatch(r"[A-Za-z0-9.][A-Za-z0-9.-]*(?::[0-9]+)?", value)
-    ]
+    if command != "auth login":
+        # Keep pre-existing native routing for commands that do not support
+        # this selector on the GitCode backend.
+        return [
+            value
+            for option, value in _arguments(tail, _value_options(command))
+            if option in options and value and re.fullmatch(r"[A-Za-z0-9.][A-Za-z0-9.-]*(?::[0-9]+)?", value)
+        ]
+    hosts: list[str] = []
+    for index, option, raw_value in _indexed_arguments(tail, _value_options(command)):
+        if option not in options:
+            continue
+        value = raw_value
+        # Native gh accepts an attached value with an optional equals sign.
+        # Do not strip an equals sign from a separate token or long option.
+        if option == "-h" and value is not None and value.startswith("=") and tail[index].endswith(value):
+            value = value[1:]
+        if not value or not _valid_option_host(value):
+            raise ProxyError("Invalid or missing explicit hostname; neither backend was selected.")
+        hosts.append(value)
+    if len({host.lower() for host in hosts}) > 1:
+        raise ProxyError("Explicit hostname options conflict; neither backend was selected.")
+    return hosts
 
 
 def _gitcode_in_native_environment(env: Mapping[str, str]) -> bool:
@@ -442,24 +469,30 @@ def _option_parts(arg: str, value_options: set[str]) -> Iterator[tuple[str, str 
         yield name, None
 
 
-def _arguments(args: Sequence[str], value_options: set[str]) -> Iterator[tuple[str, str | None]]:
-    """Yield option names and values, or an empty name for a positional."""
+def _indexed_arguments(args: Sequence[str], value_options: set[str]) -> Iterator[tuple[int, str, str | None]]:
+    """Yield each flag or positional with its original token index."""
     index = 0
     while index < len(args):
+        start = index
         arg = args[index]
         index += 1
         if arg == "--":
-            yield from (("", item) for item in args[index:])
+            yield from ((position, "", args[position]) for position in range(index, len(args)))
             return
         if not arg.startswith("-") or arg == "-":
-            yield "", arg
+            yield start, "", arg
             continue
         for name, inline in _option_parts(arg, value_options):
             if name in value_options and inline is None and index < len(args):
-                yield name, args[index]
+                yield start, name, args[index]
                 index += 1
             else:
-                yield name, inline
+                yield start, name, inline
+
+
+def _arguments(args: Sequence[str], value_options: set[str]) -> Iterator[tuple[str, str | None]]:
+    """Yield option names and values, or an empty name for a positional."""
+    return ((flag, value) for _, flag, value in _indexed_arguments(args, value_options))
 
 
 def _command_parts(argv: Sequence[str]) -> tuple[str, Sequence[str], int]:
@@ -645,6 +678,14 @@ def dispatch(argv: Sequence[str] | None = None, environ: Mapping[str, str] | Non
             return 0
         if args and args[0] == "help":
             args = [*args[1:], "--help"]
+        command, tail, _ = _command_parts(args)
+        if command == "auth login":
+            # Click treats the equals in a short value as literal input.
+            # Translate only a real selector, never an operand or native gh's argv.
+            start = len(args) - len(tail)
+            for index, option, _ in _indexed_arguments(tail, _value_options(command)):
+                if option == "-h" and tail[index].startswith("-h="):
+                    args[start + index] = f"--hostname={tail[index][3:]}"
         child_env = dict(env)
         child_env["GC_GH_PROXY_ACTIVE"] = "1"
         child_env["GC_GH_PROXY_TARGET"] = "gitcode"

@@ -14,6 +14,7 @@ from .client import BASE_URL
 from .errors import APIError, NetworkError
 from .repo import validate_gitcode_repo
 from .rest_api import open_client
+from .services.issue_status import IssuePagination
 from .transport import ResponseTooLargeError, read_response_bytes
 
 SCOPES = ("created_by_me", "assigned_to_me", "need_my_approve", "need_my_review")
@@ -57,12 +58,18 @@ def _read_json(response: httpx.Response, remaining: int, source: str) -> tuple[A
         raise APIError(f"Invalid JSON in {source}.") from None
 
 
-def _page(response: httpx.Response, remaining: int) -> tuple[list, int]:
+def _page(response: httpx.Response, remaining: int, pagination: IssuePagination, page: int) -> tuple[list, int]:
     items, size = _read_json(response, remaining, "personal PR status")
-    if not isinstance(items, list) or len(items) > PAGE_SIZE:
-        raise APIError("Invalid personal PR status page.")
-    if not items and (response.headers.get("x-next-page") or "next" in response.links):
-        raise APIError("Empty personal PR status page advertised a continuation.")
+    try:
+        # Links describe this exact request only; the caller always constructs
+        # its next numbered GET locally. Count all rows, before any -R filter.
+        pagination.validate(items, response.headers, response.url)
+    except APIError:
+        raise APIError("Cannot verify complete pagination for personal PR status.") from None
+    # A total first advertised on the empty probe must still account for
+    # every preceding (nonempty) page. Empty collections may report 0 or 1.
+    if not items and page > 1 and pagination.total_pages not in (None, page - 1):
+        raise APIError("Conflicting page count for personal PR status.")
     return items, size
 
 
@@ -176,6 +183,7 @@ def personal_status(token: str, scope: str, target: str | None) -> tuple[str | N
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json", "Accept-Encoding": "identity"}
     rows: list[PersonalPR] = []
     seen: set[tuple[str, int]] = set()
+    pagination = IssuePagination(page_size=PAGE_SIZE)
     remaining = MAX_BYTES
     identity = None
     ids: dict[str, int] = {}
@@ -190,7 +198,7 @@ def personal_status(token: str, scope: str, target: str | None) -> tuple[str | N
                 params = {"scope": scope, "state": "open", "page": str(page), "per_page": str(PAGE_SIZE)}
                 client.cookies.clear()
                 with client.stream("GET", BASE_URL + "user/pulls", params=params, headers=headers) as response:
-                    items, used = _page(response, remaining)
+                    items, used = _page(response, remaining, pagination, page)
                 remaining -= used
                 if not items:
                     return identity.path if identity is not None else None, rows

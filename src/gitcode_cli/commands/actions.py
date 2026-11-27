@@ -106,7 +106,7 @@ def run_list(ctx, repo_name, page, limit, branch, workflow, event, status, pr, s
 set_gc_help(run_list, gc_json_fields=list(_RUN_LIST_FIELDS))
 
 
-_RUN_VIEW_FIELDS = {"attempt": "attempt", "headSha": "head_sha", "workflowName": "workflow_name"}
+_RUN_VIEW_FIELDS = {"attempt": "attempt", "headSha": "head_sha", "workflowName": "workflow_name", "status": "status"}
 
 
 def _run_view_json(
@@ -131,10 +131,11 @@ def _run_view_json(
     with _service(ctx, repo_name) as svc:
         # One response supplies both the identity checks and the output; do not fetch jobs, logs or a newer attempt.
         detail = svc.pin(run_id, attempt, commit)
-    if "workflowName" in fields:
-        name = detail.get("workflow_name")
-        if not isinstance(name, str) or not name.strip():
-            raise APIError("Missing or invalid workflow name in Actions run detail.")
+    for field, label in (("workflowName", "workflow name"), ("status", "status")):
+        if field in fields:
+            value = detail.get(_RUN_VIEW_FIELDS[field])
+            if not isinstance(value, str) or not value.strip():
+                raise APIError(f"Missing or invalid {label} in Actions run detail.")
     _show(ctx, {f: detail[_RUN_VIEW_FIELDS[f]] for f in fields}, exact_fields=fields)
 
 

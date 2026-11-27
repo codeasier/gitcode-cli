@@ -135,7 +135,7 @@ ENTRIES: list[CompatEntry] = [
         "run view",
         "--json",
         CompatStatus.IMPLEMENTED,
-        "Current GitCode run detail only: attempt, headSha, workflowName; no job fields or historical attempts.",
+        "Current run: attempt, headSha, workflowName, native status; no conclusion, job fields, or history.",
         proxy_allowed=False,
     ),
     _e(
@@ -232,7 +232,7 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e("auth login", "-c/--clipboard", CompatStatus.NOT_IN_CLI),
     _e("auth login", "-p/--git-protocol", CompatStatus.NOT_IN_CLI),
-    _e("auth login", "-h/--hostname", CompatStatus.NOT_IN_CLI),
+    _e("auth login", "-h/--hostname", CompatStatus.IMPLEMENTED, "Single fixed host: gitcode.com (PAT only)"),
     _e("auth login", "--insecure-storage", CompatStatus.NOT_IN_CLI),
     _e("auth login", "-s/--scopes", CompatStatus.NOT_IN_CLI),
     _e("auth login", "--skip-ssh-key", CompatStatus.NOT_IN_CLI),

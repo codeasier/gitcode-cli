@@ -128,3 +128,37 @@ See the [release guide](../../docs/gitcode/releases.md) for `mcp-vX.Y.Z` tags,
 artifact gates, and the separately authorized PyPI setup. Manual release-workflow
 runs validate only; they cannot publish. Merging this workflow does not publish a
 package, change downstream pins, or deploy a server.
+
+## Optional local CLI OAuth broker (separate from MCP)
+
+A POSIX-only candidate for local integration testing is available with
+`python -m gitcode_mcp.cli_oauth_service`. It does not start as part of
+`gitcode-mcp`, change the installed command set or enable OAuth in the native
+CLI. It serves only the six paths under `/cli/v1/` in the
+[CLI protocol](../../docs/gitcode/cli-oauth-broker-protocol.md), on direct TLS
+at **127.0.0.1**. Do not expose it via a tunnel, public listener or reverse proxy.
+There is no ambient fallback or production deployment recipe.
+
+For an isolated candidate, supply **all and only** these `GC_CLI_BROKER_`
+settings. Do not use an MCP OAuth registration, key, state directory or PAT.
+Secret values belong in files, never command arguments, logs or shell history.
+
+| Setting (after prefix) | Requirement |
+|---|---|
+| `ENABLED` | Exactly `1`; without it startup fails before opening a listener. |
+| `ORIGIN` | Exactly `https://127.0.0.1:PORT`, port 1024–65535; register that origin plus `/cli/v1/callback` for the dedicated official GitCode OAuth App. |
+| `APP_ID`, `APP_SECRET_FILE` | ID and separate private file containing that App's secret. |
+| `STATE_DIR`, `ENCRYPTION_KEY_FILE` | An initially empty, owner-only directory (0700) and a separate private file containing a persistent Fernet key. Only one broker process may own that directory; retain its marker and key across restarts. |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` | TLS certificate valid for IP 127.0.0.1 and its unencrypted private key. Test/browser clients must independently trust the certificate without disabling verification. |
+
+All paths must be absolute and have no symlink components. Keep files outside
+the state directory, owner-controlled and not hard-linked; key/secret files
+must have no group or other access (0600). The process ignores forwarded
+headers, disables access logs, and never uses proxy, CA or TLS-key-log
+environment settings for GitCode requests. The service is local-only, not a
+hardened public ingress. Do not enable HTTP tracing or record request bodies.
+
+Offline acceptance uses an isolated local TLS listener and synthetic GitCode
+exchange/profile responses. Success there does **not** establish that GitCode
+will accept a particular App registration, callback or scope, that a browser
+completed a real OAuth grant, or that terminal account activation works.

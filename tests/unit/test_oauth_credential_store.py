@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -211,54 +212,6 @@ def test_system_ignores_ambient_selection_and_fails_closed_when_unsupported(monk
     native_import.assert_called_once_with()
 
 
-def test_native_windows_shape_utf16_limit_and_no_roaming(monkeypatch):
-    # Model pywin32's documented CredWrite Unicode -> CredRead UTF-16LE bytes.
-    verified(monkeypatch)
-    native = Mock(CRED_TYPE_GENERIC=1, CRED_PERSIST_LOCAL_MACHINE=2)
-    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
-    monkeypatch.setattr(module, "_native_windows", lambda: native)
-    monkeypatch.setattr(module, "time", SimpleNamespace(time=lambda: NOW))
-    store = module.OAuthCredentialStore.system()
-
-    def put(record, flags):
-        native.CredRead.return_value = {**record, "CredentialBlob": record["CredentialBlob"].encode("utf-16-le")}
-
-    native.CredWrite.side_effect = put
-    who = save(store)
-    (record, flags), _ = native.CredWrite.call_args
-    assert flags == 0 and set(record) == {"CredentialBlob", "TargetName", "Type", "Persist"}
-    assert record["Type"] == 1 and record["Persist"] == 2
-    target, blob = record["TargetName"], record["CredentialBlob"].encode("utf-16-le")
-    native.CredRead.return_value = {**record, "CredentialBlob": blob}
-    assert store.read(who).access_token == TOKEN
-    store.forget(who)
-    native.CredRead.assert_called_with(target, 1, 0)
-    native.CredDelete.assert_called_once_with(target, 1, 0)
-    with pytest.raises(AuthError):
-        save(store, token="x" * 1281)
-    assert native.CredWrite.call_count == 1  # no truncation or multi-slot write
-    for mutation in [
-        {"TargetName": "other"},
-        {"Type": 2},
-        {"Persist": 3},
-        {"CredentialBlob": "text"},
-        {"CredentialBlob": b"\xef"},
-        {"CredentialBlob": b"x" * 2561},
-    ]:
-        native.CredRead.return_value = {**record, "CredentialBlob": blob, **mutation}
-        with pytest.raises(AuthError):
-            store.read(who)
-
-
-def test_loader_ignores_uninstalled_python_module(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "get_path", lambda _: str(tmp_path / "installed"))
-    (tmp_path / "installed" / "win32").mkdir(parents=True)
-    monkeypatch.syspath_prepend(str(tmp_path))
-    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
-    with pytest.raises(AuthError):
-        module.OAuthCredentialStore.system()
-
-
 def test_uncertain_or_substituted_write_is_not_login_success(storage, monkeypatch):
     store, backend = storage
     verified(monkeypatch)
@@ -281,19 +234,169 @@ def test_wrong_identity_type_fails_before_backend_access(storage):
     assert not backend.rows
 
 
-def test_loader_selects_fixed_installed_extension_only(tmp_path, monkeypatch):
-    installed = tmp_path / "installed"
-    fixed = installed / "win32" / "win32cred.pyd"
-    fixed.parent.mkdir(parents=True)
-    fixed.touch()  # inert placeholder; no native code loads
-    monkeypatch.setattr(module, "get_path", lambda name: str(installed) if name == "platlib" else None)
-    native = SimpleNamespace()
-    built = Mock(return_value=native)
-    executed = Mock()
-    monkeypatch.setattr(module, "module_from_spec", built)
-    monkeypatch.setattr(module.ExtensionFileLoader, "exec_module", executed)
-    assert module._native_windows() is native
-    spec = built.call_args.args[0]
-    assert spec.name == "win32cred" and spec.origin == str(fixed)
-    assert type(spec.loader) is module.ExtensionFileLoader
-    executed.assert_called_once_with(native)
+class WinAPI:
+    """In-process ABI double; use real ctypes buffers but never open a vault."""
+
+    def __init__(self):
+        self.error = 0
+        self.rows = {}
+        self.writes = self.frees = 0
+        self.read_row = None
+        self.read_blob = None
+        self.allocated = []
+        self.CredWriteW = Mock(side_effect=self._write)
+        self.CredReadW = Mock(side_effect=self._read)
+        self.CredFree = Mock(side_effect=self._free)
+        self.CredDeleteW = Mock(side_effect=self._delete)
+
+    def _write(self, ptr, flags):
+        row = ctypes.cast(ptr, ctypes.POINTER(module._WindowsCredential)).contents
+        assert (row.flags, row.type, row.persist, flags, row.attribute_count) == (0, 1, 2, 0, 0)
+        assert row.attributes is None and row.username is None and row.comment is None and row.target_alias is None
+        assert row.size <= 2560 and row.size % 2 == 0 and row.blob
+        self.rows[row.target] = ctypes.string_at(row.blob, row.size)
+        self.writes += 1
+        return 1
+
+    def _read(self, target, kind, flags, out):
+        assert (kind, flags) == (1, 0)
+        if target not in self.rows:
+            self.error = 1168
+            return 0
+        payload = self.rows[target] if self.read_blob is None else self.read_blob
+        buf = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+        row = module._WindowsCredential(target=target, type=1, size=len(payload), blob=ctypes.addressof(buf), persist=2)
+        for name, val in (self.read_row or {}).items():
+            setattr(row, name, val)
+        self.allocated.append((row, buf))
+        ctypes.cast(out, ctypes.POINTER(ctypes.POINTER(module._WindowsCredential)))[0] = ctypes.pointer(row)
+        return 1
+
+    def _free(self, out):
+        row, buf = self.allocated[-1]
+        assert ctypes.addressof(out.contents) == ctypes.addressof(row)
+        if row.blob and 0 < row.size <= 2560:
+            assert not any(buf)  # even a malformed/decode-error bounded blob
+        self.frees += 1
+
+    def _delete(self, target, kind, flags):
+        assert (kind, flags) == (1, 0)
+        if target not in self.rows:
+            self.error = 1168
+            return 0
+        del self.rows[target]
+        return 1
+
+
+@pytest.fixture
+def native_windows(monkeypatch):
+    native = WinAPI()
+    verified(monkeypatch)
+    monkeypatch.setattr(module, "time", SimpleNamespace(time=lambda: NOW))
+    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
+    loader = Mock(return_value=native)
+    monkeypatch.setattr(module.ctypes, "WinDLL", loader, raising=False)
+    monkeypatch.setattr(module.ctypes, "get_last_error", lambda: native.error, raising=False)
+    store = module.OAuthCredentialStore.system()
+    loader.assert_called_once_with("advapi32.dll", use_last_error=True, winmode=0x800)
+    return store, native
+
+
+def test_windows_credential_layout_matches_wincred_abi():
+    bits64 = ctypes.sizeof(ctypes.c_void_p) == 8
+    row = module._WindowsCredential
+    assert ctypes.sizeof(module._FileTime) == 8
+    assert ctypes.sizeof(row) == (80 if bits64 else 52)
+    assert row.last_written.offset == (24 if bits64 else 16)
+    assert row.size.offset == (32 if bits64 else 24)
+    assert row.blob.offset == (40 if bits64 else 28)
+    assert row.username.offset == (72 if bits64 else 48)
+
+
+def test_native_windows_lifecycle_abi_local_scope_and_no_roaming(native_windows):
+    store, native = native_windows
+    assert native.CredWriteW.argtypes == [ctypes.POINTER(module._WindowsCredential), ctypes.c_uint32]
+    assert native.CredReadW.argtypes == [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.POINTER(module._WindowsCredential)),
+    ]
+    assert native.CredDeleteW.argtypes == [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32]
+    assert [getattr(native, f).restype for f in ("CredWriteW", "CredReadW", "CredDeleteW")] == [ctypes.c_int32] * 3
+    assert native.CredFree.argtypes == [ctypes.c_void_p] and native.CredFree.restype is None
+    who = save(store)
+    target, raw = next(iter(native.rows.items()))
+    assert json.loads(raw.decode("utf-16-le"))[-1] == TOKEN
+    assert not raw.endswith(b"\0\0")
+    assert store.read(who).access_token == TOKEN
+    store.forget(who)
+    assert (native.writes, native.frees, native.rows) == (1, 3, {})
+    native.CredDeleteW.assert_called_once_with(target, 1, 0)
+    with pytest.raises(AuthError):
+        store.read(who)
+    with pytest.raises(AuthError):
+        save(store, token="x" * 1281)
+    assert native.writes == 1 and not native.rows and native.frees == 3
+
+
+@pytest.mark.parametrize(
+    "fields,payload",
+    [
+        ({"target": "other"}, None),
+        ({"type": 2}, None),
+        ({"persist": 3}, None),
+        ({"blob": None}, None),
+        ({"size": 0}, None),
+        ({}, b"\xef"),
+        ({}, b"\x00\xd8"),  # invalid standalone high surrogate
+        ({}, b"x" * 2561),
+    ],
+)
+def test_native_read_always_frees_but_never_reads_invalid_blob(native_windows, fields, payload):
+    store, native = native_windows
+    who = save(store)
+    native.read_row, native.read_blob = fields, payload
+    with pytest.raises(AuthError):
+        store.read(who)
+    assert native.frees == 2  # save readback and rejected read each free once
+
+
+def test_null_result_is_rejected_without_free(native_windows):
+    store, native = native_windows
+    who = save(store)
+    native.CredReadW.side_effect = None
+    native.CredReadW.return_value = 1
+    with pytest.raises(AuthError):
+        store.read(who)
+    assert native.frees == 1
+
+
+def test_input_buffer_cleared_even_when_native_write_fails(native_windows, monkeypatch):
+    store, native = native_windows
+    native.CredWriteW.side_effect = None
+    native.CredWriteW.return_value = 0
+    wipe = ctypes.memset
+    seen = []
+
+    def observe(buf, value, size):
+        assert TOKEN.encode("utf-16-le") in ctypes.string_at(buf, size)
+        wipe(buf, value, size)
+        seen.append((value, not any(ctypes.string_at(buf, size))))
+
+    monkeypatch.setattr(module.ctypes, "memset", observe)
+    with pytest.raises(AuthError):
+        save(store)
+    assert seen == [(0, True)] and not native.rows and native.frees == 0
+
+
+@pytest.mark.parametrize("code", [1168, 1312])
+def test_native_absence_is_distinct_from_an_inaccessible_vault(native_windows, code):
+    store, native = native_windows
+    native.CredReadW.side_effect = native.CredDeleteW.side_effect = None
+    native.CredReadW.return_value = native.CredDeleteW.return_value = 0
+    native.error = code
+    for action in (store._backend.get, store._backend.delete):
+        with pytest.raises(AuthError) as raised:
+            action("fixed.synthetic.target")
+        assert (type(raised.value) is module._MissingCredentialError) is (code == 1168)

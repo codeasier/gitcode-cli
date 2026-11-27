@@ -1,13 +1,14 @@
 """Opt-in native OAuth storage. No PAT integration, plaintext fallback or refresh.
 
 The production factory currently supports the Windows per-user Credential Manager
-via optional pywin32 only. A missing backend, missing credential or invalid/expired
-record is an error, never a signal to try a PAT. Call the factory before starting
-an interactive flow. Local deletion is not server-side revocation.
+directly without third-party backends. Missing, invalid or expired credentials
+are errors, never signals to try a PAT. Call the factory before starting an
+interactive flow. Local deletion is not server-side revocation.
 """
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import hmac
 import json
@@ -16,11 +17,6 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from importlib.machinery import ExtensionFileLoader
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
-from sysconfig import get_path
-from types import ModuleType
 from typing import Protocol, TypeVar
 
 from .config import valid_login
@@ -30,7 +26,12 @@ from .oauth_identity import OAuthIdentity, verify_oauth_identity
 _HOST = "gitcode.com"
 _FORMAT = "pygitcode/oauth/v1"
 _MAX_CHARS = 16_384
+# Win32 ABI and an explicit, per-load System32-only DLL search.
 _MAX_WIN_BYTES = 5 * 512
+_CRED_TYPE_GENERIC = 1
+_CRED_PERSIST_LOCAL_MACHINE = 2
+_LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800
+_ERROR_NOT_FOUND = 1168
 _Result = TypeVar("_Result")
 
 
@@ -93,60 +94,116 @@ class _SecretBackend(Protocol):
     def delete(self, target: str) -> None: ...
 
 
-def _native_windows() -> ModuleType:
-    # Load only the release pywin32 extension installed in THIS interpreter.
-    # A similarly named plugin/module on PATH, sys.path or in the current repo
-    # must not be allowed to receive a credential.
-    prefix = Path(get_path("platlib")).resolve(strict=True)
-    binary = prefix / "win32" / "win32cred.pyd"
-    if binary.resolve(strict=True) != binary:
-        raise _invalid()
-    loader = ExtensionFileLoader("win32cred", str(binary))
-    spec = spec_from_file_location("win32cred", binary, loader=loader)
-    if spec is None:
-        raise _invalid()
-    native = module_from_spec(spec)
-    loader.exec_module(native)
-    return native
+class _FileTime(ctypes.Structure):
+    _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
+
+
+class _WindowsCredential(ctypes.Structure):
+    # CREDENTIALW from wincred.h. Use fixed 32-bit DWORDs/BOOL, pointer-sized
+    # addresses and native alignment; use FILETIME only as data, never convert it.
+    _fields_ = [
+        ("flags", ctypes.c_uint32),
+        ("type", ctypes.c_uint32),
+        ("target", ctypes.c_wchar_p),
+        ("comment", ctypes.c_wchar_p),
+        ("last_written", _FileTime),
+        ("size", ctypes.c_uint32),
+        ("blob", ctypes.c_void_p),
+        ("persist", ctypes.c_uint32),
+        ("attribute_count", ctypes.c_uint32),
+        ("attributes", ctypes.c_void_p),
+        ("target_alias", ctypes.c_wchar_p),
+        ("username", ctypes.c_wchar_p),
+    ]
+
+
+class _MissingCredentialError(AuthError):
+    """The native API explicitly reports this exact target is absent."""
+
+
+def _native_windows() -> ctypes.WinDLL:
+    # Trust the Windows loader and the running Python installation. Do not
+    # consult PATH, repo settings, a third-party module or backend discovery.
+    # This does not isolate credentials from arbitrary code in the process or
+    # other processes running under the same local user.
+    dll = ctypes.WinDLL("advapi32.dll", use_last_error=True, winmode=_LOAD_LIBRARY_SEARCH_SYSTEM32)
+    credential = ctypes.POINTER(_WindowsCredential)
+    dll.CredWriteW.argtypes = [credential, ctypes.c_uint32]
+    dll.CredWriteW.restype = ctypes.c_int32
+    dll.CredReadW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(credential)]
+    dll.CredReadW.restype = ctypes.c_int32
+    dll.CredDeleteW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32]
+    dll.CredDeleteW.restype = ctypes.c_int32
+    dll.CredFree.argtypes = [ctypes.c_void_p]
+    dll.CredFree.restype = None
+    return dll
 
 
 class _WindowsBackend:
     """Only current OS user's local-machine generic credentials (never roaming)."""
 
-    def __init__(self, native: ModuleType) -> None:
+    def __init__(self, native: ctypes.WinDLL) -> None:
         self._native = native
 
     def put(self, target: str, secret: str) -> None:
-        # Pywin32 CredWrite accepts Unicode and measures the UTF-16LE byte count;
-        # CredRead returns bytes. Never truncate or split an oversized credential.
-        if len(secret.encode("utf-16-le")) > _MAX_WIN_BYTES:
-            raise _invalid()
-        self._native.CredWrite(
-            {
-                "TargetName": target,
-                "Type": self._native.CRED_TYPE_GENERIC,
-                "Persist": self._native.CRED_PERSIST_LOCAL_MACHINE,
-                "CredentialBlob": secret,
-            },
-            0,
-        )
+        raw = bytearray(secret, "utf-16-le")
+        buf = (ctypes.c_ubyte * len(raw)).from_buffer(raw)
+        try:
+            # Never truncate/split. Pass an explicit byte length, no terminator.
+            if not 0 < len(raw) <= _MAX_WIN_BYTES:
+                raise _invalid()
+            row = _WindowsCredential(
+                type=_CRED_TYPE_GENERIC,
+                target=target,
+                size=len(raw),
+                blob=ctypes.addressof(buf),
+                persist=_CRED_PERSIST_LOCAL_MACHINE,
+            )
+            if not self._native.CredWriteW(ctypes.byref(row), 0):
+                raise _invalid()
+        finally:
+            ctypes.memset(buf, 0, len(raw))
 
     def get(self, target: str) -> str:
-        row = self._native.CredRead(target, self._native.CRED_TYPE_GENERIC, 0)
-        if (
-            type(row) is not dict
-            or row.get("TargetName") != target
-            or row.get("Type") != self._native.CRED_TYPE_GENERIC
-            or row.get("Persist") != self._native.CRED_PERSIST_LOCAL_MACHINE
-        ):
+        out = ctypes.POINTER(_WindowsCredential)()
+        if not self._native.CredReadW(target, _CRED_TYPE_GENERIC, 0, ctypes.byref(out)):
+            if ctypes.get_last_error() == _ERROR_NOT_FOUND:
+                raise _MissingCredentialError("GitCode OAuth credential is absent.")
             raise _invalid()
-        blob = row.get("CredentialBlob")
-        if type(blob) is not bytes or not 0 < len(blob) <= _MAX_WIN_BYTES:
+        if not out:
             raise _invalid()
-        return blob.decode("utf-16-le")
+        try:
+            row = out.contents
+            blob, size = row.blob, row.size
+            if not blob or not 0 < size <= _MAX_WIN_BYTES:
+                raise _invalid()
+            try:
+                if (
+                    row.target != target
+                    or row.type != _CRED_TYPE_GENERIC
+                    or row.persist != _CRED_PERSIST_LOCAL_MACHINE
+                    or size % 2
+                ):
+                    raise _invalid()
+                raw = bytearray(size)
+                buf = (ctypes.c_ubyte * size).from_buffer(raw)
+                try:
+                    ctypes.memmove(buf, blob, size)
+                    return raw.decode("utf-16-le")
+                finally:
+                    ctypes.memset(buf, 0, size)
+            finally:
+                ctypes.memset(blob, 0, size)
+        finally:
+            # CredReadW gives one system-allocated block. Even bad metadata/decode
+            # cannot skip its release. Only wipe a non-null, bounded blob.
+            self._native.CredFree(out)
 
     def delete(self, target: str) -> None:
-        self._native.CredDelete(target, self._native.CRED_TYPE_GENERIC, 0)
+        if not self._native.CredDeleteW(target, _CRED_TYPE_GENERIC, 0):
+            if ctypes.get_last_error() == _ERROR_NOT_FOUND:
+                raise _MissingCredentialError("GitCode OAuth credential is absent.")
+            raise _invalid()
 
 
 @dataclass(frozen=True, repr=False, eq=False)

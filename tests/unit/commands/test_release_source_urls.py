@@ -244,3 +244,60 @@ def test_archive_format_fields_are_view_only_and_opt_in(harness):
     assert result.exit_code == 0 and ARCHIVE not in result.output
     result = run("view", "v1", "--json", "zipballUrl", "--template", "{{.zipballUrl}}")
     assert result.exit_code == 0 and result.output.strip() == ZIP["browser_download_url"]
+
+
+@pytest.mark.parametrize("tag_args", [("v1",), ()])
+def test_observed_gitcode_source_and_attach_metadata_do_not_become_transfer_urls(harness, tag_args):
+    run, client = harness
+    raw = f"https://raw.gitcode.com/{REPO}/archive/refs/heads"
+    sources = [
+        {"type": "source", "name": f"v1.{suffix}", "browser_download_url": f"{raw}/v1.{suffix}"}
+        for suffix in ("zip", "tar.gz", "tar.bz2", "tar")
+    ]
+    attachment = {
+        "type": "attach",
+        "name": "build.zip",
+        "id": 23,
+        "size": 100,
+        "browser_download_url": f"https://gitcode.com/{REPO}/releases/download/v1/build.zip",
+    }
+    row = {"tag_name": "v1", "assets": [*sources, attachment]}
+    client.get.return_value = row
+    result = run("view", *tag_args, "--json", "tagName,zipballUrl,tarballUrl,assets")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "tagName": "v1",
+        "zipballUrl": None,
+        "tarballUrl": None,
+        "assets": [{"name": "build.zip", "id": 23, "size": 100}],
+    }
+    # Legacy metadata-only views recover too. No link is opened, even to
+    # validate archive type.
+    only_assets = run("view", *tag_args, "--json", "tagName,assets")
+    assert only_assets.exit_code == 0, only_assets.output
+    assert json.loads(only_assets.output)["assets"] == [{"name": "build.zip", "id": 23, "size": 100}]
+    client.get.return_value = [row]
+    listed = run("list", "--json", "tagName,assets")
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.output) == [{"tagName": "v1", "assets": [{"name": "build.zip", "id": 23, "size": 100}]}]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://raw.gitcode.com/other/repo/archive/refs/heads/v1.zip",
+        "https://raw.gitcode.com/owner/repo/archive/refs/heads/v2.zip",
+        "https://raw.gitcode.com/owner/repo/archive/refs/heads/v1.zip?signature=private",
+        "https://gitcode.com/owner/repo/releases/download/v1/v1.zip",
+    ],
+)
+def test_observed_raw_source_projection_rejects_mismatched_route(harness, url):
+    run, client = harness
+    client.get.return_value = {
+        "tag_name": "v1",
+        "assets": [{"type": "source", "name": "v1.zip", "browser_download_url": url}],
+    }
+    result = run("view", "v1", "--json", "tagName,zipballUrl,tarballUrl,assets")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert url not in result.stderr

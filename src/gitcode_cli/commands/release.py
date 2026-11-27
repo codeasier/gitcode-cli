@@ -50,7 +50,7 @@ _ARCHIVE_FIELDS = {"tarballUrl": "tar.gz", "zipballUrl": "zip"}
 _SOURCE_ARCHIVE_SUFFIXES = (*_ARCHIVE_FIELDS.values(), "tar.bz2", "tar")
 VIEW_FIELDS = [*FIELDS, *_ARCHIVE_FIELDS]
 _ARCHIVE_SEGMENT = r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}"
-_ARCHIVE_REPO = re.compile(rf"https://gitcode\.com/{_ARCHIVE_SEGMENT}/({_ARCHIVE_SEGMENT})")
+_ARCHIVE_REPO = re.compile(rf"https://gitcode\.com/({_ARCHIVE_SEGMENT})/({_ARCHIVE_SEGMENT})")
 
 
 @contextmanager
@@ -95,11 +95,34 @@ def _project(
         "assets": [
             {k: a[k] for k in ("id", "name", "size", "digest") if k in a}
             for name, a in binary.asset_map(row).items()
-            if name not in confirmed_source_names and not binary.is_archive(a)
+            if name not in confirmed_source_names and not _is_projected_archive(a, base, row["tag_name"])
         ]
         if with_assets and isinstance(row.get("assets"), list)
         else None,
     }
+
+
+def _is_projected_archive(asset: dict, base: str, tag: str) -> bool:
+    """Classify observed Release metadata, without allowing a transfer."""
+    identity = _ARCHIVE_REPO.fullmatch(base)
+    if identity and re.fullmatch(_ARCHIVE_SEGMENT, tag) and is_single_ref(tag):
+        owner, repo = identity.groups()
+        name = asset["name"]  # validated, unique name from asset_map
+        url = asset.get("browser_download_url")
+        if asset.get("type") == "source" and any(
+            name == f"{tag}.{suffix}" and url == f"https://raw.gitcode.com/{owner}/{repo}/archive/refs/heads/{name}"
+            for suffix in _SOURCE_ARCHIVE_SUFFIXES
+        ):
+            # GitCode returns this generated row in tag Release metadata. The
+            # URL's heads namespace does not prove an immutable tag reference.
+            # Omit from ordinary attachment listings, but never output this URL
+            # as zipballUrl/tarballUrl or feed it into a download path here.
+            return True
+        if asset.get("type") == "attach" and binary.matches_gitcode_attachment_route(
+            url, owner=owner, repo=repo, tag=tag, name=name
+        ):
+            return False
+    return binary.is_archive(asset)
 
 
 def _source_archive_assets(row: dict, base: str, suffixes: Iterable[str], token: str) -> dict[str, dict]:
@@ -111,7 +134,7 @@ def _source_archive_assets(row: dict, base: str, suffixes: Iterable[str], token:
     if not isinstance(assets, list):
         return result
     for suffix in suffixes:
-        name = f"{identity[1]}-{tag}.{suffix}"
+        name = f"{identity[2]}-{tag}.{suffix}"
         key = binary.filename_key(name)
         matches = [
             a

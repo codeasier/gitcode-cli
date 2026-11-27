@@ -78,6 +78,10 @@ def _unique_fields(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
+def _reject_constant(_value: str) -> None:
+    raise ValueError("Non-standard JSON constant.")
+
+
 def bounded_json(
     resource: Literal[
         "Contents",
@@ -112,6 +116,7 @@ def bounded_json_response(
         "Commit comparison",
         "Release metadata",
         "Repository labels",
+        "OAuth identity",
     ],
     endpoint: str,
     params: dict[str, str],
@@ -119,6 +124,7 @@ def bounded_json_response(
     target_parts: tuple[str, ...],
     *,
     client: httpx.Client | None = None,
+    strict_json: bool = False,
 ) -> tuple[Any, httpx.Headers, httpx.URL]:
     # Endpoints are built locally from validated components. Never follow
     # URLs obtained from a response, redirect, environment or caller option.
@@ -142,13 +148,22 @@ def bounded_json_response(
                 raise APIError(f"GitCode {resource} API returned HTTP {response.status_code}.", response.status_code)
             if response.headers.get("content-encoding", "identity").lower() != "identity":
                 raise APIError(f"Refusing a compressed {resource} response.")
+            if strict_json and not re.fullmatch(
+                r'application/json(?:[ \t]*;[ \t]*charset[ \t]*=[ \t]*(?:"utf-8"|utf-8))?',
+                response.headers.get("content-type", "").strip(),
+                re.IGNORECASE | re.ASCII,
+            ):
+                raise APIError(f"Invalid {resource} JSON content type.")
             body = read_response_bytes(response, max_response_bytes=MAX_RESPONSE)
     except ResponseTooLargeError:
         raise APIError(f"{resource} response exceeds the 2 MiB limit.") from None
     except (httpx.HTTPError, httpx.StreamError):
         raise NetworkError(f"Could not read the GitCode {resource} response.") from None
     try:
-        value = json.loads(body, object_pairs_hook=_unique_fields)
+        if strict_json:
+            value = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_fields, parse_constant=_reject_constant)
+        else:
+            value = json.loads(body, object_pairs_hook=_unique_fields)
     except (ValueError, RecursionError):
         raise APIError(f"Invalid {resource} JSON response.") from None
     return value, response.headers, request.url

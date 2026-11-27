@@ -91,7 +91,7 @@ There is no multi-file transaction: earlier file commits remain when a later ope
 
 Writes require `GITCODE_MCP_READ_ONLY=false`, the connection's `gitcode:write` scope, the server's repository allowlist and sufficient upstream GitCode permissions. Branch protections still apply. OAuth credentials remain on the MCP host; the model does not need to receive them for file publication.
 
-For an existing cloud deployment moving from `codex-codeasier`, follow [migration and rollback](migration.md) to preserve its URL, clients, configuration and OAuth state. For later updates, pin the checkout, rebuild/reinstall and recreate/restart the runtime, then refresh the plugin's tools in ChatGPT. Preserve the OAuth database and encryption key. The full catalog has **31 tools: 19 reads and 12 writes**; read-only connections still expose 19.
+For an existing cloud deployment moving from `codex-codeasier`, follow [migration and rollback](migration.md) to preserve its URL, clients, configuration and OAuth state. For later updates, pin the checkout, rebuild/reinstall and recreate/restart the runtime, then refresh the plugin's tools in ChatGPT. Preserve the OAuth database and encryption key. The MCP 0.4.0 catalog has **37 tools: 20 reads and 17 writes**; read-only connections expose 20.
 
 An existing write grant covers these file tools without new authorization solely for the upgrade. A read-only grant must be authorized again to obtain `gitcode:write`; refreshing its access token or the tool list does not broaden its scopes. Changes to the upstream GitCode application's permissions, an expired grant or revoked authorization may independently require reconnection. See [deployment](deployment.md#operate-and-upgrade) and [OAuth configuration](oauth.md).
 

@@ -67,7 +67,7 @@ OpenAI's [dot task documentation](https://learn.chatgpt.com/docs/dots/tasks-and-
 
 If moving from `codex-codeasier` to `gitcode-cli`, follow [migration and rollback](migration.md) first: keep the existing Server URL, OAuth clients, environment, actual data volume, database and encryption key. Do not create a replacement ChatGPT connection. For subsequent updates, pin the deployed checkout, rebuild or reinstall the runtime, then recreate/restart the service as described in [deployment](deployment.md#operate-and-upgrade). Refresh the plugin's tools in ChatGPT after the new service is running.
 
-A writable connection should now expose 31 tools, including the three file tools; a read-only connection still exposes 19. Existing `gitcode:write` grants do not need reauthorization merely for this upgrade. Reauthorize if a read-only grant needs write scope, the grant has expired, or the GitCode authorization no longer grants the required upstream permissions.
+A writable MCP 0.4.0 connection exposes 37 tools, including the three file tools; a read-only connection exposes 20. Existing `gitcode:write` grants do not need reauthorization merely for this upgrade. Reauthorize if a read-only grant needs write scope, the grant has expired, or the GitCode authorization no longer grants the required upstream permissions.
 
 ## Other connection routes
 

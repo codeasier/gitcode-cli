@@ -5,6 +5,14 @@ A source entry is not evidence that the version has been published to PyPI.
 
 ## [Unreleased]
 
+## [0.4.0]
+
+- Expand the catalog to 37 tools: 20 reads and 17 writes.
+- Add a read-only fork synchronization status check.
+- Fix browser consent across HTTPS origins without weakening Origin or CSRF
+  checks. Reject ambiguous write responses and accept empty successful
+  task-label deletions only after catalog readback.
+
 - Add immediate PR inline comments and discussion replies, with target checks
   before one native write; neither is an atomic HEAD-bound review.
 - Add repository task-label definition creation, update and deletion using

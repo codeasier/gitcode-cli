@@ -1,4 +1,4 @@
-"""Assembly-level tests: local files, local TLS or synthetic GitCode transport only."""
+"""Socket-free assembly contracts using files and synthetic in-process transports."""
 
 import asyncio
 import base64
@@ -8,13 +8,7 @@ import json
 import os
 import re
 import secrets
-import signal
-import socket
-import ssl
-import subprocess
-import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -237,83 +231,3 @@ class ServiceTest(unittest.TestCase):
                     app.resources.close()
 
         asyncio.run(run())
-
-    def test_direct_tls_process_and_silent_callback(self):
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            port = sock.getsockname()[1]
-        origin = f"https://127.0.0.1:{port}"
-        cert, key = self.root / "TLS_CERT_FILE", self.root / "TLS_KEY_FILE"
-        subprocess.run(
-            [
-                "openssl",
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-days",
-                "1",
-                "-subj",
-                "/CN=localhost",
-                "-addext",
-                "subjectAltName=IP:127.0.0.1",
-                "-keyout",
-                str(key),
-                "-out",
-                str(cert),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        key.chmod(0o600)
-        env = {
-            "PATH": os.defpath,
-            "HOME": str(self.root),
-            "PYTHONPATH": str(Path(svc.__file__).parents[1]),
-            **self.env,
-            "GC_CLI_BROKER_ORIGIN": origin,
-            "SSLKEYLOGFILE": str(self.root / "keylog"),
-            "HTTPS_PROXY": "http://127.0.0.1:1",
-        }
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "gitcode_mcp.cli_oauth_service"],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        try:
-            verify = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            verify.load_verify_locations(cafile=str(cert))
-            with httpx.Client(base_url=origin, verify=verify, trust_env=False, timeout=0.6) as c:
-                for _ in range(60):
-                    if proc.poll() is not None:
-                        self.fail("broker exited before TLS startup")
-                    try:
-                        response = c.get(svc.ENTRY)
-                        break
-                    except (httpx.ConnectError, httpx.ConnectTimeout):
-                        time.sleep(0.05)
-                else:
-                    self.fail("broker never accepted TLS")
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(c.get("/mcp").status_code, 404)
-                self.assertNotEqual(
-                    c.get(
-                        svc.ENTRY,
-                        headers={"host": "elsewhere", "x-forwarded-host": urlsplit(origin).netloc},
-                    ).status_code,
-                    200,
-                )
-                r = c.get(svc.CALLBACK, params={"code": "syntheticNeverLog"})
-                self.assertEqual(r.status_code, 303)
-                self.assertEqual(r.headers["location"], svc.FINISHED)
-        finally:
-            if proc.poll() is None:
-                proc.send_signal(signal.SIGINT)
-            out, _ = proc.communicate(timeout=8)
-        self.assertEqual(proc.returncode, 0)
-        self.assertNotIn(b"syntheticNeverLog", out)
-        self.assertNotIn(b"/cli/v1", out)
-        self.assertFalse((self.root / "keylog").exists())

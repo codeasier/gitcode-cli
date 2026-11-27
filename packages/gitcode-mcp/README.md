@@ -158,7 +158,17 @@ headers, disables access logs, and never uses proxy, CA or TLS-key-log
 environment settings for GitCode requests. The service is local-only, not a
 hardened public ingress. Do not enable HTTP tracing or record request bodies.
 
-Offline acceptance uses an isolated local TLS listener and synthetic GitCode
-exchange/profile responses. Success there does **not** establish that GitCode
-will accept a particular App registration, callback or scope, that a browser
-completed a real OAuth grant, or that terminal account activation works.
+The installed CLI archive acceptance suite is socket-free and covers the broker
+protocol in-process with synthetic GitCode exchange/profile responses. The
+separate source CI step starts a real loopback TLS process with a temporary
+certificate and never calls GitCode. To rerun that step on POSIX with OpenSSL,
+install this package with its development dependencies, then run from this
+package directory:
+
+```sh
+python -I -m pytest -c pyproject.toml tests_integration/test_cli_oauth_service_tls.py
+```
+
+Passing both suites does **not** establish that GitCode will accept a particular
+App registration, callback or scope, that a browser completed a real OAuth
+grant, or that terminal account activation works.

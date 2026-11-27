@@ -11,6 +11,8 @@ gc auth status --active --json hosts
 gc auth logout --user bob
 ```
 
+To name the host explicitly, use `gc auth login --hostname gitcode.com` (or `-h gitcode.com`). Only this bare hostname is accepted, case-insensitively; it does not change the API endpoint, storage, or PAT login method. For login help, use `gc auth login --help`.
+
 At each hidden prompt, enter that account's own personal access token. In automation, pass the token on standard input with `--with-token`; do not put it in a command line, log, or example file. Named login verifies **the supplied token**, not the current environment, using `GET /user`. Only the returned login is used as the account name; an unverified response saves nothing. Signing in again with the same exact login replaces its local token. This is not browser OAuth, SSH setup or a Git credential helper.
 
 - **Selection:** An explicit global `--token` takes priority over `GC_TOKEN`, then the selected local token. An override is never persisted by default. Local login still saves the credential supplied at its prompt/stdin; an override continues to take precedence. When overriding, status shows just the effective credential. Unset the override before using switch, logout or `auth token --user`.

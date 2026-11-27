@@ -91,3 +91,23 @@ def test_entry_point_selects_legacy_only_for_seed(
         with pytest.raises(AssertionError):
             acceptance.main()
         assert not completed
+
+
+@pytest.mark.parametrize("legacy", [True, False])
+def test_named_volume_catalog_distinguishes_candidate_from_legacy(legacy):
+    def tools(reads):
+        return [
+            {
+                "name": f"gitcode_{name}",
+                "annotations": {"readOnlyHint": name in reads},
+                "inputSchema": {"type": "object"},
+            }
+            for name in reads | acceptance.WRITE_TOOLS
+        ]
+
+    old, new = tools(acceptance.LEGACY_READ_TOOLS), tools(acceptance.READ_TOOLS)
+    assert len(old) == 31 and len(new) == 32
+    correct, wrong = (old, new) if legacy else (new, old)
+    acceptance.check_catalog(correct, legacy=legacy)
+    with pytest.raises(AssertionError):
+        acceptance.check_catalog(wrong, legacy=legacy)

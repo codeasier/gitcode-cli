@@ -518,7 +518,6 @@ def test_resource_and_repo_host_conflict_is_not_hidden_by_boolean_flag(monkeypat
     [
         ["api", "--hostname", "gitcode.com", "user"],
         ["api", "user", "--hostname=gitcode.com"],
-        ["auth", "login", "--hostname", "gitcode.com", "--with-token"],
         ["auth", "status", "-h", "gitcode.com"],
         ["auth", "token", "-hGitCode.com."],
         ["auth", "refresh", "--hostname", "gitcode.com"],
@@ -533,10 +532,71 @@ def test_explicit_native_hostname_for_gitcode_must_not_reach_either_backend(monk
 
 
 @pytest.mark.parametrize(
+    ("selector", "forwarded"),
+    [
+        (["-h", "gitcode.com"], ["-h", "gitcode.com"]),
+        (["--hostname=gitcode.com"], ["--hostname=gitcode.com"]),
+        (["-hGitCode.com"], ["-hGitCode.com"]),
+        (["-h=gitcode.com"], ["--hostname=gitcode.com"]),
+    ],
+)
+def test_explicit_gitcode_login_hostname_forwards_only_to_gc(monkeypatch, selector, forwarded):
+    argv = ["auth", "login", *selector, "--with-token"]
+    monkeypatch.setattr("gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("explicit host must win"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("native gh must not run"))
+    calls = []
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *args: calls.append(args) or 0)
+    assert dispatch(argv, {}) == 0
+    assert calls == [
+        (
+            sys.executable,
+            ["-m", "gitcode_cli.cli", "auth", "login", *forwarded, "--with-token"],
+            {"GC_GH_PROXY_ACTIVE": "1", "GC_GH_PROXY_TARGET": "gitcode"},
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        ["--hostname="],
+        ["--hostname", ""],
+        ["-h="],
+        ["-h", ""],
+        ["-h", "--with-token"],
+        ["--hostname"],
+        ["--hostname", "=gitcode.com"],
+        ["--hostname==gitcode.com"],
+        ["-h", "=gitcode.com"],
+        ["-h==gitcode.com"],
+        ["--hostname", "https://credential-marker@gitcode.com/path"],
+        ["-h", "gitcode..com"],
+        ["--hostname", "gitcode.com-"],
+        ["--hostname", "gitcode.com:65536"],
+        ["--hostname=", "-h", "github.com"],
+        ["-h=gitcode.com", "--hostname=github.com"],
+        ["-h=github.com", "--hostname=enterprise.example"],
+    ],
+)
+@pytest.mark.parametrize("env", [{}, {"GC_GH_TARGET": "github"}])
+def test_invalid_or_conflicting_login_host_never_falls_back(monkeypatch, selector, env):
+    monkeypatch.setattr(
+        "gitcode_cli.gh_proxy._origin_host", lambda: pytest.fail("invalid explicit host must not fall back")
+    )
+    monkeypatch.setattr("gitcode_cli.gh_proxy.find_real_gh", lambda _: pytest.fail("native gh must not run"))
+    monkeypatch.setattr("gitcode_cli.gh_proxy._exec", lambda *_: pytest.fail("no backend may run"))
+    with pytest.raises(ProxyError, match="host") as exc:
+        dispatch(["auth", "login", *selector], env)
+    assert "credential-marker" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
     "argv",
     [
         ["api", "--hostname=enterprise.example", "user"],
         ["auth", "status", "-h", "github.com"],
+        ["auth", "login", "--hostname", "github.com", "--with-token"],
+        ["auth", "login", "-h=github.com", "--with-token"],
         ["auth", "token", "--hostname", "github.com"],
     ],
 )

@@ -232,7 +232,7 @@ ENTRIES: list[CompatEntry] = [
     ),
     _e("auth login", "-c/--clipboard", CompatStatus.NOT_IN_CLI),
     _e("auth login", "-p/--git-protocol", CompatStatus.NOT_IN_CLI),
-    _e("auth login", "-h/--hostname", CompatStatus.NOT_IN_CLI),
+    _e("auth login", "-h/--hostname", CompatStatus.IMPLEMENTED, "Single fixed host: gitcode.com (PAT only)"),
     _e("auth login", "--insecure-storage", CompatStatus.NOT_IN_CLI),
     _e("auth login", "-s/--scopes", CompatStatus.NOT_IN_CLI),
     _e("auth login", "--skip-ssh-key", CompatStatus.NOT_IN_CLI),

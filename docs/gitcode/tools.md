@@ -4,7 +4,7 @@ For the frozen GitHub workflow comparison, source/release/connection evidence an
 
 Use the live tool schemas as the authority for optional fields. All tools are namespaced with `gitcode_`, use explicit `owner` and `repo` arguments, and enforce the server's repository allowlist. Issue tools use `issue_number`; PR tools use `pull_number`.
 
-The complete catalog has **31 tools: 19 reads and 12 writes**. Read-only mode, or an OAuth grant without `gitcode:write`, exposes only the 19 read tools.
+The MCP 0.4.0 catalog has **37 tools: 20 reads and 17 writes**. Read-only mode, or an OAuth grant without `gitcode:write`, exposes only the 20 read tools.
 
 In OAuth mode, each tool call uses the GitCode authorization belonging to that MCP connection. It cannot fall back to a shared PAT. The configured repository allowlist still applies, and reads require the grant's `gitcode:read` scope.
 
@@ -13,6 +13,7 @@ In OAuth mode, each tool call uses the GitCode authorization belonging to that M
 | Tool | Result |
 | --- | --- |
 | `gitcode_get_repository` | Repository metadata and access check |
+| `gitcode_get_fork_sync_status` | Read-only fork synchronization status; does not synchronize branches |
 | `gitcode_get_clone_info` | Credential-free HTTPS/SSH clone URLs and default branch; no checkout |
 | `gitcode_list_branches` | Branches |
 | `gitcode_get_branch` | One branch |
@@ -58,8 +59,15 @@ These operations require server write mode, sufficient GitCode permissions, and 
 | `gitcode_create_pull_request` | Create a PR from existing remote branches |
 | `gitcode_update_pull_request` | Update a PR |
 | `gitcode_add_pull_request_comment` | Add a PR comment |
+| `gitcode_add_pull_request_inline_comment` | Add an immediate PR inline comment after checking the current head and right-side line |
+| `gitcode_reply_to_pull_request_discussion` | Reply to a checked PR discussion |
+| `gitcode_create_label` | Create a repository task-label definition |
+| `gitcode_update_label` | Rename or recolor a task label after checking its expected ID |
+| `gitcode_delete_label` | Delete a checked task label and verify its absence from the observed catalog |
 | `gitcode_approve_pull_request` | Approve a PR |
 | `gitcode_merge_pull_request` | Merge a PR |
+
+Inline placement and label preconditions are checks before a native write, not an atomic upstream transaction. Read GitCode state before retrying any uncertain mutation. Task-label definition writes are distinct from assigning labels on an Issue.
 
 ### File publishing parameters and results
 

@@ -220,14 +220,30 @@ class GitCodeOAuthProvider(
             _digest(cookie), record.get("browser", "")
         )
 
-    def _redirect(self, record: dict[str, Any], **params: str) -> Response:
+    @staticmethod
+    def _client_redirect_url(record: dict[str, Any], **params: str) -> str:
         from mcp.server.auth.provider import construct_redirect_uri
 
         if record.get("state") is not None:
             params["state"] = record["state"]
+        return construct_redirect_uri(record["redirect_uri"], **params)
+
+    def _redirect(self, record: dict[str, Any], **params: str) -> Response:
         return RedirectResponse(
-            construct_redirect_uri(record["redirect_uri"], **params),
-            status_code=303,
+            self._client_redirect_url(record, **params), status_code=303, headers=PAGE_HEADERS
+        )
+
+    def _complete_consent(self, record: dict[str, Any], **params: str) -> Response:
+        # Chromium applies the form's form-action to the whole HTTP redirect chain.
+        # Commit a same-origin document first, then start a new top-level navigation
+        # to the registered client callback. Do not loosen form-action or require JS.
+        target = html.escape(self._client_redirect_url(record, **params), quote=True)
+        return HTMLResponse(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            "<title>Return to your client</title>"
+            f'<meta http-equiv="refresh" content="0; url={target}"></head>'
+            f'<body><p><a href="{target}" rel="noreferrer">Return to your client</a></p>'
+            "</body></html>",
             headers=PAGE_HEADERS,
         )
 
@@ -352,7 +368,10 @@ class GitCodeOAuthProvider(
                 + '">'
                 + '<button name="decision" value="allow">Allow access</button> '
                 + '<button name="decision" value="deny">Cancel</button></form></html>',
-                headers=PAGE_HEADERS,
+                # no-referrer makes the browser serialize this form POST's Origin as
+                # null. Keep the same-origin Origin check and suppress cross-origin
+                # referrers; callback and redirect responses still use no-referrer.
+                headers={**PAGE_HEADERS, "Referrer-Policy": "same-origin"},
             )
         if request.headers.get("origin") != self.config.public_url:
             return self._error_page("Invalid authorization confirmation.", 403)
@@ -370,7 +389,7 @@ class GitCodeOAuthProvider(
                 return self._error_page("Invalid authorization confirmation.", 403)
             tx.delete("consent", flow)
             if form["decision"] == "deny" or not self._allowed(record["subject"]):
-                return self._redirect(
+                return self._complete_consent(
                     record, error="access_denied", error_description="Authorization was declined."
                 )
             deadline = time.time() + GRANT_TTL
@@ -398,7 +417,7 @@ class GitCodeOAuthProvider(
             }
             code_record.update(grant_id=grant_id, expires_at=time.time() + CODE_TTL)
             tx.put("code", authorization_code, code_record, code_record["expires_at"])
-        return self._redirect(record, code=authorization_code)
+        return self._complete_consent(record, code=authorization_code)
 
     def _allowed(self, subject: str) -> bool:
         return not self.config.allowed_user_ids or subject in self.config.allowed_user_ids

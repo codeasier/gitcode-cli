@@ -28,14 +28,24 @@ GitCode identity and receives separate MCP access tokens. It supports PKCE,
 explicit consent, refresh and revocation, with a fixed authorization lifetime.
 The environment-file and Compose examples are in `deploy/gitcode-mcp`.
 
-The server exposes 32 tools: 20 reads and 12 writes.
-`gitcode_get_fork_sync_status` reads an explicit fork branch through one GitCode GET; it never performs synchronization. Missing provider messages are returned as null. `gitcode_create_file`,
+This source exposes 37 tools: 20 reads and 17 writes.
+
+`gitcode_get_fork_sync_status` reads an explicit fork branch through one GitCode GET;
+it never performs synchronization. Missing provider messages are returned as null.
+
+`gitcode_create_file`,
 `gitcode_update_file` and `gitcode_delete_file` publish a single file change to an
 explicit remote branch using GitCode's Contents API. Updates and deletions require
 the current file Blob SHA. Each call creates a separate commit; there is no atomic
 multi-file commit or force-ref operation. See the
 [code publishing guide](https://github.com/codeasier/gitcode-cli/blob/main/docs/gitcode/code-publishing.md)
 for limits, verification and the Issue-to-PR workflow.
+
+The review write tools add a native inline comment or reply to a verified PR
+discussion. Inline comments check the observed HEAD before the request; GitCode
+does not bind the write atomically to that SHA or attest its final placement.
+Task-label definition writes are separate from assigning labels to Issues.
+See the [parity and acceptance matrix](PARITY.md) for coverage and upstream gates.
 
 These API writes use the connection's GitCode authorization. OAuth connections
 with `gitcode:write` and the required upstream permissions need no additional Git
@@ -69,8 +79,8 @@ This package was imported from `codeasier/codex-codeasier` at
 and blob hashes; [`LICENSE`](LICENSE) retains the original MIT copyright notice.
 The original regression tests preserve that baseline. The CLI package remains
 separately versioned: this source now pins the published `pygitcode==0.1.7`, rather
-than implicitly importing a sibling checkout. The MCP version remains `0.3.0`;
-this dependency change does not publish or deploy an MCP release.
+than implicitly importing a sibling checkout. The MCP version is independent of the CLI pin; changing package source
+does not publish or deploy an MCP release.
 
 The existing file-read/create/update/delete tools delegate to the installed
 `FileService`. MCP still owns its stricter path policy (including rejection of
@@ -104,8 +114,7 @@ a separately authorized CLI release, real artifact validation and a subsequent
 consumer change. That forward-compatibility probe does not change the exact
 production pin or authorize consuming unreleased services. Migration acceptance
 keeps the immutable legacy MCP `0.3.0` / `pygitcode==0.1.6` installation for seed
-and rollback; candidate checks require `pygitcode==0.1.7` even though its MCP
-version is also `0.3.0`.
+and rollback. The MCP `0.4.0` candidate continues to require `pygitcode==0.1.7`.
 
 See the [migration and rollback guide](../../docs/gitcode/migration.md) before
 upgrading an existing OAuth deployment. Repository migration does not authorize

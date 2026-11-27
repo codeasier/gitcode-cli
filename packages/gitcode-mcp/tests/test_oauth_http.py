@@ -163,6 +163,9 @@ def callback(client, state, user="user-a"):
     assert response.status_code == 303, response.text
     page = client.get(response.headers["location"])
     assert page.status_code == 200, page.text
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert page.headers["referrer-policy"] == "same-origin"
+    assert "form-action 'self'" in page.headers["content-security-policy"]
     assert "login-" + user in page.text
     assert "gitcode-access-" not in page.text
     return {
@@ -320,6 +323,15 @@ def test_callback_and_consent_are_bound_to_browser_and_not_replayable(harness):
         == 400
     )
     assert client.post("/oauth/consent", data={**fields, "decision": "allow"}).status_code == 403
+    for origin in ("null", "https://foreign.example.test"):
+        assert (
+            client.post(
+                "/oauth/consent",
+                data={**fields, "decision": "allow"},
+                headers={"Origin": origin},
+            ).status_code
+            == 403
+        )
     assert (
         client.post(
             "/oauth/consent",

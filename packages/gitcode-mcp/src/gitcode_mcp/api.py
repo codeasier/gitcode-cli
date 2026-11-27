@@ -352,7 +352,9 @@ class GitCodeAPI(GitCodeClient):
                 operation_may_have_completed=True if mutation else None,
             ) from None
         if not content:
-            if statuses is not None and response.status_code != 204:
+            # Task-label DELETE can return either an empty 200 or a 204.
+            # Its caller still requires an independent catalog readback.
+            if statuses is not None and method != "DELETE":
                 raise GitCodeError(
                     "invalid_response",
                     "Expected a task-label response body.",

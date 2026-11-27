@@ -87,9 +87,10 @@ def test_update_uses_numbered_preflight_and_documented_query_not_json():
     )
 
 
-def test_delete_requires_empty_terminal_page_and_readback_even_after_short_page():
+@pytest.mark.parametrize("status", [200, 204])
+def test_delete_requires_empty_terminal_page_and_readback_even_after_short_page(status):
     other = {**OLD, "id": 26, "name": "another"}
-    with harness([[other], [OLD], [], httpx.Response(204), [other], []]) as (tools, requests):
+    with harness([[other], [OLD], [], httpx.Response(status), [other], []]) as (tools, requests):
         assert call(tools, "delete")["data"] == {
             "id": 24,
             "name": "旧 标签",
@@ -187,7 +188,7 @@ def test_update_never_replays_ambiguous_responses(receipt):
     ],
 )
 def test_delete_readback_failures_preserve_uncertainty_without_replaying(bad):
-    with harness([[OLD], [], {}, bad, []]) as (tools, requests):
+    with harness([[OLD], [], httpx.Response(200), bad, []]) as (tools, requests):
         with pytest.raises(GitCodeError) as e:
             call(tools, "delete")
         assert e.value.operation_may_have_completed and TOKEN not in json.dumps(e.value.to_dict())
@@ -313,3 +314,14 @@ def test_catalog_bounds_for_sparse_pages_and_encoded_source_name():
             call(tools, "update")
         assert e.value.code == "invalid_response"
         assert len(requests) == 11 and all(q.method == "GET" for q in requests)
+
+
+@pytest.mark.parametrize("op", ["create", "update"])
+def test_empty_200_is_not_a_create_or_update_receipt(op):
+    preflight = [[OLD], []] if op == "update" else []
+    with harness([*preflight, httpx.Response(200)]) as (tools, requests):
+        with pytest.raises(GitCodeError) as error:
+            call(tools, op)
+        assert error.value.code == "invalid_response"
+        assert error.value.operation_may_have_completed
+        assert sum(request.method in {"POST", "PATCH"} for request in requests) == 1

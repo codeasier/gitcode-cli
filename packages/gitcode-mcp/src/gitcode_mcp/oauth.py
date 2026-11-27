@@ -352,7 +352,10 @@ class GitCodeOAuthProvider(
                 + '">'
                 + '<button name="decision" value="allow">Allow access</button> '
                 + '<button name="decision" value="deny">Cancel</button></form></html>',
-                headers=PAGE_HEADERS,
+                # no-referrer makes the browser serialize this form POST's Origin as
+                # null. Keep the same-origin Origin check and suppress cross-origin
+                # referrers; callback and redirect responses still use no-referrer.
+                headers={**PAGE_HEADERS, "Referrer-Policy": "same-origin"},
             )
         if request.headers.get("origin") != self.config.public_url:
             return self._error_page("Invalid authorization confirmation.", 403)

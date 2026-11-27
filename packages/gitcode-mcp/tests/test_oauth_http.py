@@ -5,6 +5,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlsplit
 
 import anyio
@@ -163,6 +164,9 @@ def callback(client, state, user="user-a"):
     assert response.status_code == 303, response.text
     page = client.get(response.headers["location"])
     assert page.status_code == 200, page.text
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert page.headers["referrer-policy"] == "same-origin"
+    assert "form-action 'self'" in page.headers["content-security-policy"]
     assert "login-" + user in page.text
     assert "gitcode-access-" not in page.text
     return {
@@ -171,15 +175,44 @@ def callback(client, state, user="user-a"):
     }
 
 
-def consent(client, fields, decision="allow"):
+class ConsentCompletion(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.target = None
+        self.link = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "meta" and attrs.get("http-equiv") == "refresh":
+            delay, target = attrs["content"].split("; url=", 1)
+            assert delay == "0"
+            self.target = target
+        if tag == "a":
+            assert attrs.get("rel") == "noreferrer"
+            self.link = attrs["href"]
+        assert tag not in {"script", "form", "iframe"}
+
+
+def consent(client, fields, decision="allow", *, state="chatgpt-state"):
     response = client.post(
         "/oauth/consent", data={**fields, "decision": decision}, headers={"Origin": PUBLIC}
     )
-    assert response.status_code == 303, response.text
-    parsed = urlsplit(response.headers["location"])
-    assert parsed.netloc == "chatgpt.com"
+    assert response.status_code == 200, response.text
+    assert "location" not in response.headers
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["cache-control"] == "no-store"
+    assert "form-action 'self'" in response.headers["content-security-policy"]
+    page = ConsentCompletion()
+    page.feed(response.text)
+    assert page.target and page.target == page.link
+    parsed = urlsplit(page.target)
+    assert (parsed.scheme, parsed.netloc, parsed.path) == (
+        "https",
+        "chatgpt.com",
+        "/connector/oauth/test-callback",
+    )
     query = parse_qs(parsed.query)
-    assert query["state"] == ["chatgpt-state"]
+    assert query["state"] == [state]
     return query
 
 
@@ -277,7 +310,7 @@ def test_complete_http_oauth_and_mcp_flow(harness):
     )
     assert notified.status_code == 202
     tools = rpc(client, tokens["access_token"]).json()["result"]["tools"]
-    assert len(tools) == 32
+    assert len(tools) == 37
     assert all(tool["_meta"]["securitySchemes"][0]["type"] == "oauth2" for tool in tools)
     result = repository(client, tokens["access_token"])
     assert result.json()["result"]["structuredContent"]["data"]["id"] == "user-a"
@@ -320,6 +353,15 @@ def test_callback_and_consent_are_bound_to_browser_and_not_replayable(harness):
         == 400
     )
     assert client.post("/oauth/consent", data={**fields, "decision": "allow"}).status_code == 403
+    for origin in ("null", "https://foreign.example.test"):
+        assert (
+            client.post(
+                "/oauth/consent",
+                data={**fields, "decision": "allow"},
+                headers={"Origin": origin},
+            ).status_code
+            == 403
+        )
     assert (
         client.post(
             "/oauth/consent",
@@ -346,6 +388,17 @@ def test_callback_and_consent_are_bound_to_browser_and_not_replayable(harness):
     assert token_request(client, code=code).status_code == 200
 
 
+def test_cross_origin_consent_completion_preserves_untrusted_state_as_data(harness):
+    state = 'state&code=not-a-code"><script>bad</script>'
+    client = harness.client
+    fields = callback(client, begin(client, state=state))
+    query = consent(client, fields, state=state)
+    assert len(query["code"]) == 1 and query["code"][0] != "not-a-code"
+    token = token_request(client, code=query["code"][0])
+    assert token.status_code == 200
+    assert len(rpc(client, token.json()["access_token"]).json()["result"]["tools"]) == 37
+
+
 def test_consent_denial_and_account_allowlist(harness):
     client = harness.client
     denied = consent(client, callback(client, begin(client)), decision="deny")
@@ -360,7 +413,7 @@ def test_two_accounts_and_read_write_scopes_are_isolated_under_concurrency(harne
     alice = connect(harness, "user-a")
     bob = connect(harness, "user-b", scope="gitcode:read")
     assert len(rpc(harness.client, bob["access_token"]).json()["result"]["tools"]) == 20
-    assert len(rpc(harness.client, alice["access_token"]).json()["result"]["tools"]) == 32
+    assert len(rpc(harness.client, alice["access_token"]).json()["result"]["tools"]) == 37
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(
@@ -721,3 +774,52 @@ def test_public_origin_normalization_matches_oauth_discovery(tmp_path):
             assert repository(value.client, connect(value)["access_token"]).status_code == 200
     finally:
         value.close()
+
+
+def test_repository_label_tools_authorize_writes_before_any_catalog_reads(harness):
+    reader = connect(harness, "label-reader", scope="gitcode:read")["access_token"]
+    writer = connect(harness, "label-writer")["access_token"]
+    tools = {
+        "gitcode_create_label": {"name": "triage", "color": "#123ABC"},
+        "gitcode_update_label": {"name": "triage", "expected_id": 2, "new_name": "verified"},
+        "gitcode_delete_label": {"name": "triage", "expected_id": 2},
+    }
+    reader_catalog = rpc(harness.client, reader).json()["result"]["tools"]
+    assert not (set(tools) & {row["name"] for row in reader_catalog})
+    writer_catalog = {
+        row["name"]: row for row in rpc(harness.client, writer).json()["result"]["tools"]
+    }
+    for name, parameters in tools.items():
+        assert writer_catalog[name]["_meta"]["securitySchemes"] == [
+            {"type": "oauth2", "scopes": ["gitcode:read", "gitcode:write"]}
+        ]
+        for token, owner, expected in (
+            (reader, "allowed", "read_only"),
+            (writer, "outside", "repository_not_allowed"),
+        ):
+            out = rpc(
+                harness.client,
+                token,
+                "tools/call",
+                {"name": name, "arguments": {"repo": "repo", "owner": owner, **parameters}},
+            )
+            assert out.json()["result"]["structuredContent"]["error"]["code"] == expected
+    assert not harness.api_requests
+    # The mock returns a deliberately non-label receipt. Show that the one
+    # allowed mutation uses the user's grant and is not replayed, not that
+    # the fake upstream performed a successful write.
+    out = rpc(
+        harness.client,
+        writer,
+        "tools/call",
+        {
+            "name": "gitcode_create_label",
+            "arguments": {"owner": "allowed", "repo": "repo", **tools["gitcode_create_label"]},
+        },
+    )
+    assert out.json()["result"]["structuredContent"]["error"]["operation_may_have_completed"]
+    (request,) = harness.api_requests
+    assert (
+        request.method == "POST"
+        and request.headers["authorization"] == "Bearer gitcode-access-label-writer"
+    )

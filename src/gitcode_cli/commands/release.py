@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -18,7 +19,7 @@ from .. import repo_read
 from ..errors import GCError
 from ..formatters import output_result
 from ..helptext import GCSectionGroup, set_gc_help
-from ..repo import resolve_repo
+from ..repo import is_single_ref, resolve_repo
 from ..services.releases import ReleaseService, release_record, tag_segment
 from ..utils import open_in_browser, safe_echo
 
@@ -45,6 +46,10 @@ FIELDS = [
     "targetCommitish",
     "url",
 ]
+
+_SOURCE_ARCHIVE_SUFFIXES = ("zip", "tar.gz", "tar.bz2", "tar")
+_ARCHIVE_SEGMENT = r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}"
+_ARCHIVE_REPO = re.compile(rf"https://gitcode\.com/({_ARCHIVE_SEGMENT})/({_ARCHIVE_SEGMENT})")
 
 
 @contextmanager
@@ -87,11 +92,34 @@ def _project(row: dict, base: str) -> dict:
         "assets": [
             {k: a[k] for k in ("id", "name", "size", "digest") if k in a}
             for a in binary.asset_map(row).values()
-            if not binary.is_archive(a)
+            if not _is_projected_archive(a, base, row["tag_name"])
         ]
         if isinstance(row.get("assets"), list)
         else None,
     }
+
+
+def _is_projected_archive(asset: dict, base: str, tag: str) -> bool:
+    """Classify observed Release metadata, without allowing a transfer."""
+    identity = _ARCHIVE_REPO.fullmatch(base)
+    if identity and re.fullmatch(_ARCHIVE_SEGMENT, tag) and is_single_ref(tag):
+        owner, repo = identity.groups()
+        name = asset["name"]  # validated, unique name from asset_map
+        url = asset.get("browser_download_url")
+        if asset.get("type") == "source" and any(
+            name == f"{tag}.{suffix}" and url == f"https://raw.gitcode.com/{owner}/{repo}/archive/refs/heads/{name}"
+            for suffix in _SOURCE_ARCHIVE_SUFFIXES
+        ):
+            # GitCode returns this generated row in tag Release metadata. The
+            # URL's heads namespace does not prove an immutable tag reference.
+            # Omit from ordinary attachment listings, but never output this URL
+            # as zipballUrl/tarballUrl or feed it into a download path here.
+            return True
+        if asset.get("type") == "attach" and binary.matches_gitcode_attachment_route(
+            url, owner=owner, repo=repo, tag=tag, name=name
+        ):
+            return False
+    return binary.is_archive(asset)
 
 
 def _check_fields(fields):

@@ -280,3 +280,26 @@ def test_all_mutation_methods_report_uncertain_server_outcomes(method):
 def test_legacy_error_payload_does_not_gain_outcome_metadata():
     error = GitCodeError("invalid_arguments", "Invalid input.")
     assert error.to_dict() == {"code": "invalid_arguments", "message": "Invalid input."}
+
+
+def test_upstream_cookie_is_never_sent_on_following_repository_write():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200, json={"id": 7}, headers={"Set-Cookie": "remote=unexpected; Path=/; Secure"}
+        )
+
+    with GitCodeAPI(SECRET, transport=httpx.MockTransport(handler)) as api:
+        api.pulls.get("team", "repo", 1)
+        api.pulls.comment("team", "repo", 1, "test comment", path="src/test.py", position=4)
+
+    assert [request.method for request in calls] == ["GET", "POST"]
+    assert all(request.headers["Authorization"] == f"Bearer {SECRET}" for request in calls)
+    assert all("Cookie" not in request.headers for request in calls)
+    assert json.loads(calls[1].content) == {
+        "body": "test comment",
+        "path": "src/test.py",
+        "position": 4,
+    }

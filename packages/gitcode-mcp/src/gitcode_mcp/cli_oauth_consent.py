@@ -204,13 +204,15 @@ class CLIBrowserConsent(CLIBrowserEntry):
             selector, cookie = _binding(req)
             state, code = _callback_input(req.scope.get("query_string", b""))
             async with asyncio.timeout(deadline - time.monotonic()):
+                if code is None:
+                    await asyncio.to_thread(
+                        self.flow.reject_callback, selector, cookie, state, deadline=deadline
+                    )
+                    return _next(FINISHED, clear=True)
                 claim = await asyncio.to_thread(
                     self.flow.claim_callback, selector, cookie, state, deadline=deadline
                 )
                 claimed = True
-                if code is None:
-                    # Valid denial consumes the callback. Remaining non-redeemable row expires.
-                    return _next(FINISHED, clear=True)
                 tokens = await self._upstream.exchange_code(code)
                 await self.flow.complete_exchange(
                     selector, claim, tokens.access_token, tokens.expires_at, deadline=deadline

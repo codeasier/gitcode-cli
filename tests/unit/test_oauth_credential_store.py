@@ -400,3 +400,35 @@ def test_native_absence_is_distinct_from_an_inaccessible_vault(native_windows, c
         with pytest.raises(AuthError) as raised:
             action("fixed.synthetic.target")
         assert (type(raised.value) is module._MissingCredentialError) is (code == 1168)
+
+
+def test_prepared_commit_is_same_store_one_shot_and_read_only_until_commit(storage, monkeypatch):
+    store, backend = storage
+    second_backend = Memory()
+    second_store = module.OAuthCredentialStore(second_backend)
+    verify = Mock(return_value=WHO)
+    monkeypatch.setattr(module, "verify_oauth_identity", verify)
+    prepared = store._prepare(subject=WHO.subject, login=WHO.login, access_token=TOKEN, expires_at=EXP)
+    assert TOKEN not in repr(prepared)
+    assert backend.writes == 0 and second_backend.writes == 0
+    with pytest.raises(AuthError):
+        second_store._commit(prepared)
+    assert store._commit(prepared) == WHO
+    with pytest.raises(AuthError):
+        store._commit(prepared)
+    verify.assert_called_once_with(TOKEN)
+    assert backend.writes == 1 and second_backend.writes == 0
+
+
+def test_uncertain_commit_consumes_authorization_without_retry(storage, monkeypatch):
+    store, backend = storage
+    verified(monkeypatch)
+    prepared = store._prepare(subject=WHO.subject, login=WHO.login, access_token=TOKEN, expires_at=EXP)
+    get = Mock(side_effect=OSError(TOKEN))
+    monkeypatch.setattr(backend, "get", get)
+    for _ in range(2):
+        with pytest.raises(AuthError) as err:
+            store._commit(prepared)
+        assert TOKEN not in str(err.value) and err.value.__context__ is None
+    assert backend.writes == 1
+    get.assert_called_once()

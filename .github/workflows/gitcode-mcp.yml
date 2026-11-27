@@ -79,6 +79,9 @@ jobs:
           python -m ruff format --check --config pyproject.toml .
       - name: Test MCP independently
         run: python -I -m pytest -c pyproject.toml tests
+      - name: Test standalone CLI OAuth over real loopback TLS
+        if: matrix.python-version == '3.12'
+        run: python -I -m pytest -c pyproject.toml tests_integration/test_cli_oauth_service_tls.py
       - name: Build wheel and sdist (no publication)
         run: |
           python -m build

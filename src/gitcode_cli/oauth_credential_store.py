@@ -17,6 +17,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Lock
 from typing import Protocol, TypeVar
 
 from .config import valid_login
@@ -214,6 +215,22 @@ class StoredOAuthCredential:
     expires_at: float
 
 
+class _PreparedCredential:
+    """Verified, same-store, one-shot material for a local commit only."""
+
+    def __init__(self, owner: OAuthCredentialStore, who: OAuthIdentity, expires_at: float, access_token: str) -> None:
+        self._owner = owner
+        self._lock = Lock()
+        self._value: tuple[OAuthIdentity, float, str] | None = (who, expires_at, access_token)
+
+    def _take(self, owner: OAuthCredentialStore) -> tuple[OAuthIdentity, float, str]:
+        with self._lock:
+            if owner is not self._owner or self._value is None:
+                raise _invalid()
+            value, self._value = self._value, None
+            return value
+
+
 class OAuthCredentialStore:
     """Internal OAuth-only store; do not pass its credentials into legacy PAT routes."""
 
@@ -230,14 +247,29 @@ class OAuthCredentialStore:
 
     def save(self, *, subject: str, login: str, expires_at: float, access_token: str) -> OAuthIdentity:
         """Verify the broker's claimed owner with GitCode before any local write."""
+        return self._commit(
+            self._prepare(subject=subject, login=login, expires_at=expires_at, access_token=access_token)
+        )
+
+    def _prepare(self, *, subject: str, login: str, expires_at: float, access_token: str) -> _PreparedCredential:
+        # This phase is read-only: cancellation may abandon a running identity
+        # check in a worker, and that worker can never write the native vault.
         who = _identity(subject, login)
         _check_token(access_token, who)
         _check_expiry(expires_at)
         verified = _protected(lambda: verify_oauth_identity(access_token))
         if type(verified) is not OAuthIdentity or verified != who:
             raise _invalid()
+        return _PreparedCredential(self, who, expires_at, access_token)
+
+    def _commit(self, prepared: _PreparedCredential) -> OAuthIdentity:
+        # Once the native write begins, the outcome may be uncertain until
+        # readback. Consume the preparation before any native access.
+        if type(prepared) is not _PreparedCredential:
+            raise _invalid()
+        who, expires_at, access_token = prepared._take(self)
         target = _target(who)
-        secret = json.dumps([_FORMAT, _HOST, subject, login, expires_at, access_token], separators=(",", ":"))
+        secret = json.dumps([_FORMAT, _HOST, who.subject, who.login, expires_at, access_token], separators=(",", ":"))
         _check_expiry(expires_at)  # verification can take time
         _protected(lambda: self._backend.put(target, secret))
         # A lost/uncertain write or a concurrent replacement is not login success.

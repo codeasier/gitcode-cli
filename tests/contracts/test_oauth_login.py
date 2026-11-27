@@ -11,6 +11,7 @@ import sys
 import time
 from contextlib import contextmanager, nullcontext
 from functools import partial
+from threading import Event
 from unittest.mock import Mock
 
 import httpx
@@ -87,7 +88,7 @@ class Flow:
             self.events.append("show")
 
         try:
-            yield show
+            yield login._TerminalSession(lambda: None, show)
         finally:
             self.events.append("close")
 
@@ -310,33 +311,33 @@ def test_real_terminal_default_rejects_noninteractive_before_start(flow, monkeyp
 def test_unsupported_system_vault_precedes_browser_and_redeem(flow):
     with pytest.raises(AuthError):
         flow.run(
-            _store_factory=storage.OAuthCredentialStore.system, _open_terminal=lambda: nullcontext(flow.tty.append)
+            _store_factory=storage.OAuthCredentialStore.system,
+            _open_terminal=lambda: nullcontext(login._TerminalSession(lambda: None, flow.tty.append)),
         )
     assert flow.events == [] and flow.browser == flow.tty == []
 
 
-@pytest.mark.skipif(os.name != "posix", reason="POSIX controlling terminal semantics")
-def test_real_foreground_pty_keeps_pair_off_redirected_stdout():
+def run_in_controlling_pty(code):
     import pty
 
     master, slave = pty.openpty()
-    # Allocate a new session/controlling tty in a fresh interpreter, not in
-    # pytest itself. Use only an inert marker; no broker, browser or OS vault.
-    code = """
-import fcntl, os, termios
+    setup = """
+import fcntl, os, signal, termios
 os.setsid()
 fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-from gitcode_cli.oauth_login import _terminal
-with _terminal() as show:
-    show("synthetic-terminal-marker")
 """
     try:
-        child = subprocess.run(
-            [sys.executable, "-c", code], stdin=slave, stderr=slave, stdout=subprocess.PIPE, check=False, timeout=15
-        )
-    finally:
-        os.close(slave)
-    try:
+        try:
+            child = subprocess.run(
+                [sys.executable, "-c", setup + code],
+                stdin=slave,
+                stderr=slave,
+                stdout=subprocess.PIPE,
+                check=False,
+                timeout=15,
+            )
+        finally:
+            os.close(slave)
         result = bytearray()
         while True:
             try:
@@ -348,10 +349,66 @@ with _terminal() as show:
             if not chunk:
                 break
             result.extend(chunk)
-        assert child.returncode == 0 and child.stdout == b""
-        assert result.count(b"synthetic-terminal-marker") == 1
+        return child, result
     finally:
         os.close(master)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX controlling terminal semantics")
+def test_real_foreground_pty_keeps_pair_off_redirected_stdout():
+    child, terminal = run_in_controlling_pty("""
+from gitcode_cli.oauth_login import _terminal
+with _terminal() as terminal:
+    terminal.show("synthetic-terminal-marker")
+""")
+    assert child.returncode == 0 and child.stdout == b""
+    assert terminal.count(b"synthetic-terminal-marker") == 1
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX controlling terminal semantics")
+@pytest.mark.parametrize("phase", ["before-open", "after-open"])
+def test_real_pty_loses_foreground_and_does_not_show_pair(phase):
+    # A second process group in the same session takes the real PTY's
+    # foreground. Use a fake opener, fake acquisition and no native vault.
+    child, terminal = run_in_controlling_pty(f"""
+import asyncio
+from gitcode_cli.errors import AuthError
+from gitcode_cli.oauth_login import _Presentation, _terminal
+pg = os.fork()
+if pg == 0:
+    signal.pause()
+    os._exit(0)
+try:
+    os.setpgid(pg, pg)
+    launches = []
+
+    def background():
+        os.tcsetpgrp(0, pg)
+        assert os.tcgetpgrp(0) == pg
+
+    def open_browser(url):
+        launches.append(url)
+        if {phase!r} == "after-open":
+            background()
+
+    with _terminal() as terminal:
+        presentation = _Presentation({ENTRY!r}, terminal, open_browser)
+        if {phase!r} == "before-open":
+            background()
+        try:
+            asyncio.run(presentation.present({ENTRY!r}, {PAIR!r}))
+        except AuthError:
+            if presentation.completed:
+                raise AssertionError("invalid success")
+        else:
+            raise AssertionError("background presentation succeeded")
+    print(len(launches))
+finally:
+    os.kill(pg, signal.SIGKILL)
+    os.waitpid(pg, 0)
+""")
+    assert (child.returncode, child.stdout) == (0, b"0\n" if phase == "before-open" else b"1\n")
+    assert PAIR.encode("ascii") not in terminal and b"one-time pairing" not in terminal
 
 
 def test_native_opener_forwards_only_url_to_registered_windows_handler(flow, monkeypatch):
@@ -363,3 +420,109 @@ def test_native_opener_forwards_only_url_to_registered_windows_handler(flow, mon
     assert flow.run(_opener=login._open_browser) == WHO
     launch.assert_called_once_with(ENTRY, "open")
     assert flow.tty == [PAIR]
+
+
+def test_pending_identity_check_does_not_block_event_loop_and_cannot_commit(flow, monkeypatch):
+    entered, released = Event(), Event()
+
+    def verifier(token):
+        assert token == TOKEN
+        entered.set()
+        if not released.wait(3):
+            raise AssertionError("event loop could not cancel during verification")
+        return WHO
+
+    monkeypatch.setattr(storage, "verify_oauth_identity", verifier)
+
+    async def scenario():
+        task = asyncio.create_task(
+            login.login_with_browser(
+                ORIGIN,
+                _open_terminal=flow.terminal,
+                _opener=flow.open,
+                _acquire=flow.acquire,
+                _store_factory=flow.system,
+            )
+        )
+        try:
+            # A call from a second thread here might mask event-loop blockage.
+            # The same loop must actually run while the verifier is paused.
+            while not entered.is_set() and not task.done():
+                await asyncio.sleep(0)
+            assert not task.done() and entered.is_set()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError) as err:
+                await task
+            assert_opaque_cancellation(err.value)
+        finally:
+            released.set()
+
+    asyncio.run(scenario())
+    assert flow.events.count("start") == flow.events.count("redeem") == 1
+    assert flow.native.value is None and not set(flow.events) & {"put", "read"}
+
+
+def test_genuine_task_cancel_at_verified_identity_boundary(flow, monkeypatch):
+    verified, ready_to_return = Event(), Event()
+    prepare = storage.OAuthCredentialStore._prepare
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+
+        def signal_verified(store, **claimed):
+            prepared = prepare(store, **claimed)
+            # This executes after /user succeeded, but before the verified receipt
+            # is delivered to the loop. Queue real Task.cancel(), not a fake error.
+            verified.set()
+            loop.call_soon_threadsafe(task.cancel)
+            ready_to_return.set()
+            return prepared
+
+        monkeypatch.setattr(storage.OAuthCredentialStore, "_prepare", signal_verified)
+        task = asyncio.create_task(
+            login.login_with_browser(
+                ORIGIN,
+                _open_terminal=flow.terminal,
+                _opener=flow.open,
+                _acquire=flow.acquire,
+                _store_factory=flow.system,
+            )
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert verified.is_set()
+
+    asyncio.run(scenario())
+    assert ready_to_return.is_set()
+    assert flow.events.count("verify") == 1 and flow.native.value is None
+    assert not set(flow.events) & {"put", "read"}
+
+
+def test_identity_wait_deadline_never_commits_late_verification(flow, monkeypatch):
+    entered, released = Event(), Event()
+
+    def verifier(token):
+        entered.set()
+        if not released.wait(3):
+            raise AssertionError("deadline did not run while verifier was pending")
+        return WHO
+
+    monkeypatch.setattr(storage, "verify_oauth_identity", verifier)
+    monkeypatch.setattr(login, "_IDENTITY_WAIT_SECONDS", 0.1)
+
+    async def scenario():
+        try:
+            with pytest.raises(AuthError):
+                await login.login_with_browser(
+                    ORIGIN,
+                    _open_terminal=flow.terminal,
+                    _opener=flow.open,
+                    _acquire=flow.acquire,
+                    _store_factory=flow.system,
+                )
+        finally:
+            released.set()
+
+    asyncio.run(scenario())
+    assert entered.is_set() and flow.native.value is None
+    assert not set(flow.events) & {"put", "read"}

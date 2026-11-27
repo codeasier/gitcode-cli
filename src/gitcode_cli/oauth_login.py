@@ -13,15 +13,17 @@ import os
 import sys
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 
 from .errors import AuthError
 from .oauth_broker_client import _ENTRY, _NONCE, BrokerReceipt, _origin, acquire_receipt
-from .oauth_credential_store import OAuthCredentialStore
+from .oauth_credential_store import OAuthCredentialStore, _PreparedCredential
 from .oauth_identity import OAuthIdentity
 
 _Present = Callable[[str, str], Awaitable[None]]
 _Acquire = Callable[[str, _Present], Awaitable[BrokerReceipt]]
 _Show = Callable[[str], None]
+_IDENTITY_WAIT_SECONDS = 30
 
 
 def _failed() -> AuthError:
@@ -44,8 +46,18 @@ def _terminal_fd(fd: int) -> bool:
     return os.tcgetpgrp(fd) == os.getpgrp()
 
 
+@dataclass(frozen=True)
+class _TerminalSession:
+    check_foreground: Callable[[], None]
+    write_pair: _Show
+
+    def show(self, pair: str) -> None:
+        self.check_foreground()
+        self.write_pair(pair)
+
+
 @contextmanager
-def _terminal() -> Iterator[_Show]:
+def _terminal() -> Iterator[_TerminalSession]:
     # Never degrade to printing on stdout/stderr, even when opening the
     # controlling terminal fails. Require a foreground interactive invocation.
     if not all(_terminal_fd(fd) for fd in (0, 2)):
@@ -53,16 +65,21 @@ def _terminal() -> Iterator[_Show]:
     device = "CONOUT$" if sys.platform == "win32" else "/dev/tty"
     fd = os.open(device, os.O_WRONLY | getattr(os, "O_NOCTTY", 0))
     with os.fdopen(fd, "w", encoding="ascii") as out:
-        if not _terminal_fd(out.fileno()):
-            raise _failed()
 
-        def show(pair: str) -> None:
+        def check_foreground() -> None:
+            # Recheck this exact descriptor, not a saved isatty result or
+            # whatever stream happens to be named stderr at presentation time.
+            if not _terminal_fd(out.fileno()):
+                raise _failed()
+
+        def write_pair(pair: str) -> None:
             out.write(
                 f"Enter this one-time pairing value only on the trusted broker page opened for this login:\n{pair}\n"
             )
             out.flush()
 
-        yield show
+        check_foreground()
+        yield _TerminalSession(check_foreground, write_pair)
 
 
 def _open_browser(url: str) -> None:
@@ -74,9 +91,9 @@ def _open_browser(url: str) -> None:
 
 
 class _Presentation:
-    def __init__(self, url: str, show: _Show, opener: Callable[[str], None]) -> None:
+    def __init__(self, url: str, terminal: _TerminalSession, opener: Callable[[str], None]) -> None:
         self.url = url
-        self.show = show
+        self.terminal = terminal
         self.opener = opener
         self.available = True
         self.completed = False
@@ -89,15 +106,43 @@ class _Presentation:
         selector, dot, secret = pair.partition(".")
         if not dot or selector == secret or not _NONCE.fullmatch(selector) or not _NONCE.fullmatch(secret):
             raise _failed()
+        self.terminal.check_foreground()
         self.opener(self.url)
-        self.show(pair)
+        self.terminal.show(pair)
         self.completed = True
+
+
+async def _prepare_credential(store: OAuthCredentialStore, receipt: BrokerReceipt) -> _PreparedCredential:
+    # The worker is read-only. Python may still wait for a running verifier
+    # during executor teardown, but that worker can never access the vault.
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            store._prepare,
+            subject=receipt.subject,
+            login=receipt.login,
+            expires_at=receipt.expires_at,
+            access_token=receipt.access_token,
+        )
+    )
+    try:
+        # asyncio.wait() preserves external cancellation even when verification
+        # completes at the same time (older asyncio.wait_for() may swallow it).
+        done, _ = await asyncio.wait((task,), timeout=_IDENTITY_WAIT_SECONDS)
+        if not done:
+            raise _failed()
+        return task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+        elif not task.cancelled():
+            # Observe any simultaneous worker failure so asyncio cannot log it.
+            task.exception()
 
 
 async def login_with_browser(
     trusted_broker_origin: str,
     *,
-    _open_terminal: Callable[[], AbstractContextManager[_Show]] = _terminal,
+    _open_terminal: Callable[[], AbstractContextManager[_TerminalSession]] = _terminal,
     _opener: Callable[[str], None] = _open_browser,
     _acquire: _Acquire = acquire_receipt,
     _store_factory: Callable[[], OAuthCredentialStore] = OAuthCredentialStore.system,
@@ -105,28 +150,25 @@ async def login_with_browser(
     """Acquire exactly once; return only the verified and read-back account identity."""
     try:
         origin = _origin(trusted_broker_origin)
-        with _open_terminal() as show:
+        with _open_terminal() as terminal:
             store = _store_factory()
             if type(store) is not OAuthCredentialStore:
                 raise _failed()
-            presentation = _Presentation(origin + _ENTRY, show, _opener)
+            presentation = _Presentation(origin + _ENTRY, terminal, _opener)
             try:
                 receipt = await _acquire(origin, presentation.present)
             finally:
                 presentation.available = False
             if not presentation.completed or type(receipt) is not BrokerReceipt:
                 raise _failed()
-        # Honor a pending cancellation before any irreversible vault write.
+        # A cancellation already requested at receipt should not start /user.
         await asyncio.sleep(0)
-        # save() revalidates fields, verifies the owner via fixed-origin GitCode
-        # /user, writes the native vault once, and reads the exact credential back.
-        # Never retry or delete on an uncertain outcome (possibly a concurrent write).
-        who = store.save(
-            subject=receipt.subject,
-            login=receipt.login,
-            expires_at=receipt.expires_at,
-            access_token=receipt.access_token,
-        )
+        prepared = await _prepare_credential(store, receipt)
+        # Deliver pending cancellation after identity verification and before
+        # native commit. Once the synchronous put/readback begins, do not retry,
+        # invent success, or delete a possibly valid concurrent replacement.
+        await asyncio.sleep(0)
+        who = store._commit(prepared)
         if type(who) is not OAuthIdentity or who != OAuthIdentity(receipt.subject, receipt.login):
             raise _failed()
         return who

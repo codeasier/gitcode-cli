@@ -96,7 +96,7 @@ Record the deployed commit before upgrading. Back up the SQLite database consist
 
 The repository-only migration does not alter the SQLite schema or `codeasier-gitcode-mcp.oauth-store.v1` marker and requires neither a database conversion nor reauthorization solely for the source move. Changing the encryption key under an existing database invalidates its stored credentials. This release does not provide an in-place encryption-key rotation command. Plan account reconnection when replacing lost state or keys.
 
-After the new runtime is running, refresh ChatGPT's tool metadata. A writable connection exposes 31 tools, including `gitcode_create_file`, `gitcode_update_file` and `gitcode_delete_file`; read-only connections expose 19. These tools use the existing OAuth authorization for [API code publishing](code-publishing.md), without additional Git credentials in dot's shell.
+After the new runtime is running, refresh ChatGPT's tool metadata. A writable MCP 0.4.0 connection exposes 37 tools, including `gitcode_create_file`, `gitcode_update_file` and `gitcode_delete_file`; read-only connections expose 20. These tools use the existing OAuth authorization for [API code publishing](code-publishing.md), without additional Git credentials in dot's shell.
 
 Update an existing reverse proxy's request-size limit as well: the current Nginx example sets `client_max_body_size 2m`, matching the MCP server's 2 MiB HTTP request limit. This accommodates JSON escaping for file content up to the separate 256 KiB decoded limit. A proxy still using `1m` can reject a valid file-tool request before it reaches the application. OAuth form bodies retain their 16 KiB application limit. Validate and reload Nginx after changing its configuration.
 

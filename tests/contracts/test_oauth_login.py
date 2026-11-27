@@ -201,7 +201,10 @@ def test_no_second_transaction_and_no_save(flow, failure):
         if failure == "untyped":
             return vars(receipt())
         if failure == "cancel":
-            raise asyncio.CancelledError
+            try:
+                raise RuntimeError(PAIR)
+            except RuntimeError as exc:
+                raise asyncio.CancelledError(TOKEN) from exc
         errors = {"denied": AuthError(TOKEN), "unknown": OSError(TOKEN), "timeout": asyncio.TimeoutError(TOKEN)}
         raise errors[failure]
 
@@ -209,7 +212,37 @@ def test_no_second_transaction_and_no_save(flow, failure):
         flow.run(_acquire=fail)
     assert starts == [ORIGIN] and "verify" not in flow.events and "put" not in flow.events
     assert len(flow.browser) <= 1 and len(flow.tty) <= 1
-    assert err.value.__context__ is None and TOKEN not in str(err.value)
+    if failure == "cancel":
+        assert_opaque_cancellation(err.value)
+    else:
+        assert err.value.__context__ is None and TOKEN not in str(err.value)
+
+
+def assert_opaque_cancellation(exc):
+    # Python 3.9/3.10 Task.result() may wrap the coroutine's CancelledError in
+    # another one. Check the entire chain; a hidden sensitive cause also fails.
+    while exc is not None:
+        assert type(exc) is asyncio.CancelledError and not exc.args
+        assert exc.__cause__ is None
+        exc = exc.__context__
+
+
+def test_cancellation_is_sanitized_at_coroutine_boundary(flow):
+    async def acquire(origin, present):
+        await present(ENTRY, PAIR)
+        raise asyncio.CancelledError(TOKEN) from RuntimeError(PAIR)
+
+    async def check():
+        with pytest.raises(asyncio.CancelledError) as err:
+            await login.login_with_browser(
+                ORIGIN, _open_terminal=flow.terminal, _opener=flow.open, _acquire=acquire, _store_factory=flow.system
+            )
+        assert_opaque_cancellation(err.value)
+        # Direct await has no Task wrapper: the original exception was discarded.
+        assert err.value.__context__ is None
+
+    asyncio.run(check())
+    assert "verify" not in flow.events and "put" not in flow.events
 
 
 def test_queued_cancellation_at_receipt_does_not_save(flow):

@@ -130,8 +130,10 @@ async def login_with_browser(
         if type(who) is not OAuthIdentity or who != OAuthIdentity(receipt.subject, receipt.login):
             raise _failed()
         return who
+    except asyncio.CancelledError:
+        error = asyncio.CancelledError()
     except Exception:
-        pass
-    # Do not retain native/transport exceptions, including implicit context.
-    # Task cancellation and KeyboardInterrupt propagate without a new transaction.
-    raise _failed()
+        error = _failed()
+    # Preserve cancellation without retaining native/transport messages or
+    # exception chains. `from None` alone would leave __context__ attached.
+    raise error

@@ -89,6 +89,14 @@ def csrf(page):
     return re.search(r'name="csrf" value="([^"]+)"', page.text)[1]
 
 
+async def post_consent_with_short_deadline(cli, monkeypatch, decision, proof):
+    # Only the first decision POST races an intentionally shortened timeout.
+    # Pairing, fetching the CSRF proof and replay/recovery use the normal budget.
+    with monkeypatch.context() as scoped:
+        scoped.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
+        return await cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+
+
 @pytest.mark.parametrize("decision", ["allow", "deny"])
 def test_explicit_decision_only_after_clean_callback(broker, decision):
     app, receipt, token, code = broker
@@ -375,7 +383,6 @@ def test_expired_consent_cannot_commit_while_store_contended(
     app, _, _, code = broker
     store = app.flow._store
     original = app.flow.decide
-    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
 
     async def run():
         loop = asyncio.get_running_loop()
@@ -391,7 +398,8 @@ def test_expired_consent_cannot_commit_while_store_contended(
 
         async with client(app) as cli:
             start, private, state = await pair(app, cli)
-            await cli.get(CALLBACK, params={"code": code, "state": state})
+            callback = await cli.get(CALLBACK, params={"code": code, "state": state})
+            assert (callback.status_code, callback.headers["location"]) == (303, CONSENT)
             proof = csrf(await cli.get(CONSENT))
             key = "cli.oauth.v1:" + start.selector
             before = store.get("flow", key)
@@ -407,7 +415,7 @@ def test_expired_consent_cannot_commit_while_store_contended(
                 peer.execute("SELECT COUNT(*) FROM oauth_records").fetchone()
             try:
                 pending = asyncio.create_task(
-                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                    post_consent_with_short_deadline(cli, monkeypatch, decision, proof)
                 )
                 await asyncio.wait_for(dispatched.wait(), timeout=2)
                 result = await asyncio.wait_for(pending, timeout=2)
@@ -439,7 +447,6 @@ def test_expired_consent_cannot_commit_while_store_contended(
 def test_expiry_after_sql_mutation_rolls_back_before_commit(broker, monkeypatch, decision):
     app, _, _, code = broker
     store = app.flow._store
-    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
     original_put, original_delete = OAuthTransaction.put, OAuthTransaction.delete
 
     async def run():
@@ -448,7 +455,8 @@ def test_expiry_after_sql_mutation_rolls_back_before_commit(broker, monkeypatch,
         unpause = threading.Event()
         async with client(app) as cli:
             start, private, state = await pair(app, cli)
-            await cli.get(CALLBACK, params={"code": code, "state": state})
+            callback = await cli.get(CALLBACK, params={"code": code, "state": state})
+            assert (callback.status_code, callback.headers["location"]) == (303, CONSENT)
             proof = csrf(await cli.get(CONSENT))
             key = "cli.oauth.v1:" + start.selector
             before = store.get("flow", key)
@@ -474,7 +482,7 @@ def test_expiry_after_sql_mutation_rolls_back_before_commit(broker, monkeypatch,
             )
             try:
                 pending = asyncio.create_task(
-                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                    post_consent_with_short_deadline(cli, monkeypatch, decision, proof)
                 )
                 await asyncio.wait_for(mutated.wait(), timeout=2)
                 result = await asyncio.wait_for(pending, timeout=2)
@@ -494,7 +502,6 @@ def test_delayed_acknowledgement_of_committed_choice_is_neutral(broker, monkeypa
     app, _, token, code = broker
     store = app.flow._store
     original = app.flow.decide
-    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
 
     async def run():
         loop = asyncio.get_running_loop()
@@ -509,12 +516,13 @@ def test_delayed_acknowledgement_of_committed_choice_is_neutral(broker, monkeypa
 
         async with client(app) as cli:
             start, private, state = await pair(app, cli)
-            await cli.get(CALLBACK, params={"code": code, "state": state})
+            callback = await cli.get(CALLBACK, params={"code": code, "state": state})
+            assert (callback.status_code, callback.headers["location"]) == (303, CONSENT)
             proof = csrf(await cli.get(CONSENT))
             monkeypatch.setattr(app.flow, "decide", delayed_ack)
             try:
                 pending = asyncio.create_task(
-                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                    post_consent_with_short_deadline(cli, monkeypatch, decision, proof)
                 )
                 await asyncio.wait_for(committed.wait(), timeout=2)
                 result = await asyncio.wait_for(pending, timeout=2)

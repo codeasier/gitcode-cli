@@ -10,6 +10,7 @@ No refresh token, MCP grant, auth code or plaintext CLI verifier is persisted.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -167,9 +168,11 @@ class CLIFlow:
             self._save(tx, selector, row, "callback")
         return browser
 
-    def claim_callback(self, selector: str, cookie: str, state: str) -> ExchangeClaim:
+    def claim_callback(
+        self, selector: str, cookie: str, state: str, *, deadline: float | None = None
+    ) -> ExchangeClaim:
         """Claim before exchanging the code. A duplicate callback must never exchange."""
-        with self._store.transaction() as tx:
+        with self._store.transaction(deadline=deadline) as tx:
             row = self._read(tx, selector, "callback")
             _proof(cookie, row["cookie"])
             _proof(state, row.pop("state"))
@@ -179,7 +182,13 @@ class CLIFlow:
         return claim
 
     async def complete_exchange(
-        self, selector: str, claim: ExchangeClaim, access_token: str, expires_at: float
+        self,
+        selector: str,
+        claim: ExchangeClaim,
+        access_token: str,
+        expires_at: float,
+        *,
+        deadline: float | None = None,
     ) -> Consent:
         """Accept an exchanged credential only after an independent identity lookup.
 
@@ -194,10 +203,7 @@ class CLIFlow:
             or not math.isfinite(expires_at)
         ):
             raise FlowRejected()
-        with self._store.transaction() as tx:
-            row = self._read(tx, selector, "exchange")
-            _proof(claim.proof, row["claim"])
-            self._save(tx, selector, row, "verifying")
+        await asyncio.to_thread(self._start_verifying, selector, claim, deadline)
         try:
             who = await self._verify_identity(access_token)
         except Exception:
@@ -212,7 +218,26 @@ class CLIFlow:
             for v in (who.subject, who.login)
         ):
             raise FlowRejected()
-        with self._store.transaction() as tx:
+        return await asyncio.to_thread(
+            self._stage_consent, selector, claim, access_token, expires_at, who, deadline
+        )
+
+    def _start_verifying(self, selector: str, claim: ExchangeClaim, deadline: float | None) -> None:
+        with self._store.transaction(deadline=deadline) as tx:
+            row = self._read(tx, selector, "exchange")
+            _proof(claim.proof, row["claim"])
+            self._save(tx, selector, row, "verifying")
+
+    def _stage_consent(
+        self,
+        selector: str,
+        claim: ExchangeClaim,
+        access_token: str,
+        expires_at: float,
+        who: Subject,
+        deadline: float | None,
+    ) -> Consent:
+        with self._store.transaction(deadline=deadline) as tx:
             row = self._read(tx, selector, "verifying")
             _proof(claim.proof, row.pop("claim"))
             if expires_at <= time.time():
@@ -229,10 +254,22 @@ class CLIFlow:
             self._save(tx, selector, row, "consent")
         return Consent(who, csrf)
 
-    def decide(self, selector: str, cookie: str, csrf: str, *, allow: bool) -> None:
+    def consent_view(self, selector: str, cookie: str, *, deadline: float | None = None) -> Consent:
+        """Render only the current bound subject on a clean URL. Reload supersedes old forms."""
+        with self._store.transaction(deadline=deadline) as tx:
+            row = self._read(tx, selector, "consent")
+            _proof(cookie, row["cookie"])
+            csrf = _nonce()
+            row["csrf"] = _digest(csrf)
+            self._save(tx, selector, row, "consent")
+            return Consent(Subject(row["subject"], row["login"]), csrf)
+
+    def decide(
+        self, selector: str, cookie: str, csrf: str, *, allow: bool, deadline: float | None = None
+    ) -> None:
         if type(allow) is not bool:
             raise FlowRejected()
-        with self._store.transaction() as tx:
+        with self._store.transaction(deadline=deadline) as tx:
             row = self._read(tx, selector, "consent")
             _proof(cookie, row.pop("cookie"))
             _proof(csrf, row.pop("csrf"))

@@ -229,6 +229,16 @@ class CLIFlow:
             self._save(tx, selector, row, "consent")
         return Consent(who, csrf)
 
+    def consent_view(self, selector: str, cookie: str) -> Consent:
+        """Render only the current bound subject on a clean URL. Reload supersedes old forms."""
+        with self._store.transaction() as tx:
+            row = self._read(tx, selector, "consent")
+            _proof(cookie, row["cookie"])
+            csrf = _nonce()
+            row["csrf"] = _digest(csrf)
+            self._save(tx, selector, row, "consent")
+            return Consent(Subject(row["subject"], row["login"]), csrf)
+
     def decide(self, selector: str, cookie: str, csrf: str, *, allow: bool) -> None:
         if type(allow) is not bool:
             raise FlowRejected()

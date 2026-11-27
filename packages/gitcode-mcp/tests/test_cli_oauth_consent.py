@@ -4,6 +4,8 @@ import hashlib
 import html
 import re
 import secrets
+import sqlite3
+import threading
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -13,7 +15,7 @@ from cryptography.fernet import Fernet
 from gitcode_mcp.cli_oauth_browser import COOKIE, ENTRY
 from gitcode_mcp.cli_oauth_consent import CALLBACK, CONSENT, FINISHED, CLIBrowserConsent
 from gitcode_mcp.cli_oauth_flow import FlowRejected, Subject
-from gitcode_mcp.oauth_store import OAuthStore
+from gitcode_mcp.oauth_store import OAuthStore, OAuthTransaction
 from gitcode_mcp.oauth_upstream import TOKEN_URL
 
 ORIGIN = "https://broker.example"
@@ -362,4 +364,198 @@ def test_deadline_after_claim_rejects_replay(broker, monkeypatch):
 
     monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._CALLBACK_DEADLINE", 0.1)
     monkeypatch.setattr(app._upstream, "exchange_code", stall)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("lock_kind", ["local", "sqlite-writer", "sqlite-reader"])
+@pytest.mark.parametrize("decision", ["allow", "deny"])
+def test_expired_consent_cannot_commit_while_store_contended(
+    broker, monkeypatch, decision, lock_kind
+):
+    app, _, _, code = broker
+    store = app.flow._store
+    original = app.flow.decide
+    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        dispatched = asyncio.Event()
+        finished = asyncio.Event()
+
+        def capture(*args, **kwargs):
+            loop.call_soon_threadsafe(dispatched.set)
+            try:
+                return original(*args, **kwargs)
+            finally:
+                loop.call_soon_threadsafe(finished.set)
+
+        async with client(app) as cli:
+            start, private, state = await pair(app, cli)
+            await cli.get(CALLBACK, params={"code": code, "state": state})
+            proof = csrf(await cli.get(CONSENT))
+            key = "cli.oauth.v1:" + start.selector
+            before = store.get("flow", key)
+            default_busy = store._connection().execute("PRAGMA busy_timeout").fetchone()
+            monkeypatch.setattr(app.flow, "decide", capture)
+            if lock_kind == "local":
+                store._lock.acquire()
+                peer = None
+            else:
+                peer = sqlite3.connect(store.path, isolation_level=None)
+                peer.execute("BEGIN IMMEDIATE" if lock_kind == "sqlite-writer" else "BEGIN")
+                # Hold a writer lock at BEGIN or a reader lock that blocks commit.
+                peer.execute("SELECT COUNT(*) FROM oauth_records").fetchone()
+            try:
+                pending = asyncio.create_task(
+                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                )
+                await asyncio.wait_for(dispatched.wait(), timeout=2)
+                result = await asyncio.wait_for(pending, timeout=2)
+            finally:
+                if peer:
+                    peer.rollback()
+                    peer.close()
+                else:
+                    store._lock.release()
+            await asyncio.wait_for(finished.wait(), timeout=2)
+            assert store.get("flow", key) == before
+            assert store._connection().execute("PRAGMA busy_timeout").fetchone() == default_busy
+            assert (result.status_code, result.headers["location"]) == (303, FINISHED)
+            assert "set-cookie" not in result.headers
+            with pytest.raises(FlowRejected):
+                app.flow.redeem(start.selector, private)
+            # Unchanged phase and CSRF are still usable; no stale new or terminal state.
+            good = await cli.post(CONSENT, headers=FORM, data={"decision": "deny", "csrf": proof})
+            assert good.status_code == 303 and store.get("flow", key) is None
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("decision", ["allow", "deny"])
+def test_expiry_after_sql_mutation_rolls_back_before_commit(broker, monkeypatch, decision):
+    app, _, _, code = broker
+    store = app.flow._store
+    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
+    original_put, original_delete = OAuthTransaction.put, OAuthTransaction.delete
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        mutated = asyncio.Event()
+        unpause = threading.Event()
+        async with client(app) as cli:
+            start, private, state = await pair(app, cli)
+            await cli.get(CALLBACK, params={"code": code, "state": state})
+            proof = csrf(await cli.get(CONSENT))
+            key = "cli.oauth.v1:" + start.selector
+            before = store.get("flow", key)
+
+            def delayed_after_mutation():
+                loop.call_soon_threadsafe(mutated.set)
+                assert unpause.wait(3)
+
+            def put(self, kind, name, payload, expires_at):
+                original_put(self, kind, name, payload, expires_at)
+                if kind == "flow" and name == key and payload["phase"] == "ready":
+                    delayed_after_mutation()
+
+            def delete(self, kind, name):
+                original_delete(self, kind, name)
+                if kind == "flow" and name == key:
+                    delayed_after_mutation()
+
+            monkeypatch.setattr(
+                OAuthTransaction,
+                "put" if decision == "allow" else "delete",
+                put if decision == "allow" else delete,
+            )
+            try:
+                pending = asyncio.create_task(
+                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                )
+                await asyncio.wait_for(mutated.wait(), timeout=2)
+                result = await asyncio.wait_for(pending, timeout=2)
+            finally:
+                unpause.set()
+            # Read blocks until the canceled request's worker rolls back/releases the lock.
+            assert await asyncio.to_thread(store.get, "flow", key) == before
+            assert (result.status_code, result.headers["location"]) == (303, FINISHED)
+            with pytest.raises(FlowRejected):
+                app.flow.redeem(start.selector, private)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("decision", ["allow", "deny"])
+def test_delayed_acknowledgement_of_committed_choice_is_neutral(broker, monkeypatch, decision):
+    app, _, token, code = broker
+    store = app.flow._store
+    original = app.flow.decide
+    monkeypatch.setattr("gitcode_mcp.cli_oauth_consent._FORM_DEADLINE", 0.12)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        committed = asyncio.Event()
+        release_ack = threading.Event()
+
+        def delayed_ack(*args, **kwargs):
+            original(*args, **kwargs)
+            if not committed.is_set():
+                loop.call_soon_threadsafe(committed.set)
+                assert release_ack.wait(3)
+
+        async with client(app) as cli:
+            start, private, state = await pair(app, cli)
+            await cli.get(CALLBACK, params={"code": code, "state": state})
+            proof = csrf(await cli.get(CONSENT))
+            monkeypatch.setattr(app.flow, "decide", delayed_ack)
+            try:
+                pending = asyncio.create_task(
+                    cli.post(CONSENT, headers=FORM, data={"decision": decision, "csrf": proof})
+                )
+                await asyncio.wait_for(committed.wait(), timeout=2)
+                result = await asyncio.wait_for(pending, timeout=2)
+            finally:
+                release_ack.set()
+            assert (result.status_code, result.headers["location"]) == (303, FINISHED)
+            assert "set-cookie" not in result.headers
+            assert token not in (await cli.get(FINISHED)).text
+            key = "cli.oauth.v1:" + start.selector
+            receipt = store.get("flow", key)
+            if decision == "allow":
+                assert receipt["phase"] == "ready" and not {"cookie", "csrf"} & receipt.keys()
+            else:
+                assert receipt is None
+            repeated = await cli.post(
+                CONSENT, headers=FORM, data={"decision": decision, "csrf": proof}
+            )
+            assert repeated.status_code == 400
+            assert store.get("flow", key) == receipt
+            if decision == "allow":
+                assert app.flow.redeem(start.selector, private).access_token == token
+            with pytest.raises(FlowRejected):
+                app.flow.redeem(start.selector, private)
+
+    asyncio.run(run())
+
+
+def test_callback_verification_and_consent_sql_work_runs_off_event_loop(broker, monkeypatch):
+    app, _, _, code = broker
+    original = app.flow._save
+    writes = {}
+
+    def capture(tx, selector, row, phase):
+        if phase in {"verifying", "consent"}:
+            writes[phase] = threading.get_ident()
+        return original(tx, selector, row, phase)
+
+    monkeypatch.setattr(app.flow, "_save", capture)
+
+    async def run():
+        async with client(app) as cli:
+            _, _, state = await pair(app, cli)
+            callback = await cli.get(CALLBACK, params={"code": code, "state": state})
+            assert callback.headers["location"] == CONSENT
+            assert set(writes) == {"verifying", "consent"}
+            assert all(thread != threading.get_ident() for thread in writes.values())
+
     asyncio.run(run())

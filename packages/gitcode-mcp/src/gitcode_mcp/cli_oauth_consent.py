@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import html
 import re
+import time
 from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qsl
 
@@ -135,11 +136,15 @@ class CLIBrowserConsent(CLIBrowserEntry):
             return _error()
         if not self._admit():
             return _error(429)
+        decision_dispatched = False
+        deadline = time.monotonic() + _FORM_DEADLINE
         try:
             selector, cookie = _binding(req)
-            async with asyncio.timeout(_FORM_DEADLINE):
+            async with asyncio.timeout(deadline - time.monotonic()):
                 if req.method == "GET":
-                    view = await asyncio.to_thread(self.flow.consent_view, selector, cookie)
+                    view = await asyncio.to_thread(
+                        self.flow.consent_view, selector, cookie, deadline=deadline
+                    )
                     page = (
                         '<!doctype html><meta charset="utf-8"><title>Confirm GitCode CLI login</title>'
                         "<h1>Confirm GitCode CLI login</h1><p>Allow the CLI that you paired "
@@ -171,34 +176,44 @@ class CLIBrowserConsent(CLIBrowserEntry):
                     if not m:
                         return _error()
                     decision, csrf = m.groups()
+                decision_dispatched = True
                 await asyncio.to_thread(
                     self.flow.decide,
                     selector,
                     cookie,
                     csrf.decode("ascii"),
                     allow=decision == b"allow",
+                    deadline=deadline,
                 )
                 return _next(FINISHED, clear=True)
-        except (ClientDisconnect, FlowRejected, OAuthStoreError, TimeoutError):
+        except (ClientDisconnect, FlowRejected):
             return _error()
+        except (OAuthStoreError, TimeoutError):
+            # Losing the worker acknowledgement is not a rejection: a commit
+            # begun before the deadline might already have made the choice durable.
+            # Keep the cookie unless we know the choice consumed the flow.
+            return _next(FINISHED) if decision_dispatched else _error()
 
     async def _callback(self, req: Request) -> Response:
         # Every normal callback exit discards its sensitive query before displaying UI.
         if not self._admit():
             return _next(FINISHED)
         claimed = False
+        deadline = time.monotonic() + _CALLBACK_DEADLINE
         try:
             selector, cookie = _binding(req)
             state, code = _callback_input(req.scope.get("query_string", b""))
-            async with asyncio.timeout(_CALLBACK_DEADLINE):
-                claim = await asyncio.to_thread(self.flow.claim_callback, selector, cookie, state)
+            async with asyncio.timeout(deadline - time.monotonic()):
+                claim = await asyncio.to_thread(
+                    self.flow.claim_callback, selector, cookie, state, deadline=deadline
+                )
                 claimed = True
                 if code is None:
                     # Valid denial consumes the callback. Remaining non-redeemable row expires.
                     return _next(FINISHED, clear=True)
                 tokens = await self._upstream.exchange_code(code)
                 await self.flow.complete_exchange(
-                    selector, claim, tokens.access_token, tokens.expires_at
+                    selector, claim, tokens.access_token, tokens.expires_at, deadline=deadline
                 )
                 return _next(CONSENT)
         except (FlowRejected, OAuthStoreError, OAuthUpstreamError, TimeoutError):

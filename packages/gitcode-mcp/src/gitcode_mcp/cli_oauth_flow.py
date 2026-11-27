@@ -39,6 +39,10 @@ class FlowRejected(ValueError):
         super().__init__("CLI authorization transaction unavailable.")
 
 
+class FlowPending(FlowRejected):
+    """Only the holder of this live flow's verifier may learn it is still pending."""
+
+
 def _nonce() -> str:
     return secrets.token_urlsafe(32)
 
@@ -139,14 +143,14 @@ class CLIFlow:
         row["phase"] = phase
         tx.put(_KIND, _PREFIX + selector, row, row["deadline"])
 
-    def create(self, challenge: str) -> Start:
+    def create(self, challenge: str, *, deadline: float | None = None) -> Start:
         """CLI supplies only S256 of its random, private 32-byte base64url verifier."""
         challenge = _encoded(challenge)
         # Base64url of 256 bits has precisely two trailing zero pad bits.
         if challenge[-1] not in "AEIMQUYcgkosw048":
             raise FlowRejected()
         start = Start(_nonce(), _nonce())
-        with self._store.transaction() as tx:
+        with self._store.transaction(deadline=deadline) as tx:
             # OAuthStore.put is an upsert: never overwrite a live flow on collision.
             if tx.get(_KIND, _PREFIX + start.selector) is not None:
                 raise FlowRejected()
@@ -167,6 +171,16 @@ class CLIFlow:
             row.update(cookie=_digest(browser.cookie), state=_digest(browser.upstream_state))
             self._save(tx, selector, row, "callback")
         return browser
+
+    def reject_callback(
+        self, selector: str, cookie: str, state: str, *, deadline: float | None = None
+    ) -> None:
+        """A verified upstream denial is terminal, never an exchange or a polling loop."""
+        with self._store.transaction(deadline=deadline) as tx:
+            row = self._read(tx, selector, "callback")
+            _proof(cookie, row["cookie"])
+            _proof(state, row["state"])
+            tx.delete(_KIND, _PREFIX + selector)
 
     def claim_callback(
         self, selector: str, cookie: str, state: str, *, deadline: float | None = None
@@ -278,10 +292,16 @@ class CLIFlow:
             else:
                 tx.delete(_KIND, _PREFIX + selector)
 
-    def redeem(self, selector: str, verifier: str) -> Redeemed:
-        with self._store.transaction() as tx:
-            row = self._read(tx, selector, "ready")
+    def redeem(self, selector: str, verifier: str, *, deadline: float | None = None) -> Redeemed:
+        with self._store.transaction(deadline=deadline) as tx:
+            row = tx.get(_KIND, _PREFIX + _encoded(selector))
+            if not row or row.get("binding") != self._binding or row["deadline"] <= time.time():
+                raise FlowRejected()
             _proof(verifier, row["challenge"])
+            if row.get("phase") in {"new", "callback", "exchange", "verifying", "consent"}:
+                raise FlowPending()
+            if row.get("phase") != "ready" or row["expires"] <= time.time():
+                raise FlowRejected()
             result = Redeemed(Subject(row["subject"], row["login"]), row["token"], row["expires"])
             tx.delete(_KIND, _PREFIX + selector)
         return result

@@ -22,6 +22,8 @@ from .file_writes import (
     write_file,
 )
 from .label_catalog import label_page
+from .label_writes import LABEL_WRITE_METHODS, LabelColor, LabelName, write_label
+from .review_comments import write_inline_comment, write_review_reply
 
 PositiveNumber = Annotated[int, Field(ge=1)]
 Name = Annotated[str, Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")]
@@ -245,6 +247,27 @@ class DeleteFileArgs(FileWriteArgs):
         return value.lower()
 
 
+class CreateLabelArgs(RepoArgs):
+    name: LabelName
+    color: LabelColor
+
+
+class TargetLabelArgs(RepoArgs):
+    name: LabelName
+    expected_id: PositiveNumber = Field(description="Current label ID observed in this repository.")
+
+
+class UpdateLabelArgs(TargetLabelArgs):
+    new_name: LabelName | None = None
+    color: LabelColor | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> UpdateLabelArgs:
+        if self.color is None and self.new_name is None:
+            raise ValueError("Provide new_name or color.")
+        return self
+
+
 class ListIssuesArgs(PageArgs):
     state: Literal["open", "closed", "all"] = "open"
     search: Annotated[str, Field(max_length=1024)] | None = None
@@ -371,6 +394,42 @@ class PullCommentArgs(PullArgs):
     body: Annotated[str, Field(min_length=1, max_length=65_536)]
 
 
+class ReviewTextArgs(PullCommentArgs):
+    @field_validator("body")
+    @classmethod
+    def validate_review_text(cls, value: str) -> str:
+        utf8_bytes(value, maximum=65_536)
+        if not value.strip() or "\x00" in value:
+            raise ValueError("Provide nonblank UTF-8 text without NUL characters.")
+        return value
+
+
+class InlineCommentArgs(ReviewTextArgs):
+    expected_head_sha: BlobSHA = Field(
+        description="Full PR head SHA observed when reviewing the diff."
+    )
+    path: Annotated[str, Field(min_length=1, max_length=4096)]
+    position: Annotated[int, Field(ge=1, le=2_147_483_647)] = Field(
+        description="One-based absolute line on the right (new) side, not an offset into the diff."
+    )
+
+    @field_validator("path")
+    @classmethod
+    def validate_review_path(cls, value: str) -> str:
+        utf8_bytes(value, maximum=4096)
+        return _safe_file_path(value)
+
+
+class DiscussionReplyArgs(ReviewTextArgs):
+    discussion_id: Annotated[
+        str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    ] = Field(
+        description="Native discussion_id from the requested PR's comment list, not a note ID."
+    )
+    page: Annotated[int, Field(ge=1, le=2_147_483_647)] = 1
+    per_page: Annotated[int, Field(ge=1, le=100)] = 30
+
+
 class MergePullArgs(PullArgs):
     merge_method: Literal["merge", "rebase"] = "merge"
     squash: bool = False
@@ -472,6 +531,26 @@ SPECS = (
         PageArgs,
     ),
     ToolSpec(
+        "create_label",
+        "Create a repository task label, not an Issue/PR assignment. Requires a six-digit RGB color. No force/upsert or retry. Verifies the mutation receipt.",
+        CreateLabelArgs,
+        False,
+    ),
+    ToolSpec(
+        "update_label",
+        "Rename/recolor one repository task label after checking its exact name and ID. Checks the write receipt. Not atomic with preflight; no automatic retry.",
+        UpdateLabelArgs,
+        False,
+        True,
+    ),
+    ToolSpec(
+        "delete_label",
+        "Delete a repository task label after checking its exact name and ID; read back at most 1000 labels plus an empty page. Observations are not an atomic snapshot. No automatic retry.",
+        TargetLabelArgs,
+        False,
+        True,
+    ),
+    ToolSpec(
         "list_milestones",
         "Read a client-side page of milestones after one size-bounded unpaged upstream fetch. Each page re-fetches the collection.",
         PageArgs,
@@ -523,6 +602,21 @@ SPECS = (
         "add_pull_request_comment",
         "Post a general PR comment; does not create a GitHub request-changes review.",
         PullCommentArgs,
+        False,
+    ),
+    ToolSpec(
+        "add_pull_request_inline_comment",
+        "Post one published inline comment on a verified right-side file line. "
+        "Checks a bounded text diff against the observed PR head; GitCode does not atomically bind the write to that SHA. "
+        "Read the PR comments to verify placement; does not submit a review or approve.",
+        InlineCommentArgs,
+        False,
+    ),
+    ToolSpec(
+        "reply_to_pull_request_discussion",
+        "Reply once to a discussion shown on a specific page of this PR's comments. Use the same page and "
+        "per_page as list_pull_request_comments. Does not start a thread, resolve it, or approve the PR.",
+        DiscussionReplyArgs,
         False,
     ),
     ToolSpec(
@@ -697,6 +791,8 @@ class GitCodeTools:
             return self.api.issues.update(owner, repo, str(number), **data)
         if action == "add_issue_comment":
             return self.api.issues.comment(owner, repo, str(data["issue_number"]), data["body"])
+        if action in LABEL_WRITE_METHODS:
+            return write_label(self.api, prefix, action, data)
         if action == "list_labels":
             return label_page(self.api, f"{prefix}/labels", **data)
         if action == "list_milestones":
@@ -732,6 +828,10 @@ class GitCodeTools:
             return self.api.pulls.update(owner, repo, number, **data)
         if action == "add_pull_request_comment":
             return self.api.pulls.comment(owner, repo, data["pull_number"], data["body"])
+        if action == "add_pull_request_inline_comment":
+            return write_inline_comment(self.api, owner, repo, **data)
+        if action == "reply_to_pull_request_discussion":
+            return write_review_reply(self.api, owner, repo, **data)
         if action == "approve_pull_request":
             return self.api.pulls.review(owner, repo, data["pull_number"], force=False)
         if action == "merge_pull_request":

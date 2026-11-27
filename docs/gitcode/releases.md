@@ -7,7 +7,7 @@ from a tag. This workflow prepares publication, **not deployment**.
 
 ## Current boundary
 
-- The MCP source version is `0.3.0`, with the published `pygitcode==0.1.7` pinned.
+- The MCP source version is `0.4.0`, with the published `pygitcode==0.1.7` pinned.
   The immutable legacy migration seed and rollback retain `pygitcode==0.1.6`.
 - A source changelog entry or successful CI run is not proof of a PyPI release.
 - This change does not create a tag, publish a package, configure credentials,

@@ -6,7 +6,7 @@ This page covers the existing local stdio/PAT installation. For a cloud server t
 
 ## Install the runtime from this repository
 
-The runtime source is now `codeasier/gitcode-cli`; the package remains `codeasier-gitcode-mcp` version `0.3.0`, installing `gitcode-mcp` and `gitcode-clone`. It keeps `pygitcode==0.1.6` and is not assumed to be published on PyPI. Use a reviewed checkout; for an upgrade, pin a complete commit SHA and follow [migration and rollback](migration.md) before replacing the existing installation.
+The runtime source is now `codeasier/gitcode-cli`; the package is `codeasier-gitcode-mcp`, with source version `0.4.0`, installing `gitcode-mcp` and `gitcode-clone`. It pins `pygitcode==0.1.7`. A source version does not imply a PyPI release. Use a reviewed checkout; for an upgrade, pin a complete commit SHA and follow [migration and rollback](migration.md) before replacing the existing installation.
 
 With Python 3.11+ and [uv](https://docs.astral.sh/uv/guides/tools/):
 

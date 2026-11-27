@@ -44,8 +44,8 @@ def repo_get_calls(monkeypatch):
 def test_catalog_has_focused_schemas_and_explicit_annotations():
     with catalog() as (tools, _):
         definitions = tools.list_tools()
-    assert len(definitions) == 32
-    assert len({tool.name for tool in definitions}) == 32
+    assert len(definitions) == 37
+    assert len({tool.name for tool in definitions}) == 37
     for tool in definitions:
         assert tool.name.startswith("gitcode_")
         assert tool.input_schema["additionalProperties"] is False
@@ -55,7 +55,10 @@ def test_catalog_has_focused_schemas_and_explicit_annotations():
     merge = next(tool for tool in definitions if tool.name == "gitcode_merge_pull_request")
     assert merge.annotations.destructive_hint
     assert not merge.annotations.read_only_hint
-    assert {tool.name for tool in definitions if "delete" in tool.name} == {"gitcode_delete_file"}
+    assert {tool.name for tool in definitions if "delete" in tool.name} == {
+        "gitcode_delete_file",
+        "gitcode_delete_label",
+    }
     assert not any("raw_api" in tool.name for tool in definitions)
 
 

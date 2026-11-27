@@ -74,6 +74,9 @@ jobs:
           PY
       - name: Run full MCP, published-service and checkout-only contracts without real GitCode requests
         run: python -I -m pytest -c pyproject.toml tests tests_source tests_checkout
+      - name: Verify actual CLI and standalone OAuth broker over isolated TLS
+        if: matrix.python-version == '3.12'
+        run: python -I -m pytest -W error::RuntimeWarning -c pyproject.toml tests_integration/test_cli_oauth_coupled_tls.py
 
   cli-contracts:
     name: CLI unit and API contracts

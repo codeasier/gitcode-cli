@@ -191,7 +191,7 @@ def _expected_integrity(asset: dict) -> tuple[int | None, str | None]:
     return size, digest
 
 
-def _matches_gitcode_attachment_route(url: Any, *, owner: str, repo: str, tag: str, name: str) -> bool:
+def matches_gitcode_attachment_route(url: Any, *, owner: str, repo: str, tag: str, name: str) -> bool:
     # Use the observed GitCode web route as identity metadata, not a transfer URL.
     # Exact comparison with locally quoted components excludes URL aliases,
     # credentials, query/fragment data and ambiguous path normalization.
@@ -212,7 +212,7 @@ def named_checksum(release: dict, name: str, *, owner: str, repo: str, tag: str)
     kind = asset.get("type")
     if kind != "ATTACH_FILE" and not (
         kind == "attach"
-        and _matches_gitcode_attachment_route(
+        and matches_gitcode_attachment_route(
             asset.get("browser_download_url"), owner=owner, repo=repo, tag=tag, name=name
         )
     ):

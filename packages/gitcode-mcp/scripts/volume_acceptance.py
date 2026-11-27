@@ -156,12 +156,16 @@ def verify_stopped_database() -> None:
         )
 
 
+def legacy_catalog_for_phase(phase: str) -> bool:
+    require(phase in {"initial", "upgrade", "rollback"}, "Unexpected HTTP probe phase")
+    return phase in {"initial", "rollback"}
+
+
 def http_probe(phase: str) -> None:
     """Never opens SQLite or creates a second provider alongside a running server."""
     import httpx
 
-    require(phase in {"initial", "upgrade", "rollback"}, "Unexpected HTTP probe phase")
-    legacy = phase != "upgrade"
+    legacy = legacy_catalog_for_phase(phase)
     manifest = read_manifest()
     configuration = manifest["configuration"]
     public = configuration["GITCODE_MCP_PUBLIC_URL"]

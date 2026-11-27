@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from unittest.mock import MagicMock, call
 
 import pytest
+from click.testing import CliRunner
 
 from gitcode_cli.cli import main
 from gitcode_cli.context import AppContext
@@ -26,7 +28,10 @@ ATTACHMENT = {
 
 
 @pytest.fixture
-def harness(cli_runner, monkeypatch):
+def harness(monkeypatch):
+    # Click < 8.2 mixes stderr into stdout unless explicitly disabled.
+    params = inspect.signature(CliRunner.__init__).parameters
+    cli_runner = CliRunner(mix_stderr=False) if "mix_stderr" in params else CliRunner()
     client = MagicMock()
     monkeypatch.setattr(AppContext, "client", lambda _: client)
 
@@ -127,6 +132,10 @@ def test_mixed_view_still_rejects_unconfirmed_type_source_rows(harness, archives
     result = run("view", "v1", "--json", "zipballUrl,assets")
     assert result.exit_code == 1
     assert result.stdout == ""
+    assert result.stderr.strip() in {
+        "error: Unrecognized release asset type or route.",
+        "error: Ambiguous release asset names.",
+    }
     assert client.mock_calls == [call.get(BASE + "/tags/v1"), call.close()]
 
 
@@ -136,6 +145,7 @@ def test_view_assets_only_does_not_change_legacy_type_validation(harness):
     result = run("view", "v1", "--json", "assets")
     assert result.exit_code == 1
     assert result.stdout == ""
+    assert "Unrecognized release asset type or route." in result.stderr
     assert client.mock_calls == [call.get(BASE + "/tags/v1"), call.close()]
 
 

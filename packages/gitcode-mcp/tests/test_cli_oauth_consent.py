@@ -411,6 +411,10 @@ def test_expired_consent_cannot_commit_while_store_contended(
                 )
                 await asyncio.wait_for(dispatched.wait(), timeout=2)
                 result = await asyncio.wait_for(pending, timeout=2)
+                if lock_kind == "sqlite-reader":
+                    # Keep the read lock until COMMIT itself reports failure. A 303
+                    # can precede the uncancellable worker's definitive result.
+                    await asyncio.wait_for(finished.wait(), timeout=2)
             finally:
                 if peer:
                     peer.rollback()

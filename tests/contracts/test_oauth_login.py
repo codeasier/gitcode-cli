@@ -6,6 +6,7 @@ import asyncio
 import errno
 import json
 import os
+import ssl
 import subprocess
 import sys
 import time
@@ -29,6 +30,19 @@ ENTRY = ORIGIN + "/cli/v1/browser"
 PAIR = "A" * 43 + "." + "B" * 42 + "A"
 TOKEN = "inert.synthetic.token"
 WHO = OAuthIdentity("opaque01", "fixture-user")
+
+# Synthetic self-signed CA for SSLContext inspection only. No private key or TLS socket.
+BROKER_CA = """-----BEGIN CERTIFICATE-----
+MIIBbTCCAR+gAwIBAgIUSfQLhEEVJOQeMzLNKXsFVV30AlkwBQYDK2VwMCQxIjAg
+BgNVBAMMGVRlc3QtT25seS1PQXV0aC1Ccm9rZXItQ0EwHhcNMjYxMTI4MDAyNjIz
+WhcNMzYxMTI1MDAyNjIzWjAkMSIwIAYDVQQDDBlUZXN0LU9ubHktT0F1dGgtQnJv
+a2VyLUNBMCowBQYDK2VwAyEAXxF5XIXSBwFJv8ETekNLCa5vfC7yMJJL7e6iv3fn
++vujYzBhMB0GA1UdDgQWBBQG7imNrElaSDhbQxHwwiZY7X7rKzAfBgNVHSMEGDAW
+gBQG7imNrElaSDhbQxHwwiZY7X7rKzAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB
+/wQEAwIBBjAFBgMrZXADQQASedacGuSwz3mHg5ka95/PrNqI+11Bd4hZ+nNTsZhM
+7R8zHupheuDPBahYN1VNk2uVMxyYg8SvxldBKY/3cC4A
+-----END CERTIFICATE-----
+"""
 
 
 def receipt():
@@ -104,13 +118,14 @@ class Flow:
         self.events.append("redeem")
         return receipt()
 
-    def run(self, origin=ORIGIN, **extra):
+    def run(self, origin=ORIGIN, *, native_acquire=False, **extra):
         deps = {
             "_open_terminal": self.terminal,
             "_opener": self.open,
             "_store_factory": self.system,
-            "_acquire": self.acquire,
         }
+        if not native_acquire:
+            deps["_acquire"] = self.acquire
         return asyncio.run(login.login_with_browser(origin, **{**deps, **extra}))
 
 
@@ -119,7 +134,26 @@ def flow(monkeypatch):
     return Flow(monkeypatch)
 
 
-def test_real_client_real_store_injected_wire_and_storage(flow, capfd, caplog, monkeypatch, tmp_config_dir):
+def _observe_native_transport(monkeypatch, transport, *, explicit):
+    def native_transport(*, verify, trust_env, retries):
+        assert verify.verify_mode == ssl.CERT_REQUIRED and verify.check_hostname
+        assert not trust_env and retries == 0
+        roots = verify.get_ca_certs(binary_form=True)
+        expected = ssl.PEM_cert_to_DER_cert(BROKER_CA)
+        if explicit:
+            assert roots == [expected]
+            assert not verify.hostname_checks_common_name
+        else:
+            assert roots and expected not in roots
+        return transport
+
+    factory = Mock(side_effect=native_transport)
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", factory)
+    return factory
+
+
+@pytest.mark.parametrize("mode", ["injected", "public-ca", "explicit-ca", "wrong-expected-login"])
+def test_real_client_real_store_wire_and_storage(flow, capfd, caplog, monkeypatch, tmp_config_dir, mode):
     monkeypatch.setenv("BROWSER", "this must never run")
     monkeypatch.setenv("GC_TOKEN", "unrelated.fake.pat")
     before = list(tmp_config_dir.iterdir())
@@ -140,13 +174,71 @@ def test_real_client_real_store_injected_wire_and_storage(flow, capfd, caplog, m
             status, headers={"cache-control": "no-store", "content-type": "application/json"}, stream=Wire(obj)
         )
 
-    acquire = partial(broker.acquire_receipt, _transport=httpx.MockTransport(serve))
-    assert flow.run(_acquire=acquire) == WHO
-    assert flow.events == ["tty", "system", "start", "open", "show", "redeem", "close", "verify", "put", "read"]
+    transport = httpx.MockTransport(serve)
+    if mode == "injected":
+        acquire = partial(broker.acquire_receipt, _transport=transport)
+        assert flow.run(_acquire=acquire) == WHO
+    else:
+        factory = _observe_native_transport(monkeypatch, transport, explicit=mode != "public-ca")
+        options = {"native_acquire": True}
+        if mode != "public-ca":
+            options["broker_trust"] = broker.BrokerTrust(ORIGIN, BROKER_CA)
+            if any(ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).cert_store_stats().values()):
+                # A preseeded runtime cannot offer an explicit-CA-only store.
+                with pytest.raises(AuthError):
+                    flow.run(expected_login=WHO.login, **options)
+                assert flow.events == ["tty", "system", "close"]
+                assert not seen and flow.browser == flow.tty == [] and flow.native.value is None
+                factory.assert_not_called()
+                return
+        if mode == "wrong-expected-login":
+            with pytest.raises(AuthError) as err:
+                flow.run(expected_login=WHO.login.upper(), **options)
+            assert str(err.value) == str(login._failed()) and err.value.__context__ is None
+            assert flow.native.value is None
+        else:
+            assert flow.run(expected_login=WHO.login, **options) == WHO
+        factory.assert_called_once()
+
+    events = ["tty", "system", "start", "open", "show", "redeem", "close"]
+    if mode != "wrong-expected-login":
+        events += ["verify", "put", "read"]
+    assert flow.events == events
     assert seen == [("POST", ORIGIN + "/cli/v1/start"), ("POST", ORIGIN + "/cli/v1/redeem")]
     assert flow.browser == [ENTRY] and flow.tty == [PAIR]
     assert list(tmp_config_dir.iterdir()) == before
     assert capfd.readouterr() == ("", "") and PAIR not in caplog.text and TOKEN not in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["different-host", "different-port", "untyped", "bad-origin-type", "custom-acquire"])
+def test_rejects_explicit_broker_trust_before_opening_terminal(flow, monkeypatch, kind):
+    native_transport = Mock(side_effect=AssertionError("network construction after a failed preflight"))
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", native_transport)
+    trust = {
+        "different-host": broker.BrokerTrust("https://other.invalid", BROKER_CA),
+        "different-port": broker.BrokerTrust(ORIGIN + ":8443", BROKER_CA),
+        "untyped": {"origin": ORIGIN, "ca_pem": BROKER_CA},
+        "bad-origin-type": broker.BrokerTrust(None, BROKER_CA),
+        "custom-acquire": broker.BrokerTrust(ORIGIN, BROKER_CA),
+    }[kind]
+    acquire = Mock(side_effect=AssertionError("must not call injected acquisition with explicit trust"))
+    overrides = {"_acquire": acquire} if kind == "custom-acquire" else {}
+    with pytest.raises(AuthError) as err:
+        flow.run(native_acquire=True, broker_trust=trust, **overrides)
+    assert str(err.value) == str(login._failed()) and err.value.__context__ is None
+    assert flow.events == [] and flow.browser == flow.tty == [] and flow.native.value is None
+    native_transport.assert_not_called()
+    acquire.assert_not_called()
+
+
+def test_same_origin_malformed_ca_fails_in_real_acquisition_without_fallback(flow, monkeypatch):
+    transport = Mock(side_effect=AssertionError("must not construct transport after invalid CA"))
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", transport)
+    with pytest.raises(AuthError) as err:
+        flow.run(native_acquire=True, broker_trust=broker.BrokerTrust(ORIGIN, "invalid CA fixture"))
+    assert str(err.value) == str(login._failed()) and err.value.__context__ is None
+    assert flow.events == ["tty", "system", "close"] and flow.browser == flow.tty == [] and flow.native.value is None
+    transport.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", ["origin", "terminal", "store", "no-store"])

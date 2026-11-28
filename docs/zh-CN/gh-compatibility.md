@@ -176,3 +176,5 @@ SDK 的 `IssueAdapter.status` 使用相同的核验队列，仍返回 `AdapterAc
 自定义客户端须显式实现 `read_issue_status_page(endpoint, params)`，返回有界 JSON、响应头和准确的规范请求 URL，
 不得重试或跟随重定向。标准客户端不接受账号或仓库元数据请求携带查询参数；仓库 Issue 队列只允许
 打开状态、有界分页以及创建人或指派人中的一种过滤条件。不支持的客户端在读取 token 前即拒绝。
+
+`gc repo view OWNER/REPO --json stargazerCount` 只读取一次仓库详情：保留原生非负整数（含 0），不可用时返回 `null`。原有 `stargazers` 字段和仓库列表不变。

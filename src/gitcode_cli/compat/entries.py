@@ -832,7 +832,7 @@ ENTRIES: list[CompatEntry] = [
         gc_extension=True,
     ),
     _e("repo view", "-w/--web", CompatStatus.IMPLEMENTED),
-    _e("repo view", "--json", CompatStatus.IMPLEMENTED),
+    _e("repo view", "--json", CompatStatus.IMPLEMENTED, "Includes stargazerCount from repository detail."),
     _e("repo view", "-q/--jq", CompatStatus.IMPLEMENTED),
     _e("repo view", "-t/--template", CompatStatus.IMPLEMENTED),
     _e("repo view", "-b/--branch", CompatStatus.NOT_IN_CLI, "Per-branch README selection not implemented"),

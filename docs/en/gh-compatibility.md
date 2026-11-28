@@ -178,3 +178,5 @@ redirects. The standard client allows no query on account or repository
 metadata, and only the bounded open-issue pagination and exactly one author
 or assignee filter on repository queues. Unsupported clients fail before
 their token is read.
+
+`gc repo view OWNER/REPO --json stargazerCount` reads the repository detail once. It returns the native nonnegative integer star count (including zero), or `null` if unavailable. The existing `stargazers` key and repository list output are unchanged.

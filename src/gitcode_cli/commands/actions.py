@@ -331,9 +331,28 @@ set_gc_help(workflow_list, gc_json_fields=list(WORKFLOW_LIST_FIELDS))
 @click.argument("selector")
 @repo_option
 @click.option("--scan-limit", type=click.IntRange(1, MAX_WORKFLOW_SCAN), default=100, show_default=True)
+@click.option(
+    "--yaml",
+    "show_yaml",
+    is_flag=True,
+    help="Print the file at the currently registered public workflow path at --ref; not historic workflow identity.",
+)
+@click.option("--ref", "refs", multiple=True, metavar="COMMIT", help="With --yaml only: a full, nonzero SHA-1 commit.")
 @click.pass_context
-def workflow_view(ctx, repo_name, selector, scan_limit):
-    """Find exact workflow metadata by ID, name, or filename. Does not return YAML."""
+def workflow_view(ctx, repo_name, selector, scan_limit, show_yaml, refs):
+    """Find exact workflow metadata by ID, name, or filename. YAML requires an explicit repository and commit."""
+    if show_yaml or refs:
+        from ..workflow_yaml_view import read_workflow_yaml, yaml_target  # noqa: PLC0415
+
+        if not show_yaml or len(refs) != 1:
+            raise click.UsageError("Use --yaml together with exactly one --ref COMMIT.")
+        app: AppContext = ctx.obj["app"]
+        owner, repo, commit = yaml_target(repo_name, app.repo, refs[0], app.token)
+        # The v8 client authenticates via a query parameter: do not use its credentialed path for YAML.
+        with _open_service(owner, repo, "") as svc:
+            row = svc.workflow(selector, scan_limit, unique_path=True)
+        read_workflow_yaml(owner, repo, commit, row["file_path"], app.token)
+        return
     with _service(ctx, repo_name) as svc:
         _show(ctx, svc.workflow(selector, scan_limit))
 

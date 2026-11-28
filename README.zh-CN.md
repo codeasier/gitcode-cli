@@ -46,6 +46,16 @@ gc repo clone owner/repo
 
 `gc pr audit` 会为每条未通过的 R1-R4 合并就绪规则打印原因。列表模式下，除 HTTP 401 以外的错误会记在对应 PR 上，默认退出码为 0（加 `--fail-exit` 则为 1）。HTTP 401 会中止剩余列表并退出 1，与 `--fail-exit` 无关。
 
+### 查看固定提交的工作流文件
+
+`gc workflow view` 默认仍返回工作流元数据。若要查看文件，可直接运行：
+
+```bash
+gc workflow view ci.yml --yaml --ref 0123456789abcdef0123456789abcdef01234567 -R owner/repo
+```
+
+必须显式指定 `-R OWNER/REPO` 和完整的非零 40 位提交 SHA-1。不支持分支、标签、缺省引用或 `gh` 代理。CLI 匿名查找 v8 当前公开登记，拒绝歧义选择器或多个 ID 共用同一路径；只读取 `.gitcode/workflows/` 下规范的 ASCII 单文件名，后缀为 `.yml` 或 `.yaml`。随后用固定的 GitCode v5 Tree 和 Contents 核验文件（如配置了 token，仅用 Bearer 头）。这不证明该工作流 ID 在当时已经登记，也不证明某次运行用了这个文件。详见[工作流文件读取](docs/en/actions-evidence.md#read-the-currently-registered-path-at-one-commit)。
+
 ## GitCode MCP
 
 本仓库同时维护独立安装的 [`codeasier-gitcode-mcp`](packages/gitcode-mcp) 运行时（Python 3.11+），提供 stdio、Streamable HTTP、OAuth 和 31 个 GitCode 工具。CLI、MCP 与 Orca linker 是三个独立分发包：安装 `pygitcode` 不会引入 MCP、ASGI 或加密依赖，也不会安装 linker。请参阅 [MCP 文档](docs/gitcode/README.md)和[迁移指南](docs/gitcode/migration.md)；Codex 专属插件桥接仍由 [codex-codeasier](https://github.com/codeasier/codex-codeasier/tree/main/plugins/gitcode) 维护。

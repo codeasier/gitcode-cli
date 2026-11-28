@@ -30,11 +30,11 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   Omit `--json` to see pagination metadata. The request and its authentication are
   unchanged; no extra pages or resources are read. If a selected value is missing,
   non-string, blank, or would be changed by credential redaction, no partial array is printed.
-* `workflow view` finds exact IDs, names, filenames, or listed configuration paths.
-  Exact IDs take precedence over names and filenames. It rejects ambiguous matches
-  or an incomplete list, and returns only definition
-  metadata, not YAML. The scan defaults to 100 definitions; use `--scan-limit` up to
-  500 when needed. It does not claim a transactional snapshot.
+* By default, `workflow view` returns only definition metadata. It finds exact IDs,
+  names, filenames, or listed configuration paths. Exact IDs take precedence;
+  otherwise ambiguous matches are rejected. The scan defaults to 100 definitions;
+  use `--scan-limit` up to 500 when needed. An incomplete scan fails; a completed
+  scan is not a transactional snapshot.
 * `--attempt` guards the **current** attempt; the documented detail endpoint has no
   historical-attempt selector. Except for the single-response `--with-steps` snapshot below,
   commit and attempt are checked before and after fetching
@@ -56,6 +56,36 @@ gc run view RUN_ID -R owner/repo --job JOB_ID --log --step STEP_ID --attempt 2 -
   `ci_state_passed` is **not** a v8 result. Exit 0 does not establish required-check
   coverage, permission to merge, or merge readiness. This is a bounded observation,
   not an atomic server snapshot.
+
+## Read the currently registered path at one commit
+
+```console
+gc workflow view ci.yml --yaml --ref 0123456789abcdef0123456789abcdef01234567 -R owner/repo
+```
+
+Use the full, nonzero 40-hex SHA-1 of a commit and an explicit `-R OWNER/REPO`.
+Branch and tag names, abbreviated hashes, and default refs are not supported.
+Unlike [`gh workflow view`](https://cli.github.com/manual/gh_workflow_view), this
+`--ref` is commit-only and requires `--yaml`. These flags are direct `gc` only,
+not available through the `gh` proxy.
+
+The command reads the repository's **current public registration** anonymously
+from the [v8 workflow list](https://atomgit-api-doc.atomgit.com/en/17.actions/254.get_the_pipeline_list_of_the_repository.html).
+A selector must resolve uniquely: an ID that also matches another definition's
+name or filename is ambiguous, and different IDs cannot share the selected
+path. The path must be `.gitcode/workflows/<filename>.yml` or `.yaml` with no nested
+directory or hidden filename. Filenames use ASCII letters, digits, underscores,
+periods, and hyphens, starting with a letter, digit, or underscore.
+
+Fixed GitCode v5 commit, Tree, and Contents reads use Bearer authentication only
+when a token is configured. They confirm the requested commit, both directory
+entries, and a regular file, then verify that Contents bytes hash to the Tree
+entry's Git blob SHA. There is no fallback to a credentialed v8 query or a
+download URL. A successful result is the current registration's **path** read
+from the specified commit, not proof that the workflow ID was registered at
+that commit or that this file executed in a particular run. The command returns
+verified UTF-8 file bytes without parsing or executing YAML; if validation fails,
+it prints no partial file.
 
 ## Select fields from one run-list page
 

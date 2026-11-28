@@ -166,12 +166,13 @@ class ActionsService:
                 return
             page = next_page
 
-    def workflow(self, selector: str, budget: int) -> dict:
+    def workflow(self, selector: str, budget: int, *, unique_path: bool = False) -> dict:
         if not selector.strip() or len(selector) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in selector):
             raise APIError("Supply a nonempty workflow ID, name, or configuration filename.")
         matches: list[dict] = []
         id_match: dict | None = None
         seen: set[str] = set()
+        path_counts: dict[str, int] = {}
         for row in self._workflow_rows(budget):
             wid, path, name = (row.get(key) for key in ("workflow_id", "file_path", "name"))
             if not isinstance(wid, str) or not wid or wid in seen:
@@ -179,16 +180,22 @@ class ActionsService:
             if not isinstance(path, str) or not path or not isinstance(name, str):
                 raise APIError("Incomplete workflow metadata; cannot resolve selector.")
             seen.add(wid)
+            if unique_path:
+                path_counts[path] = path_counts.get(path, 0) + 1
             if selector == wid:
                 id_match = row
             elif selector in {path, name, path.rsplit("/", 1)[-1]}:
                 matches.append(row)
         if id_match is not None:
-            return id_match
+            if not unique_path:
+                return id_match
+            matches.append(id_match)
         if not matches:
             raise APIError("No matching workflow definition in this repository.")
         if len(matches) != 1:
             raise APIError("Ambiguous workflow selector; use the exact ID from workflow list.")
+        if unique_path and path_counts[matches[0]["file_path"]] != 1:
+            raise APIError("Configuration path is registered to multiple workflow IDs.")
         return matches[0]
 
     def _read_run(self, run_id: str) -> dict:

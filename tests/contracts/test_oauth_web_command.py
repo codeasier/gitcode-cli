@@ -18,7 +18,7 @@ from unittest.mock import Mock
 import pytest
 from click.testing import CliRunner
 
-from gitcode_cli import cli, oauth_broker_client, oauth_credential_store, oauth_login
+from gitcode_cli import cli, oauth_broker_client, oauth_credential_store, oauth_login, oauth_web_inputs
 from gitcode_cli.commands import auth
 from gitcode_cli.errors import AuthError
 from gitcode_cli.oauth_account_selection import OAuthAccountSelectionStore
@@ -138,8 +138,8 @@ def assert_clean(result):
     ],
 )
 def test_ambiguous_or_conflicting_cli_arguments_stop_before_preflight(no_pat, monkeypatch, extra):
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     result = run("auth", "login", "--web", *flags(), *extra)
     assert result.exit_code == 2
     assert_clean(result)
@@ -148,7 +148,7 @@ def test_ambiguous_or_conflicting_cli_arguments_stop_before_preflight(no_pat, mo
 @pytest.mark.parametrize("name", ["broker-origin", "expected-login", "broker-ca-sha256", "broker-ca-pem-base64"])
 @pytest.mark.parametrize("missing", [None, ""])
 def test_web_requires_every_explicit_nonempty_parameter(no_pat, monkeypatch, name, missing):
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
     result = run("auth", "login", "--web", *flags(**{name: missing}))
     assert result.exit_code == 2 and "requires exactly one" in result.output
     assert_clean(result)
@@ -156,7 +156,7 @@ def test_web_requires_every_explicit_nonempty_parameter(no_pat, monkeypatch, nam
 
 @pytest.mark.parametrize("name", ["broker-origin", "expected-login", "broker-ca-sha256", "broker-ca-pem-base64"])
 def test_oauth_options_never_turn_pat_into_oauth(no_pat, monkeypatch, name):
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
     result = run("auth", "login", f"--{name}={PRIVATE}", "--with-token", input=FIXTURE_TOKEN)
     assert result.exit_code == 2 and "require explicit --web" in result.output
     assert_clean(result)
@@ -174,8 +174,8 @@ def test_oauth_options_never_turn_pat_into_oauth(no_pat, monkeypatch, name):
     ],
 )
 def test_explicit_token_or_proxy_denial_before_network(no_pat, win, monkeypatch, root, env):
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     result = run("auth", "login", "--web", *flags(), root=root, env=env)
     assert result.exit_code == 2 and ("cannot be combined" in result.output or "gh proxy" in result.output)
     assert_clean(result)
@@ -183,9 +183,9 @@ def test_explicit_token_or_proxy_denial_before_network(no_pat, win, monkeypatch,
 
 def test_unsupported_platform_stops_before_preflight_or_native_access(no_pat, monkeypatch):
     monkeypatch.setattr(auth, "sys", SimpleNamespace(platform="linux"))
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
-    monkeypatch.setattr(auth.OAuthAccountSelectionStore, "system", forbidden)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(OAuthAccountSelectionStore, "system", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     result = run("auth", "login", "--web", *flags())
     assert result.exit_code == 1 and "requires Windows Credential Manager" in result.output
     assert_clean(result)
@@ -193,8 +193,8 @@ def test_unsupported_platform_stops_before_preflight_or_native_access(no_pat, mo
 
 @pytest.mark.parametrize("value", [PRIVATE + "=", "Zh==", "Zm8=\n", "YWJj_", "éééé", r"\\untrusted\path"])
 def test_web_strict_base64_never_touches_any_path(no_pat, win, monkeypatch, value):
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
-    monkeypatch.setattr(auth.OAuthAccountSelectionStore, "system", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(OAuthAccountSelectionStore, "system", forbidden)
     result = run("auth", "login", "--web", *flags(**{"broker-ca-pem-base64": value}))
     assert result.exit_code == 1 and "canonical base64" in result.output
     assert_clean(result)
@@ -205,7 +205,7 @@ def test_web_strict_base64_never_touches_any_path(no_pat, win, monkeypatch, valu
 def test_oversize_pem_is_rejected_before_base64_decode(no_pat, win, monkeypatch, extra):
     encoded = base64.b64encode(b"x" * (oauth_broker_client._MAX_CA_PEM + extra)).decode("ascii")
     monkeypatch.setattr(auth.base64, "b64decode", forbidden)
-    monkeypatch.setattr(auth, "prepare_oauth_web_inputs", forbidden)
+    monkeypatch.setattr(oauth_web_inputs, "prepare_oauth_web_inputs", forbidden)
     result = run("auth", "login", "--web", *flags(**{"broker-ca-pem-base64": encoded}))
     assert result.exit_code == 1 and "bounded" in result.output
     assert_clean(result)
@@ -221,8 +221,8 @@ def test_oversize_pem_is_rejected_before_base64_decode(no_pat, win, monkeypatch,
     ],
 )
 def test_trust_gate_rejects_wrong_pins_or_contract_before_native_access(no_pat, win, monkeypatch, change):
-    monkeypatch.setattr(auth.OAuthAccountSelectionStore, "system", forbidden)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(OAuthAccountSelectionStore, "system", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     result = run("auth", "login", "--web", *flags(**change))
     assert result.exit_code == 1
     assert_clean(result)
@@ -288,7 +288,7 @@ def composed(no_pat, win, monkeypatch, trusted_context):
     monkeypatch.setattr(oauth_credential_store, "verify_oauth_identity", verify)
     monkeypatch.setattr(oauth_login, "acquire_receipt", acquire)
     monkeypatch.setattr(
-        auth,
+        oauth_login,
         "login_with_browser",
         partial(
             oauth_login.login_with_browser,
@@ -382,7 +382,7 @@ def test_selector_initialization_failure_precedes_login(no_pat, win, trusted_con
         raise OSError(PRIVATE)
 
     monkeypatch.setattr(OAuthAccountSelectionStore, "system", broken)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     result = run("auth", "login", "--web", *flags())
     assert result.exit_code == 1 and "Cannot initialize" in result.output
     assert_clean(result)
@@ -397,8 +397,8 @@ def test_help_retains_pat_and_documents_explicit_oauth(monkeypatch):
 
 def test_pat_login_status_token_and_override_unchanged_without_eager_lookup(monkeypatch):
     monkeypatch.setattr(cli, "get_token", forbidden)
-    monkeypatch.setattr(auth.OAuthAccountSelectionStore, "system", forbidden)
-    monkeypatch.setattr(auth, "login_with_browser", forbidden)
+    monkeypatch.setattr(OAuthAccountSelectionStore, "system", forbidden)
+    monkeypatch.setattr(oauth_login, "login_with_browser", forbidden)
     pat = "fixture-pat"
     legacy = run("auth", "login", "-hGitCode.COM", "--with-token", input=pat + "\n")
     assert legacy.exit_code == 0 and "Authentication saved." in legacy.output

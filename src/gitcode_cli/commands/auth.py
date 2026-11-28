@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import os
 import sys
@@ -14,11 +13,6 @@ from ..context import AppContext
 from ..errors import APIError, AuthError, NetworkError
 from ..formatters import output_result
 from ..helptext import GCSectionGroup, set_gc_help
-from ..oauth_account_selection import OAuthAccountSelectionStore
-from ..oauth_broker_client import _MAX_CA_PEM
-from ..oauth_identity import OAuthIdentity
-from ..oauth_login import login_with_browser
-from ..oauth_web_inputs import prepare_oauth_web_inputs
 from ..services import UserService
 from ..utils import safe_echo
 
@@ -88,6 +82,8 @@ def auth_group() -> None:
 
 
 def _decode_broker_ca(encoded: str) -> bytes:
+    from ..oauth_broker_client import _MAX_CA_PEM
+
     error = AuthError("Expected bounded, canonical base64 of the public OAuth broker CA PEM bytes.")
     size = len(encoded)
     if not 0 < size <= 4 * ((_MAX_CA_PEM + 2) // 3) or size % 4 or not encoded.isascii():
@@ -112,6 +108,15 @@ def _web_login(ctx: click.Context, broker_origin: str, expected_login: str, ca_s
         raise click.UsageError("Use gc directly for --web; it is not available through the gh proxy.")
     if sys.platform != "win32":
         raise AuthError("GitCode OAuth browser login requires Windows Credential Manager and a foreground terminal.")
+
+    # Import the optional native OAuth stack only on explicit, supported
+    # invocation. Normal command import/help/PAT must not initialize ctypes.
+    import asyncio
+
+    from ..oauth_account_selection import OAuthAccountSelectionStore
+    from ..oauth_identity import OAuthIdentity
+    from ..oauth_login import login_with_browser
+    from ..oauth_web_inputs import prepare_oauth_web_inputs
 
     inputs = prepare_oauth_web_inputs(
         expected_login=expected_login,

@@ -7,6 +7,7 @@ from ..adapters.capabilities import capability_message, unsupported
 from ..cli_compat import get_body_from_options
 from ..formatters import format_issue_detail, format_issue_list, output_result
 from ..helptext import GCSectionGroup, set_gc_help
+from ..issue_related_prs import read_related_prs
 from ..json_projection import project_issue
 from ..repo import resolve_repo
 from ..repo_read import resolve_origin_target
@@ -706,6 +707,23 @@ def issue_develop(
     open_in_browser(f"https://gitcode.com/{owner}/{repo}/issues/{number}")
 
 
+@issue_group.command("related-prs", short_help="List GitCode-native PR associations observed for an issue")
+@click.argument("number")
+@click.option("-R", "--repo", "repo_name", help="Explicit GitCode OWNER/REPO (no origin inference).")
+@click.pass_context
+def issue_related_prs(ctx: click.Context, number: str, repo_name: str | None) -> None:
+    """Print ordered JSON (id, number, repository) from one GitCode association read.
+
+    Associations do not imply the PR closes this issue. The endpoint does not
+    echo the issue or define a paginated or atomic snapshot. No mode or page is
+    requested. Inconsistent identities and partial-response indicators fail closed.
+    """
+    app = ctx.obj["app"]
+    if repo_name is not None and app.repo is not None and repo_name != app.repo:
+        raise click.UsageError("Conflicting explicit GitCode repositories.")
+    safe_echo(read_related_prs(repo_name if repo_name is not None else app.repo, number, app.token))
+
+
 issue_group.add_command(issue_list, name="ls")
 issue_group.add_command(issue_create, name="new")
 
@@ -714,7 +732,7 @@ set_gc_help(
     gc_usage="gc issue <command> [flags]",
     gc_command_sections=[
         ("GENERAL COMMANDS", ["create", "list", "status"]),
-        ("TARGETED COMMANDS", ["close", "comment", "delete", "develop", "edit", "reopen", "view"]),
+        ("TARGETED COMMANDS", ["close", "comment", "delete", "develop", "edit", "related-prs", "reopen", "view"]),
     ],
     gc_examples=[
         "gc issue list",

@@ -82,7 +82,8 @@ def auth_group() -> None:
 
 
 def _decode_broker_ca(encoded: str) -> bytes:
-    from ..oauth_broker_client import _MAX_CA_PEM
+    # Keep the optional broker stack out of ordinary CLI startup.
+    from ..oauth_broker_client import _MAX_CA_PEM  # noqa: PLC0415
 
     error = AuthError("Expected bounded, canonical base64 of the public OAuth broker CA PEM bytes.")
     size = len(encoded)
@@ -111,12 +112,12 @@ def _web_login(ctx: click.Context, broker_origin: str, expected_login: str, ca_s
 
     # Import the optional native OAuth stack only on explicit, supported
     # invocation. Normal command import/help/PAT must not initialize ctypes.
-    import asyncio
+    import asyncio  # noqa: PLC0415
 
-    from ..oauth_account_selection import OAuthAccountSelectionStore
-    from ..oauth_identity import OAuthIdentity
-    from ..oauth_login import login_with_browser
-    from ..oauth_web_inputs import prepare_oauth_web_inputs
+    from ..oauth_account_selection import OAuthAccountSelectionStore  # noqa: PLC0415
+    from ..oauth_identity import OAuthIdentity  # noqa: PLC0415
+    from ..oauth_login import login_with_browser  # noqa: PLC0415
+    from ..oauth_web_inputs import prepare_oauth_web_inputs  # noqa: PLC0415
 
     inputs = prepare_oauth_web_inputs(
         expected_login=expected_login,

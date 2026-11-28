@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 
+from .config import valid_login
 from .errors import AuthError
 from .oauth_broker_client import _ENTRY, _NONCE, BrokerReceipt, _origin, acquire_receipt
 from .oauth_credential_store import OAuthCredentialStore, _PreparedCredential
@@ -112,14 +113,25 @@ class _Presentation:
         self.completed = True
 
 
-async def _prepare_credential(store: OAuthCredentialStore, receipt: BrokerReceipt) -> _PreparedCredential:
+async def _prepare_credential(
+    store: OAuthCredentialStore, receipt: BrokerReceipt, expected_login: str | None = None
+) -> _PreparedCredential:
+    # Reject a different broker claim before /user. Bind preparation itself to
+    # the caller's account: the store verifies this exact login AND subject
+    # against /user before returning one-use material for the native vault.
+    account_login = receipt.login
+    if expected_login is not None:
+        if type(account_login) is not str or account_login != expected_login:
+            raise _failed()
+        account_login = expected_login
+
     # The worker is read-only. Python may still wait for a running verifier
     # during executor teardown, but that worker can never access the vault.
     task = asyncio.create_task(
         asyncio.to_thread(
             store._prepare,
             subject=receipt.subject,
-            login=receipt.login,
+            login=account_login,
             expires_at=receipt.expires_at,
             access_token=receipt.access_token,
         )
@@ -142,13 +154,16 @@ async def _prepare_credential(store: OAuthCredentialStore, receipt: BrokerReceip
 async def login_with_browser(
     trusted_broker_origin: str,
     *,
+    expected_login: str | None = None,
     _open_terminal: Callable[[], AbstractContextManager[_TerminalSession]] = _terminal,
     _opener: Callable[[str], None] = _open_browser,
     _acquire: _Acquire = acquire_receipt,
     _store_factory: Callable[[], OAuthCredentialStore] = OAuthCredentialStore.system,
 ) -> OAuthIdentity:
-    """Acquire exactly once; return only the verified and read-back account identity."""
+    """Log in once; if supplied, require the exact expected login before any vault write."""
     try:
+        if expected_login is not None and (type(expected_login) is not str or not valid_login(expected_login)):
+            raise _failed()
         origin = _origin(trusted_broker_origin)
         with _open_terminal() as terminal:
             store = _store_factory()
@@ -163,7 +178,7 @@ async def login_with_browser(
                 raise _failed()
         # A cancellation already requested at receipt should not start /user.
         await asyncio.sleep(0)
-        prepared = await _prepare_credential(store, receipt)
+        prepared = await _prepare_credential(store, receipt, expected_login)
         # Deliver pending cancellation after identity verification and before
         # native commit. Once the synchronous put/readback begins, do not retry,
         # invent success, or delete a possibly valid concurrent replacement.

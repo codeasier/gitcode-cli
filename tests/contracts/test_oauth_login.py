@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from functools import partial
 from threading import Event
 from unittest.mock import Mock
@@ -287,6 +288,48 @@ def test_nonmatching_identity_never_put(flow):
     assert flow.events.count("verify") == 1 and "put" not in flow.events
 
 
+def test_expected_login_commits_with_exact_verified_spelling(flow):
+    flow.who = OAuthIdentity(WHO.subject, "Fixture-User.X_42")
+
+    async def acquire(origin, present):
+        return replace(await flow.acquire(origin, present), login=flow.who.login)
+
+    assert flow.run(expected_login=flow.who.login, _acquire=acquire) == flow.who
+    assert flow.events == ["tty", "system", "start", "open", "show", "redeem", "close", "verify", "put", "read"]
+    assert json.loads(flow.native.value)[3] == flow.who.login
+
+
+@pytest.mark.parametrize("expected", ["", ".", "..", "wrong/name", " user ", "user\n", "界", "a" * 256, True, 123])
+def test_invalid_expected_login_fails_before_any_terminal_or_contact(flow, expected, capfd):
+    with pytest.raises(AuthError) as err:
+        flow.run(expected_login=expected)
+    assert flow.events == [] and flow.native.value is None and flow.browser == flow.tty == []
+    assert str(err.value) == str(login._failed()) and err.value.__context__ is None
+    assert capfd.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize(
+    ("expected", "verified_identity", "verify_count"),
+    [
+        ("unrelated-user", WHO, 0),
+        (WHO.login.upper(), WHO, 0),
+        (WHO.login, OAuthIdentity(WHO.subject, WHO.login.upper()), 1),
+        (WHO.login, OAuthIdentity("different-subject", WHO.login), 1),
+    ],
+)
+def test_expected_login_requires_receipt_and_verified_identity_before_vault(
+    flow, expected, verified_identity, verify_count
+):
+    flow.who = verified_identity
+    flow.native.value = "pre-existing record"
+    with pytest.raises(AuthError) as err:
+        flow.run(expected_login=expected)
+    assert str(err.value) == str(login._failed()) and err.value.__context__ is None
+    assert flow.events.count("start") == flow.events.count("redeem") == 1
+    assert flow.events.count("verify") == verify_count
+    assert not {"put", "read"} & set(flow.events) and flow.native.value == "pre-existing record"
+
+
 def test_uncertain_native_write_never_retries_or_deletes(flow, monkeypatch):
     def corrupt(key):
         flow.events.append("failed-read")
@@ -462,7 +505,8 @@ def test_pending_identity_check_does_not_block_event_loop_and_cannot_commit(flow
     assert flow.native.value is None and not set(flow.events) & {"put", "read"}
 
 
-def test_genuine_task_cancel_at_verified_identity_boundary(flow, monkeypatch):
+@pytest.mark.parametrize("expected_login", [None, WHO.login])
+def test_genuine_task_cancel_at_verified_identity_boundary(flow, monkeypatch, expected_login):
     verified, ready_to_return = Event(), Event()
     prepare = storage.OAuthCredentialStore._prepare
 
@@ -482,6 +526,7 @@ def test_genuine_task_cancel_at_verified_identity_boundary(flow, monkeypatch):
         task = asyncio.create_task(
             login.login_with_browser(
                 ORIGIN,
+                expected_login=expected_login,
                 _open_terminal=flow.terminal,
                 _opener=flow.open,
                 _acquire=flow.acquire,

@@ -80,6 +80,9 @@ class _GCMainGroup(GCSectionGroup):
 @click.pass_context
 def main(ctx: click.Context, repo_name: str | None, token: str | None) -> None:
     ctx.ensure_object(dict)
+    if ctx.invoked_subcommand == "auth":
+        # Auth subcommands resolve only their own explicit credential source.
+        return
     try:
         resolved_token = token or get_token()
     except GCError:

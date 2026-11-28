@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from .config import valid_login
 from .errors import AuthError
-from .oauth_broker_client import _ENTRY, _NONCE, BrokerReceipt, _origin, acquire_receipt
+from .oauth_broker_client import _ENTRY, _NONCE, BrokerReceipt, BrokerTrust, _origin, acquire_receipt
 from .oauth_credential_store import OAuthCredentialStore, _PreparedCredential
 from .oauth_identity import OAuthIdentity
 
@@ -155,23 +155,38 @@ async def login_with_browser(
     trusted_broker_origin: str,
     *,
     expected_login: str | None = None,
+    broker_trust: BrokerTrust | None = None,
     _open_terminal: Callable[[], AbstractContextManager[_TerminalSession]] = _terminal,
     _opener: Callable[[str], None] = _open_browser,
-    _acquire: _Acquire = acquire_receipt,
+    _acquire: _Acquire | None = None,
     _store_factory: Callable[[], OAuthCredentialStore] = OAuthCredentialStore.system,
 ) -> OAuthIdentity:
-    """Log in once; if supplied, require the exact expected login before any vault write."""
+    """Log in once; if supplied, require the exact expected login before any vault write.
+
+    Independently provisioned explicit trust applies only to the native CLI broker
+    connection, not to the browser or GitCode identity verification.
+    """
     try:
         if expected_login is not None and (type(expected_login) is not str or not valid_login(expected_login)):
             raise _failed()
         origin = _origin(trusted_broker_origin)
+        if broker_trust is not None and (
+            _acquire is not None
+            or type(broker_trust) is not BrokerTrust
+            or type(broker_trust.origin) is not str
+            or broker_trust.origin != origin
+        ):
+            raise _failed()
         with _open_terminal() as terminal:
             store = _store_factory()
             if type(store) is not OAuthCredentialStore:
                 raise _failed()
             presentation = _Presentation(origin + _ENTRY, terminal, _opener)
             try:
-                receipt = await _acquire(origin, presentation.present)
+                if _acquire is None:
+                    receipt = await acquire_receipt(origin, presentation.present, trust=broker_trust)
+                else:
+                    receipt = await _acquire(origin, presentation.present)
             finally:
                 presentation.available = False
             if not presentation.completed or type(receipt) is not BrokerReceipt:

@@ -185,7 +185,22 @@ ENTRIES: list[CompatEntry] = [
         "workflow view",
         None,
         CompatStatus.IMPLEMENTED,
-        "Workflow metadata from a bounded definition-list lookup; no YAML retrieval.",
+        "Default: workflow metadata from a bounded definition-list lookup.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "workflow view",
+        "--yaml",
+        CompatStatus.IMPLEMENTED,
+        "Partial, direct gc only: read the current public registration's path at a pinned GitCode commit; "
+        "not historical workflow registration.",
+        proxy_allowed=False,
+    ),
+    _e(
+        "workflow view",
+        "--ref",
+        CompatStatus.IMPLEMENTED,
+        "Partial, direct gc only: with --yaml, a full nonzero commit SHA-1; no branch or tag.",
         proxy_allowed=False,
     ),
     _e(

@@ -319,7 +319,7 @@ ENTRIES: list[CompatEntry] = [
     _e("issue list", "-S/--search", CompatStatus.IMPLEMENTED),
     _e("issue list", "-L/--limit", CompatStatus.IMPLEMENTED),
     _e("issue list", "-w/--web", CompatStatus.IMPLEMENTED),
-    _e("issue list", "--json", CompatStatus.IMPLEMENTED),
+    _e("issue list", "--json", CompatStatus.IMPLEMENTED, "Includes closed from native Issue state."),
     _e("issue list", "-q/--jq", CompatStatus.IMPLEMENTED),
     _e("issue list", "-t/--template", CompatStatus.IMPLEMENTED),
     _e(
@@ -331,7 +331,7 @@ ENTRIES: list[CompatEntry] = [
     _e("issue view", "-R/--repo", CompatStatus.IMPLEMENTED),
     _e("issue view", "-w/--web", CompatStatus.IMPLEMENTED),
     _e("issue view", "-c/--comments", CompatStatus.IMPLEMENTED),
-    _e("issue view", "--json", CompatStatus.IMPLEMENTED),
+    _e("issue view", "--json", CompatStatus.IMPLEMENTED, "Includes closed from native Issue state."),
     _e("issue view", "-q/--jq", CompatStatus.IMPLEMENTED),
     _e("issue view", "-t/--template", CompatStatus.IMPLEMENTED),
     _e("issue create", "-R/--repo", CompatStatus.IMPLEMENTED),

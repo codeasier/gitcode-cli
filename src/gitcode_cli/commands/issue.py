@@ -107,12 +107,18 @@ def _normalize_issue_author(item: dict) -> object:
     }
 
 
-def _normalize_issue_item(item: dict) -> dict:
-    return project_issue(item)
+def _selected_issue_fields(json_fields: str | None) -> set[str]:
+    return {field.strip() for field in json_fields.split(",")} if json_fields else set()
 
 
-def _normalize_issue_list_items(items: list[dict]) -> list[dict]:
-    return [_normalize_issue_item(item) for item in items]
+def _normalize_issue_item(item: dict, *, include_closed: bool) -> dict:
+    result = project_issue(item)
+    if include_closed:
+        # GitCode's top-level state is the issue lifecycle, unlike the workflow's issue_state.
+        state = item.get("state")
+        known = {"closed": True, "open": False, "opened": False}
+        result["closed"] = known.get(state) if isinstance(state, str) else None
+    return result
 
 
 def _pending_gh_compat(name: str) -> None:
@@ -267,8 +273,11 @@ def issue_list(
         search=search,
         limit=limit,
     )
+    if json_fields or jq_query or template:
+        include_closed = "closed" in _selected_issue_fields(json_fields)
+        items = [_normalize_issue_item(item, include_closed=include_closed) for item in items]
     output_result(
-        _normalize_issue_list_items(items) if json_fields or jq_query or template else items,
+        items,
         json_fields,
         jq_query,
         template,
@@ -300,15 +309,22 @@ def issue_view(
     if web:
         open_in_browser(target_url or f"https://gitcode.com/{owner}/{repo}/issues/{number}")
         return
-    if json_fields and "comments" in {field.strip() for field in json_fields.split(",")}:
+    fields = _selected_issue_fields(json_fields)
+    if "comments" in fields:
         if repo_name and app.repo and resolve_repo(repo_name) != resolve_repo(app.repo):
             raise click.UsageError("Conflicting global and issue view repository targets.")
-        data = _normalize_issue_item(view_with_comments(owner, repo, number, app.token))
+        data = _normalize_issue_item(
+            view_with_comments(owner, repo, number, app.token), include_closed="closed" in fields
+        )
         output_result(data, json_fields, jq_query, template, default_formatter=_echo_issue_summary)
         return
     service = IssueService(app.client())
     item = service.get(owner, repo, number)
-    output_item = _normalize_issue_item(item) if item and (json_fields or jq_query or template) else item
+    output_item = (
+        _normalize_issue_item(item, include_closed="closed" in fields)
+        if item and (json_fields or jq_query or template)
+        else item
+    )
     if comments:
         comment_items = service.list_comments(owner, repo, number)
         data = dict(output_item) if output_item else {}
@@ -729,7 +745,10 @@ set_gc_help(
 )
 
 issue_list.short_help = "List issues in a repository"
-issue_list.help = "List issues in a repository. By default, this only lists open issues."
+issue_list.help = (
+    "List issues in a repository. By default, this only lists open issues. "
+    "Select --json closed for a boolean, or null if the GitCode state is unknown."
+)
 set_gc_help(
     issue_list,
     gc_usage="gc issue list [flags]",
@@ -738,6 +757,7 @@ set_gc_help(
         "author",
         "assignees",
         "body",
+        "closed",
         "comments",
         "createdAt",
         "labels",
@@ -759,7 +779,10 @@ set_gc_help(
 )
 
 issue_view.short_help = "View an issue"
-issue_view.help = "View an issue. Select --json comments for a bounded collection of verified issue comments."
+issue_view.help = (
+    "View an issue. Select --json comments for a bounded collection of verified issue comments. "
+    "Select --json closed for a boolean, or null if the GitCode state is unknown."
+)
 issue_create.short_help = "Create a new issue"
 issue_create.help = "Create a new issue."
 set_gc_help(issue_create, gc_aliases=["new"], gc_json_fields=list(COMMON_FIELDS))

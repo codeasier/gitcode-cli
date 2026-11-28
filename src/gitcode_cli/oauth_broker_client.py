@@ -33,6 +33,8 @@ _REDEEM = "/cli/v1/redeem"
 _NONCE = re.compile(r"[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]")
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _AUTHORITY = re.compile(r"https://(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::[1-9][0-9]{0,4})?")
+_CA_PEM = re.compile(r"-----BEGIN CERTIFICATE-----\r?\n([A-Za-z0-9+/=\r\n]+)\r?\n-----END CERTIFICATE-----(?:\r?\n)?")
+_MAX_CA_PEM = 16_384
 _MAX_BODY = 16_384
 _TOTAL_TIMEOUT = 300
 _REQUEST_TIMEOUT = 8
@@ -83,6 +85,52 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 def _bad_reply() -> AuthError:
     return AuthError("Invalid OAuth broker response. Start a new login; do not retry this transaction.")
+
+
+@dataclass(frozen=True, repr=False)
+class BrokerTrust:
+    """Explicit owner-provisioned trust for one broker origin, never discovered from the broker or environment.
+
+    ca_pem is a single in-memory CA certificate, not a file path, key or credential.
+    It replaces (does not augment) the public CA set for this transaction only.
+    """
+
+    origin: str
+    ca_pem: str
+
+
+def _broker_context(origin: str, trust: BrokerTrust | None) -> ssl.SSLContext:
+    # SSLContext(PROTOCOL_TLS_CLIENT) requires certificate + hostname verification.
+    # Do not use create_default_context(): it can honor SSLKEYLOGFILE.
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    if trust is None:
+        context.load_verify_locations(cafile=certifi.where())
+        return context
+
+    error = AuthError("Invalid explicit OAuth broker trust configuration.")
+    if type(trust) is not BrokerTrust or type(trust.origin) is not str or trust.origin != origin:
+        raise error
+    pem = trust.ca_pem
+    match = _CA_PEM.fullmatch(pem) if type(pem) is str and len(pem) <= _MAX_CA_PEM else None
+    if match is None:
+        raise error
+    # Some TLS builds pre-seed even a newly allocated context; never silently add
+    # the broker CA to that trust store or fall back to the public default.
+    if any(context.cert_store_stats().values()):
+        raise error
+    encoded = match[1].replace("\r", "").replace("\n", "")
+    try:
+        der = base64.b64decode(encoded, validate=True)
+        if base64.b64encode(der).decode("ascii") != encoded:
+            raise error
+        context.load_verify_locations(cadata=der)
+    except (ValueError, ssl.SSLError):
+        raise error from None
+    # Only one complete CA, not a leaf, concatenated DER or trailing data.
+    if context.get_ca_certs(binary_form=True) != [der]:
+        raise error
+    context.hostname_checks_common_name = False  # Explicit broker certificates must carry a matching SAN.
+    return context
 
 
 @dataclass(frozen=True, repr=False)
@@ -187,16 +235,16 @@ async def _post(
 
 
 async def _run(
-    origin: str, present: Callable[[str, str], Awaitable[None]], transport: httpx.AsyncBaseTransport | None
+    origin: str,
+    present: Callable[[str, str], Awaitable[None]],
+    transport: httpx.AsyncBaseTransport | None,
+    trust: BrokerTrust | None,
 ) -> BrokerReceipt:
     verifier = secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).decode("ascii").rstrip("=")
-    # Explicit TLS context: create_default_context() can honor SSLKEYLOGFILE.
     # No proxy, netrc, ambient private CA env, retry or key-log configuration.
     if transport is None:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.load_verify_locations(cafile=certifi.where())
-        transport = httpx.AsyncHTTPTransport(verify=context, trust_env=False, retries=0)
+        transport = httpx.AsyncHTTPTransport(verify=_broker_context(origin, trust), trust_env=False, retries=0)
     deadline = asyncio.get_running_loop().time() + _TOTAL_TIMEOUT
     async with httpx.AsyncClient(trust_env=False, timeout=_REQUEST_TIMEOUT, transport=transport) as client:
         _, obj = await asyncio.wait_for(
@@ -226,20 +274,25 @@ async def acquire_receipt(
     broker_origin: str,
     present: Callable[[str, str], Awaitable[None]],
     *,
+    trust: BrokerTrust | None = None,
     _transport: httpx.AsyncBaseTransport | None = None,
 ) -> BrokerReceipt:
     """A new explicit transaction. Only an exact pending response on the pinned HTTPS origin permits another POST.
 
     Cancellation propagates and performs no further network action. Never retry this call
     automatically on timeout, disconnect, a lost receipt, or a failure to store it.
+    Absent explicit trust, the original certifi roots apply. Explicit trust is only
+    for the native TLS connection; it cannot be combined with a custom transport.
     The private transport seam is exclusively for offline tests, never user configuration.
     """
     origin = _origin(broker_origin)
+    if trust is not None and _transport is not None:
+        raise AuthError("Explicit OAuth broker trust cannot be combined with a test transport.")
     for name in ("httpx", "httpcore", "httpcore.connection", "httpcore.http11", "httpcore.http2", "httpcore.proxy"):
         logging.getLogger(name).addFilter(_FILTER)
     guard = _PRIVATE_IO.set(True)
     try:
-        return await asyncio.wait_for(_run(origin, present, _transport), _TOTAL_TIMEOUT)
+        return await asyncio.wait_for(_run(origin, present, _transport, trust), _TOTAL_TIMEOUT)
     except AuthError:
         raise
     except Exception:

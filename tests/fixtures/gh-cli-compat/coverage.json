@@ -372,6 +372,13 @@
             "reason": "gc accepts repository selection at the root or concrete subcommand, not on this intermediate group."
           }
         },
+        "additional_commands": {
+          "related-prs": {
+            "category": "extension",
+            "reason": "GitCode returns associated pull requests; the relation does not establish that a PR closes the issue.",
+            "value": "List platform-native PR associations observed for an issue"
+          }
+        },
         "missing_commands": {
           "lock": {
             "category": "deferred",

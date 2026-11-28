@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from contextlib import suppress
+from pathlib import PureWindowsPath
 from unittest.mock import patch
 from uuid import uuid4
 
+from gitcode_cli.oauth_account_selection import OAuthAccountSelectionStore
+from gitcode_cli.oauth_account_selection import _target as _selection_target
 from gitcode_cli.oauth_credential_store import (
     OAuthCredentialStore,
     _MissingCredentialError,
@@ -55,16 +59,48 @@ def _exercise() -> None:
         _assert_absent(backend, target)
 
 
+def _exercise_selection() -> None:
+    fixture = uuid4().hex
+    account = OAuthIdentity(f"synthetic-gc-selection-{fixture}", "SmokeFixture")
+    root = PureWindowsPath("C:/gitcode-cli-ci-" + fixture)
+    control = PureWindowsPath("C:/gitcode-cli-control-" + fixture)
+    writer = OAuthAccountSelectionStore.system(root)
+    backend = writer._backend
+    if not isinstance(backend, _WindowsBackend):
+        raise RuntimeError("Expected the Windows Credential Manager selection backend.")
+    target = _selection_target(root)
+    _assert_absent(backend, target)
+    _assert_absent(backend, _selection_target(control))
+    _assert_absent(backend, _target(account))
+    try:
+        saved = writer.save_verified(account)
+        reader = OAuthAccountSelectionStore.system(root)
+        if reader.read() != saved or saved.subject != account.subject or saved.login != account.login:
+            raise RuntimeError("Synthetic account selection did not round-trip.")
+        if json.loads(backend.get(target)) != {"v": 1, "subject": account.subject, "login": account.login}:
+            raise RuntimeError("The selection contains more than identity metadata.")
+        if OAuthAccountSelectionStore.system(control).read() is not None:
+            raise RuntimeError("Synthetic selection crossed configuration boundaries.")
+        _assert_absent(backend, _target(account))
+    finally:
+        with suppress(_MissingCredentialError):
+            backend.delete(target)
+        _assert_absent(backend, target)
+        _assert_absent(backend, _selection_target(control))
+        _assert_absent(backend, _target(account))
+
+
 def main() -> int:
     if sys.platform != "win32":
         print("Windows Credential Manager smoke requires a Windows runner.", file=sys.stderr)
         return 2
     try:
         _exercise()
+        _exercise_selection()
     except Exception:
         print("Synthetic Windows Credential Manager smoke did not complete.", file=sys.stderr)
         return 1
-    print("Synthetic Windows Credential Manager round-trip and cleanup passed.")
+    print("Synthetic Windows Credential Manager credential and selection round-trips and cleanup passed.")
     return 0
 
 
